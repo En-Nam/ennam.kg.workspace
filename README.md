@@ -13,6 +13,14 @@ This is the **workspace meta-repo**: it carries the shared config (`CLAUDE.md`,
 four independent repos that are cloned **at runtime** — they are intentionally
 *not* part of this repo.
 
+
+## ⭐ Star this repo
+
+Working on Ennam KG? **Star it** — it keeps the workspace one click away in
+your GitHub *Stars* and on your dashboard.
+
+[![Star this repo](https://img.shields.io/badge/%E2%AD%90%20Star%20this%20repo-En--Nam%2Fennam.kg.workspace-FFD43B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/En-Nam/ennam.kg.workspace/stargazers)
+
 ## ✨ What you get
 
 - 🧭 Shared `CLAUDE.md` / `AGENTS.md`, `docs/`, and the Serena knowledge store — one clone.
@@ -89,9 +97,3 @@ Re-run `bootstrap` and it clones the new one (everything else is skipped).
 `.env` and `SECRET.md` are git-ignored and never shared. Copy `.env.example`
 to `.env` and fill in values locally — ask the team lead for credentials.
 
-## ⭐ Star this repo
-
-Working on Ennam KG? **Star it** — it keeps the workspace one click away in
-your GitHub *Stars* and on your dashboard.
-
-[![Star this repo](https://img.shields.io/badge/%E2%AD%90%20Star%20this%20repo-En--Nam%2Fennam.kg.workspace-FFD43B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/En-Nam/ennam.kg.workspace/stargazers)
