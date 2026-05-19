@@ -19,7 +19,10 @@ four independent repos that are cloned **at runtime** — they are intentionally
 Working on Ennam KG? **Star it** — it keeps the workspace one click away in
 your GitHub *Stars* and on your dashboard.
 
-[![Star this repo](https://img.shields.io/badge/%E2%AD%90%20Star%20this%20repo-En--Nam%2Fennam.kg.workspace-FFD43B?style=for-the-badge&logo=github&logoColor=white)](https://github.com/En-Nam/ennam.kg.workspace/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/En-Nam/ennam.kg.workspace?style=for-the-badge&logo=github&color=FFD43B)](https://github.com/En-Nam/ennam.kg.workspace/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/En-Nam/ennam.kg.workspace?style=for-the-badge&logo=github&color=1f6feb)](https://github.com/En-Nam/ennam.kg.workspace/network/members)
+
+[![Star History Chart](https://api.star-history.com/svg?repos=En-Nam/ennam.kg.workspace&type=Date)](https://star-history.com/#En-Nam/ennam.kg.workspace&Date)
 
 ## ✨ What you get
 
