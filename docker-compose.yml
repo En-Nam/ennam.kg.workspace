@@ -1,0 +1,222 @@
+# Ennam Knowledge Graph Platform — Unified Local Development
+#
+# Starts all services needed for local testing:
+#   docker compose up -d              # Start everything
+#   docker compose up -d --build      # Rebuild and start
+#   docker compose logs -f            # Follow all logs
+#   docker compose logs -f kg-server  # Follow specific service
+#   docker compose ps                 # Check status
+#   docker compose down               # Stop all
+#   docker compose down -v            # Stop and remove data
+#
+# Services:
+#   postgres    — PostgreSQL 16        (port 5432)
+#   redis       — Redis 7              (port 6379)
+#   kg-server   — Go API server        (port 8080)
+#   indexer     — Python indexing HTTP  (port 8081)
+#   worker      — Python queue worker  (no port)
+#   dashboard   — NextJS web UI        (port 3500)
+
+services:
+  # ===========================================================================
+  # Infrastructure
+  # ===========================================================================
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ennam-kg-postgres
+    restart: unless-stopped
+    ports:
+      - "${KG_DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${KG_DB_NAME:-ennam_kg}
+      POSTGRES_USER: ${KG_DB_USER:-ennam_kg}
+      POSTGRES_PASSWORD: ${KG_DB_PASSWORD:-ennam_kg_dev}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KG_DB_USER:-ennam_kg} -d ${KG_DB_NAME:-ennam_kg}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ennam-kg
+
+  redis:
+    image: redis:7-alpine
+    container_name: ennam-kg-redis
+    restart: unless-stopped
+    ports:
+      - "${KG_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ennam-kg
+
+  # ===========================================================================
+  # Go API Server
+  # ===========================================================================
+
+  kg-server:
+    build:
+      context: ./ennam.kg.go
+      dockerfile: deploy/docker/Dockerfile
+      target: development
+    container_name: ennam-kg-server
+    restart: unless-stopped
+    ports:
+      - "${KG_SERVER_PORT:-8080}:8080"
+    environment:
+      # Database
+      KG_DB_HOST: postgres
+      KG_DB_PORT: 5432
+      KG_DB_NAME: ${KG_DB_NAME:-ennam_kg}
+      KG_DB_USER: ${KG_DB_USER:-ennam_kg}
+      KG_DB_PASSWORD: ${KG_DB_PASSWORD:-ennam_kg_dev}
+      KG_DB_SSLMODE: disable
+      # Server
+      KG_SERVER_PORT: 8080
+      KG_LOG_LEVEL: ${KG_LOG_LEVEL:-debug}
+      KG_CONFIG_PATH: /app/config/config.yaml
+      # Auth
+      KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
+      KG_AUTH_NOOP: ${KG_AUTH_NOOP:-false}
+      # Phase 2: Encryption key for data source credentials + AI provider API keys
+      KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
+      # Python worker
+      KG_PYTHON_URL: http://indexer:8081
+      # Queue
+      KG_QUEUE_PROVIDER: redis
+      KG_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./ennam.kg.go:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ennam-kg
+
+  # ===========================================================================
+  # Python Indexing Service (HTTP API)
+  # ===========================================================================
+
+  indexer:
+    build:
+      context: ./ennam.kg.python
+      dockerfile: Dockerfile
+    container_name: ennam-kg-indexer
+    restart: unless-stopped
+    ports:
+      - "${KG_INDEXER_PORT:-8081}:8081"
+    environment:
+      GO_API_URL: http://kg-server:8080
+      GO_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_QUEUE_NAME: ennam-kg:indexing
+      REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
+      LOG_LEVEL: ${KG_LOG_LEVEL:-DEBUG}
+      NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
+      BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+    volumes:
+      - ./ennam.kg.go:/repos/ennam-kg-go:ro
+      - ./ennam.kg.next:/repos/ennam-kg-next:ro
+      - ./ennam.kg.python:/repos/ennam-kg-python:ro
+    depends_on:
+      kg-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - ennam-kg
+
+  # ===========================================================================
+  # Python Queue Worker (background consumer)
+  # ===========================================================================
+
+  worker:
+    build:
+      context: ./ennam.kg.python
+      dockerfile: Dockerfile
+    container_name: ennam-kg-worker
+    restart: unless-stopped
+    command: ["python", "-m", "ennam_kg.worker"]
+    environment:
+      GO_API_URL: http://kg-server:8080
+      GO_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_QUEUE_NAME: ennam-kg:indexing
+      REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
+      LOG_LEVEL: ${KG_LOG_LEVEL:-DEBUG}
+      NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
+      BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+    volumes:
+      - ./ennam.kg.go:/repos/ennam-kg-go:ro
+      - ./ennam.kg.next:/repos/ennam-kg-next:ro
+      - ./ennam.kg.python:/repos/ennam-kg-python:ro
+    depends_on:
+      kg-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ennam-kg
+
+  # ===========================================================================
+  # NextJS Dashboard
+  # ===========================================================================
+
+  dashboard:
+    build:
+      context: ./ennam.kg.next
+      dockerfile: Dockerfile
+    container_name: ennam-kg-dashboard
+    restart: unless-stopped
+    ports:
+      - "${KG_DASHBOARD_PORT:-3500}:3500"
+    environment:
+      GO_API_URL: http://kg-server:8080
+      KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
+      SESSION_SECRET: ${SESSION_SECRET:-ennam-kg-dev-session-secret-32chars!!}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    depends_on:
+      kg-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3500').then(r=>{process.exit(r.ok||r.status===307?0:1)}).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ennam-kg
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  ennam-kg:
+    driver: bridge

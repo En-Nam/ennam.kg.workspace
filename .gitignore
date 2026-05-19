@@ -1,0 +1,17 @@
+# --- Sub-repos (cloned by scripts/bootstrap.*) ---
+/ennam.kg.go/
+/ennam.kg.python/
+/ennam.kg.next/
+/ennam.kg.requirements/
+
+# --- Secrets / local (NEVER commit) ---
+/.env
+/SECRET.md
+/.claude/settings.local.json
+
+# --- Cache / tool dirs ---
+/.ruff_cache/
+/.playwright-mcp/
+
+# --- Scratch screenshots at root (real images go in docs/) ---
+/*.png

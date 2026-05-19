@@ -1,0 +1,5 @@
+# dir                  url                                              branch
+ennam.kg.go            git@github.com:En-Nam/ennam.kg.go.git            main
+ennam.kg.python        git@github.com:En-Nam/ennam.kg.python.git        main
+ennam.kg.next          git@github.com:En-Nam/ennam.kg.next.git          main
+ennam.kg.requirements  git@github.com:En-Nam/ennam.kg.requirements.git  main

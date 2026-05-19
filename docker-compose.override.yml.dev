@@ -1,0 +1,28 @@
+# Dev overrides — auto-loaded by `docker compose up`
+# Hot reload for NextJS dashboard: source changes reflect instantly
+# To use production build instead, rename/remove this file
+
+services:
+  dashboard:
+    build: !reset null
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- -p 3500"
+    volumes:
+      - ./ennam.kg.next:/app
+      - dashboard_node_modules:/app/node_modules
+    environment:
+      GO_API_URL: http://kg-server:8080
+      KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
+      SESSION_SECRET: ${SESSION_SECRET:-ennam-kg-dev-session-secret-32chars!!}
+      WATCHPACK_POLLING: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3500').then(r=>{process.exit(r.ok||r.status===307?0:1)}).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+volumes:
+  dashboard_node_modules:
+    driver: local

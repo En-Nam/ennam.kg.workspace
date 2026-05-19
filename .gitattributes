@@ -1,0 +1,3 @@
+# Cross-platform bootstrap must stay LF even on Windows checkouts (core.autocrlf).
+*.sh              text eol=lf
+scripts/repos.txt text eol=lf

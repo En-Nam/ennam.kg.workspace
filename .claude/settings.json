@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_ouroboros_ouroboros__ouroboros_interview",
+      "mcp__plugin_ouroboros_ouroboros__ouroboros_generate_seed",
+      "mcp__plugin_ouroboros_ouroboros__ouroboros_execute_seed",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "Bash(go build:*)",
+      "Bash(go test:*)"
+    ]
+  },
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
+    }
+  }
+}

@@ -1,0 +1,129 @@
+# Ennam KG Dashboard — Cyberpunk Neon UI Upgrade
+# Generated from Socratic interview session 2026-03-26
+# Ambiguity score: 0.12 (below 0.2 threshold)
+
+goal: >
+  Redesign the Ennam KG NextJS dashboard with a Cyberpunk Neon Futuristic theme —
+  dark backgrounds, multi-neon rainbow gradient components, glassmorphism cards,
+  toggle-able VFX levels, collapsible sidebar with top bar layout, full responsive
+  (375px–4K), hybrid typography (Orbitron + Inter + JetBrains Mono), and a 3D
+  neural network knowledge graph view. Upgrade all 9 existing pages with neon
+  styling and enhanced functionality.
+
+constraints:
+  - NextJS App Router with existing shadcn/ui component library (extend, not replace)
+  - Tailwind CSS for all styling — CSS variables for design tokens
+  - No breaking changes to existing data hooks (useNodes, useGraph, useSessions, etc.)
+  - BFF proxy pattern unchanged — no direct browser-to-Go-API calls
+  - Full responsive from 375px mobile to 4K desktop
+  - Two VFX modes toggle-able at runtime — Balanced Neon and Subtle Dark Neon
+  - Foundation-first approach — tokens before layout before pages
+  - Code directly — no design mockups required
+  - Performance budget — glassmorphism/glow effects must not cause jank on mid-range devices
+  - 3D graph library must be SSR-safe (dynamic import, no window access at build time)
+
+acceptance_criteria:
+  # Phase 1 — Foundation
+  - Design tokens defined as CSS custom properties in globals.css (neon palette, shadows, gradients)
+  - Orbitron font loaded for headings, Inter/Geist for body, JetBrains Mono for code
+  - Glassmorphism card variant added to shadcn Card component (backdrop-blur + neon border)
+  - Neon glow utility classes available (glow-cyan, glow-magenta, glow-green, etc.)
+  - VFX context provider with toggle between "balanced" and "subtle" modes
+  - All existing shadcn components visually updated to neon theme without breaking API
+
+  # Phase 2 — Layout
+  - Sidebar collapsible from 240px to 56px icon-only mode with smooth animation
+  - Each nav item has an icon (lucide-react) and label with neon accent on active state
+  - Top bar with global search (Cmd+K), notifications area, and user avatar/menu
+  - Sidebar collapse state persisted to localStorage
+  - Layout fully responsive — sidebar hidden on mobile, hamburger menu trigger
+  - VFX toggle accessible from Settings page
+
+  # Phase 3 — Pages
+  - Overview — dashboard hub with stat cards, mini graph preview, node distribution chart (donut/bar), recent decisions, quick-create node button
+  - Graph — 2D/3D toggle on same page; 2D uses existing Cytoscape.js, 3D uses force-directed WebGL (Three.js or React Three Fiber) with neural network aesthetic (bloom, glow nodes, particle edge trails)
+  - Decision Log — timeline with neon styling, search/filter bar, node detail dialog on click
+  - Code Map — dual toggle between tree view and treemap visualization
+  - Impact Analysis — radial/concentric graph (selected node center, impact radiates outward by depth)
+  - Metrics — charts dashboard with time-series (nodes/week), status donut, edge type distribution using Recharts
+  - Agent Activity — real-time pulse indicators for active sessions, animated dots, auto-refresh
+  - Settings — project settings + theme/VFX toggle section (balanced neon vs subtle dark neon)
+
+ontology_schema:
+  name: CyberpunkDashboardUI
+  description: Design system and page component model for the neon-themed knowledge graph dashboard
+  fields:
+    - name: design_tokens
+      type: object
+      description: >
+        CSS custom properties — colors (background, surface, border, 6 node-type neon colors),
+        shadows (glow intensities), gradients (neon shimmer), radii, spacing
+    - name: vfx_mode
+      type: string
+      description: "Current visual effects mode: 'balanced' (glassmorphism + glow + gradients) or 'subtle' (dark + accents only)"
+    - name: sidebar_state
+      type: object
+      description: "Sidebar configuration: collapsed (boolean), width (240px|56px), active_item, visible on mobile"
+    - name: neon_palette
+      type: object
+      description: >
+        Node type color mapping — decision (#00D4FF sky cyan), concept (#FF6BFF orchid pink),
+        requirement (#00FF94 spring green), task (#FFD600 solar yellow),
+        architecture (#7C4DFF deep violet), discovery (#FF4444 neon red).
+        Background #0d0d1a, surface #12122a, border gradient cyan→purple.
+        Text #F0F0FF cool white.
+    - name: typography
+      type: object
+      description: "Font stack — heading: Orbitron/Rajdhani, body: Inter/Geist Sans, code: JetBrains Mono"
+    - name: graph_mode
+      type: string
+      description: "Graph visualization mode: '2d' (Cytoscape.js) or '3d' (Three.js/R3F force-directed neural network)"
+    - name: page_configs
+      type: array
+      description: >
+        Per-page configuration — Overview (hub), Graph (2D/3D), Decisions (timeline+search),
+        CodeMap (tree+treemap), Impact (radial), Metrics (charts), Agents (realtime), Settings (theme)
+
+evaluation_principles:
+  - name: visual_coherence
+    description: All pages share consistent neon aesthetic — same palette, glow intensities, glassmorphism treatment, typography hierarchy
+    weight: 0.25
+  - name: performance
+    description: No layout shift, no jank on scroll/animation, 3D graph maintains 30+ FPS on mid-range GPU, glassmorphism does not cause repaint storms
+    weight: 0.20
+  - name: responsive_fidelity
+    description: Every page usable from 375px to 4K — sidebar collapses on mobile, charts resize, 3D graph touch-friendly
+    weight: 0.15
+  - name: functional_preservation
+    description: All existing features (node CRUD, search, project switching, graph interaction) continue working after redesign
+    weight: 0.20
+  - name: accessibility
+    description: Neon colors maintain WCAG AA contrast on dark backgrounds, focus indicators visible, keyboard navigation works
+    weight: 0.10
+  - name: code_quality
+    description: Design tokens centralized (no hardcoded colors), components composable, VFX toggle is zero-cost when disabled
+    weight: 0.10
+
+exit_conditions:
+  - name: foundation_complete
+    description: Phase 1 done — design tokens, fonts, glassmorphism card, glow utilities, VFX provider all working
+    criteria: New neon theme visually applied to at least the Overview page with VFX toggle functional
+  - name: layout_complete
+    description: Phase 2 done — collapsible sidebar with icons, top bar with search, responsive breakpoints
+    criteria: Sidebar collapses/expands, persists state, works on mobile (hamburger), top bar renders search + user
+  - name: all_pages_upgraded
+    description: Phase 3 done — all 9 pages redesigned with neon theme and enhanced functionality
+    criteria: Each page has neon styling, page-specific enhancements (3D graph, treemap, radial impact, charts, realtime) functional
+  - name: full_delivery
+    description: All phases complete, no regressions, responsive on all breakpoints
+    criteria: Manual check on 375px, 768px, 1440px, and 1920px viewports passes; all existing tests pass; VFX toggle works
+
+metadata:
+  version: "1.0.0"
+  created_at: "2026-03-26T00:00:00Z"
+  ambiguity_score: 0.12
+  interview_mode: "plugin_fallback"
+  source: "socratic_interview_conversation"
+  project: "ennam.kg.next"
+  phases: 3
+  estimated_components: 35
