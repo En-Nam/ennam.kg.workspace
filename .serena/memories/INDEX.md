@@ -28,7 +28,7 @@ See CLAUDE.md "Serena Memory Protocol" for read/write rules.
 | `services/nextjs-dashboard.md` | NextJS (:3500) | 15+ pages, 3D graph, chat, BFF proxy |
 | `services/python-worker.md` | Python (:8081) | Stateless AI engine, streaming, NL query |
 
-## Active Decisions (11 files)
+## Active Decisions (12 files)
 
 | File | Topic |
 |------|-------|
@@ -44,6 +44,7 @@ See CLAUDE.md "Serena Memory Protocol" for read/write rules.
 | `decisions/phase5-smart-context-design.md` | Embedding + smart search architecture |
 | `decisions/phase6-multi-source-ingestion.md` | Future phase spec (not started) |
 | `decisions/agentic-engine-lessons.md` | Agentic engine pitfalls: schema truncation, Haiku prompt style, UUID fallback, rate limit |
+| `decisions/workspace-meta-repo.md` | root is a shared git repo; sub-repos cloned via bootstrap manifest, not submodules |
 
 ## Backlog (15 items)
 

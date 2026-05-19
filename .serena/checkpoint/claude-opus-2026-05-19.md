@@ -30,3 +30,20 @@
 
 ## Blockers / Risks
 - None. Pure docs change; no code/tests affected.
+
+## Session: workspace meta-repo (append)
+### What was done
+- Initialized & pushed En-Nam/ennam.kg.workspace meta-repo (root-commit d60fea5, 220 files)
+- Added .gitignore, .gitattributes, scripts/repos.txt, scripts/bootstrap.sh, scripts/bootstrap.ps1, README.md, .claude/settings.json
+- Cross-platform bootstrap clones the 4 sub-repos onto main from scripts/repos.txt manifest (not submodules)
+- Code review found a real CRLF cross-platform defect in bootstrap.sh; fixed (IFS=$' \t\r' + .gitattributes eol=lf), re-reviewed APPROVED
+- 3-layer secret-leak gate (pre-commit, post-commit, post-push) all passed; REMOTE_CLEAN verified
+### Files changed
+- NEW: .gitignore, .gitattributes, scripts/repos.txt, scripts/bootstrap.sh, scripts/bootstrap.ps1, README.md, .claude/settings.json
+- NEW: docs/superpowers/specs/2026-05-19-workspace-meta-repo-design.md, docs/superpowers/plans/2026-05-19-workspace-meta-repo.md
+### Current state
+- Live: git@github.com:En-Nam/ennam.kg.workspace.git, main == origin/main == d60fea5, secrets verified excluded
+### Next steps
+- Team onboards via README 2-step flow (clone workspace -> bootstrap)
+### Blockers / Risks
+- Ennam KG MCP server not exposed in this session -> decision recorded to Serena fallback only; backfill to KG when available
