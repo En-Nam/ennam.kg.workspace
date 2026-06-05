@@ -201,11 +201,15 @@ result = await engine.full_scan(project_id, "/path/to/repo")
 
 7. **Remove dead summarizer wiring** in `worker.py` (the `ClaudeSummarizer` instantiation at lines 37-43 that is never used) — and the now-orphaned `cache.save()` at line ~218 if the cache serves nothing else. (The `summarizer/` module itself stays in the service package, just unreferenced.)
 
-8. **Set up uv workspace** — root `pyproject.toml` with `[tool.uv.workspace] members = [...]`; move service deps into `packages/ennam-kg/pyproject.toml`; create `packages/ennam-kg-indexer/pyproject.toml`.
+8. **Rewrite the workspace-root script consumer.** [`scripts/backfill-section-embeddings.py:18`](../../scripts/backfill-section-embeddings.py#L18) (at the **workspace root**, outside both packages) imports `from ennam_kg.kg_client.client import KGClient` — change to `from ennam_kg_indexer.kg_client.client import KGClient`. Note this script also imports `ennam_kg.config`, `ennam_kg.embeddings`, `ennam_kg.ingestion` (service modules, stay as-is), so it requires BOTH packages installed to run. (No other file outside `ennam.kg.python/` imports the moved modules — verified.)
 
-9. **Rewrite the Dockerfile** for the new workspace layout (see Docker section below).
+9. **Set up uv workspace** — root `pyproject.toml` with `[tool.uv.workspace] members = [...]`; move service deps into `packages/ennam-kg/pyproject.toml`; create `packages/ennam-kg-indexer/pyproject.toml`.
 
-10. **Move tests**: `test_parsers/`, `test_engine.py`, `test_differ.py`, `test_extractor.py`, `test_kg_client/`, `test_kg_client.py`, `test_kg_client_phase2.py` → indexer package tests. Update any test that constructs `IndexingEngine(..., settings)` to drop the second arg. Any service test importing `kg_client` gets its import rewritten to `ennam_kg_indexer`. The rest stay with the service.
+10. **Regenerate `uv.lock`.** The existing `ennam.kg.python/uv.lock` (~378KB) is single-package and will break `uv sync --frozen` in the Dockerfile after restructuring. Run `uv lock` at the workspace root to produce a workspace-aware lock, and commit it. Without this, the Docker build fails on the frozen step.
+
+11. **Rewrite the Dockerfile** for the new workspace layout (see Docker section below).
+
+12. **Move tests**: `test_parsers/`, `test_engine.py`, `test_differ.py`, `test_extractor.py`, `test_kg_client/`, `test_kg_client.py`, `test_kg_client_phase2.py` → indexer package tests. Update any test that constructs `IndexingEngine(..., settings)` to drop the second arg. Any service test importing `kg_client` gets its import rewritten to `ennam_kg_indexer`. The rest stay with the service.
 
 ---
 
@@ -240,7 +244,8 @@ The `worker` service's `command: ["python", "-m", "ennam_kg.worker"]` in `docker
 - In a clean venv: `pip install ./packages/ennam-kg-indexer` then `python -c "from ennam_kg_indexer import IndexingEngine, KGClient"` succeeds — and `python -c "import anthropic"` / `import fastapi` / `import pydantic_settings` all **fail** (proves the heavy deps did not leak in).
 - `grep -rn "ennam_kg\." packages/ennam-kg-indexer/src/` returns nothing — the indexer package must NOT reference the `ennam_kg` service namespace at all (catches the `config`, `Settings`, and `embed_texts` couplings if any slipped through).
 - `cd ennam.kg.python && uv sync && uv run pytest` — full service test suite still green (worker, api, ingestion, etc.).
-- `grep -rn "from ennam_kg.kg_client\|from ennam_kg.indexer\|from ennam_kg.parsers\|ennam_kg\.kg_client\|ennam_kg\.indexer\|ennam_kg\.parsers" packages/ennam-kg/src` returns nothing — every service import of the moved modules was rewritten to `ennam_kg_indexer` (this is the ~15-file rewrite; the OLD path must be fully gone).
+- `grep -rn "from ennam_kg.kg_client\|from ennam_kg.indexer\|from ennam_kg.parsers\|ennam_kg\.kg_client\|ennam_kg\.indexer\|ennam_kg\.parsers" packages/ennam-kg/src scripts/` returns nothing — every consumer of the moved modules (the ~15 service files **and** the workspace-root `scripts/backfill-section-embeddings.py`) was rewritten to `ennam_kg_indexer`; the OLD path must be fully gone everywhere, not just inside the service package.
+- `cd ennam.kg.python && uv sync --frozen` succeeds — proves the regenerated `uv.lock` matches the new workspace `pyproject.toml` (this is exactly what the Docker build runs).
 - Docker `indexer` + `worker` images build and run healthy; a live `POST /index` against the dev stack still produces nodes (no behavior regression); the agentic `embed_texts` replacement still returns vectors (the one relocated caller works).
 
 ---
