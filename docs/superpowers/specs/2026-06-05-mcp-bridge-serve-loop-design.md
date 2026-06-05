@@ -47,6 +47,7 @@ If the gate fails (immature / abandoned / heavy breaking changes / struct-only A
 | `cmd/kg-bridge/main.go` | Modify | add `case "serve"` → `bridge.RunServe(args)` |
 | `internal/bridge/serve.go` | Create | the ONLY SDK-importing file: config load, build client+handler, register tools, run stdio server, dispatch + map results |
 | `internal/bridge/config_load.go` | Create | read `~/.kg/config.yaml` + env override (`KG_API_KEY`/`KG_SERVER_URL`/`KG_PROJECT_ID`) → resolved config |
+| `internal/bridge/uuid.go` | Create | `newUUIDv4()` — RFC-4122 v4 string from `crypto/rand` (repo has no uuid dep); used to generate `session_id` for `kg_store_session` |
 | `internal/bridge/handler.go` | (reuse) | `HandleToolCall`, `ListTools` — unchanged, SDK-agnostic |
 | `internal/bridge/session.go` | (reuse) | `WriteSessionFile`/`RemoveSessionFile` — wired by serve.go |
 | `internal/bridge/init.go` | (reuse) | `Config` struct + `RunInit` — config reader added in config_load.go |
@@ -71,17 +72,27 @@ A single generic handler in `serve.go`:
 ```
 onToolCall(name, rawArgs):
     params := decode rawArgs -> map[string]interface{}      # SDK arg type -> map for HandleToolCall
+
+    # kg_store_session needs a client-generated session_id (see below) — inject BEFORE forwarding:
+    sessionID := ""
+    if name == "kg_store_session":
+        sessionID = newUUIDv4()                              # crypto/rand helper (no uuid dep in repo)
+        params["session_id"] = sessionID
+
     result, errResp := handler.HandleToolCall(ctx, name, params)
     if errResp != nil:                                       # protocol-level (unknown tool / bad params)
         return SDK JSON-RPC error
+
     # session side-effects (BR-004.3) — only on success:
     if name == "kg_store_session" and not result.IsError:
-        sf := buildSessionFile(params, result, serverURL)    # see below
+        sf := buildSessionFile(params, result, sessionID, serverURL)   # see below
         WriteSessionFile(cwd(), sf)                          # cwd = bridge working dir (inherited from MCP host = project dir)
     if name == "kg_end_session" and not result.IsError:
         RemoveSessionFile(cwd())
     return mapToSDKResult(result)                            # content + isError
 ```
+
+> **Why generate `session_id` (verified against the Go API):** `POST /api/v1/sessions` **requires a client-supplied `session_id`** — `service.StartSession` uses `req.SessionID` directly (`session.go:121 ID: req.SessionID`) and `validateStartRequest` rejects an empty one (`session.go:345-346`). The server does NOT generate it. Yet the `kg_store_session` tool schema does NOT expose `session_id` (BR-004.1: only `project_id`, `agent_name`, `work_scope?`, `metadata?`) and `HandleToolCall` only injects `node_type`, not `session_id`. So **the bridge must generate the id and inject it** — otherwise `kg_store_session` fails the API's required-field check. This matches BA-002's intent (the `.kg_session` file is "written by the bridge" and contains the id). The repo has **no uuid dependency**, so add a small UUIDv4 helper built on `crypto/rand` (pattern: the API expects UUID format — `kg_end_session` schema uses `Format:"uuid"`, `uuidPattern`).
 
 ### `buildSessionFile` field sources
 
@@ -89,15 +100,15 @@ onToolCall(name, rawArgs):
 
 | Field | Source |
 |-------|--------|
-| `SessionID` | created-session response, field `id` |
-| `StartedAt` | created-session response, field `started_at` |
+| `SessionID` | the **bridge-generated** `sessionID` (the same value injected into the request) — NOT from the response |
+| `StartedAt` | created-session response, `session.started_at` |
 | `ProjectID` | request params (`project_id`) |
 | `Agent` | request params (`agent_name`) |
 | `Scope` | request params (`work_scope`, optional) |
 | `TaskDescription` | request params (`task_description`, optional) |
 | `ServerURL` | resolved bridge config `server_url` |
 
-> **How to read the response (verified against `mcpresponse.go`):** `HandleToolCall` does NOT expose the raw API body — it returns `*MCPToolResult` whose `Content[0].Text` is `json.MarshalIndent` of the response body (mcpresponse.go:124-136). So `buildSessionFile` must **`json.Unmarshal(result.Content[0].Text)` back into a `map[string]any`** and read `["id"]` / `["started_at"]`. (Confirm the create-session API returns those exact field names during implementation; if the body nests the session under a key, adjust the path. If parsing fails, skip the file write and log to stderr — do not fail the tool call.)
+> **How to read `started_at` (verified against `mcpresponse.go` + `session.go`):** `HandleToolCall` does NOT expose the raw API body — it returns `*MCPToolResult` whose `Content[0].Text` is `json.MarshalIndent` of the response body (mcpresponse.go:124-136). The create-session response is **nested under a `session` key** (`session.go:166` encodes `sessionResponse{Session: session}`), and the session object has `started_at` (`models/session.go:60 json:"started_at"`). So `buildSessionFile` must `json.Unmarshal(result.Content[0].Text)` into a `map[string]any` and read `["session"]["started_at"]`. If parsing fails, fall back to the bridge's own clock (`time.Now().UTC()`) for `started_at`, still write the file, and log to stderr — do not fail the tool call. `SessionID` does NOT come from the response; it is the id the bridge generated and injected.
 
 `cwd()` = `os.Getwd()` of the bridge process. The bridge runs as a subprocess of the MCP host, inheriting the host's working directory (the agent's project directory) — which is where git pre-commit hooks expect `.kg_session` (BR-004.3).
 
@@ -138,7 +149,8 @@ MCP stdio uses **stdout as the JSON-RPC channel**. A single stray write to stdou
 
 - **Config loader (unit):** env overrides file values; missing required values → error. Table-driven.
 - **Dispatch mapping (unit):** with a fake/mocked `HandleToolCall`, assert `MCPToolResult` → SDK result mapping (content + isError) and `MCPErrorResponse` → JSON-RPC error. No real stdio needed.
-- **Session side-effects (unit):** `kg_store_session` success → `WriteSessionFile` writes a `.kg_session` (temp cwd) with fields merged from params + response + config; `kg_end_session` success → file removed; a `WriteSessionFile` failure does not fail the tool result.
+- **Session id generation + injection (unit):** `kg_store_session` dispatch generates a UUIDv4 `session_id` and injects it into the params passed to `HandleToolCall` (assert the forwarded params contain a valid-UUID `session_id`); `newUUIDv4()` produces RFC-4122 v4 format.
+- **Session side-effects (unit):** `kg_store_session` success → `WriteSessionFile` writes a `.kg_session` (temp cwd) whose `session_id` equals the generated/injected id, `started_at` parsed from `result.session.started_at`, other fields from params + config; on unparseable `started_at`, falls back to `time.Now()` and still writes; `kg_end_session` success → file removed; a `WriteSessionFile` failure does not fail the tool result.
 - **`buildSessionFile` (unit):** field-source mapping correct (response vs params vs config).
 - **E2E protocol smoke:** start `kg-bridge serve` as a subprocess, send a JSON-RPC `initialize` then `tools/list` over stdin, assert the response advertises capability=tools and lists all 24 tools with schemas; send one `tools/call` (e.g. `kg_query`) against a stubbed/live Go API and assert the forwarded result. Validates real protocol wiring.
 - **Manual:** configure Claude Code (and ideally one non-Claude MCP host) to spawn `kg-bridge serve`; confirm tools appear and `kg_query` works against a live Go API.
