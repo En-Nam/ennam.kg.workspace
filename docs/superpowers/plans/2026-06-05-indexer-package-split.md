@@ -12,6 +12,8 @@
 
 **Working directory for all commands:** `/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/ennam.kg.python` (referred to below as `$PY`). The workspace-root script lives one level up at `../scripts/`.
 
+**macOS `sed`/`xargs` note:** commands use BSD `sed -i ''` (empty backup suffix). Every `grep -rl ... | xargs sed` pass in this plan is guaranteed non-empty input (real old imports exist at that point); do not re-run a pass after it has already rewritten everything, since BSD `xargs` with empty input would invoke `sed` reading stdin and hang. If unsure, run the verifying `grep` first.
+
 ---
 
 ## Files
@@ -393,44 +395,46 @@ build-backend = "hatchling.build"
 packages = ["src/ennam_kg_indexer"]
 ```
 
-- [ ] **Step 6: Rewrite imports in ALL service files + the root script**
+- [ ] **Step 6: Move the indexer tests into the package**
+
+Move BEFORE rewriting, so the next step can rewrite both the service and the package in clean disjoint passes. Note both `tests/test_kg_client/` (models test) AND `tests/kg_client/` (KGClient neighbors-normalize test) are KGClient tests with no service-fixture coupling — both move.
 
 ```bash
 cd $PY
-# Service package (src/) and the workspace-root script (../scripts/)
-grep -rl "ennam_kg\.\(parsers\|indexer\|kg_client\)" src/ ../scripts/ \
-  | xargs sed -i '' \
-    -e 's/ennam_kg\.parsers/ennam_kg_indexer.parsers/g' \
-    -e 's/ennam_kg\.indexer/ennam_kg_indexer.indexer/g' \
-    -e 's/ennam_kg\.kg_client/ennam_kg_indexer.kg_client/g'
-```
-
-Verify the OLD paths are fully gone from the service + scripts:
-Run: `cd $PY && grep -rn "ennam_kg\.parsers\|ennam_kg\.indexer\|ennam_kg\.kg_client" src/ ../scripts/`
-Expected: no output.
-
-- [ ] **Step 7: Move the indexer tests into the package**
-
-```bash
-cd $PY
-git mv tests/test_parsers            packages/ennam-kg-indexer/tests/test_parsers
-git mv tests/test_engine.py          packages/ennam-kg-indexer/tests/test_engine.py
-git mv tests/test_differ.py          packages/ennam-kg-indexer/tests/test_differ.py
-git mv tests/test_extractor.py       packages/ennam-kg-indexer/tests/test_extractor.py
-git mv tests/test_kg_client          packages/ennam-kg-indexer/tests/test_kg_client
-git mv tests/test_kg_client.py       packages/ennam-kg-indexer/tests/test_kg_client.py
+git mv tests/test_parsers             packages/ennam-kg-indexer/tests/test_parsers
+git mv tests/test_engine.py           packages/ennam-kg-indexer/tests/test_engine.py
+git mv tests/test_differ.py           packages/ennam-kg-indexer/tests/test_differ.py
+git mv tests/test_extractor.py        packages/ennam-kg-indexer/tests/test_extractor.py
+git mv tests/test_kg_client           packages/ennam-kg-indexer/tests/test_kg_client
+git mv tests/test_kg_client.py        packages/ennam-kg-indexer/tests/test_kg_client.py
 git mv tests/test_kg_client_phase2.py packages/ennam-kg-indexer/tests/test_kg_client_phase2.py
+git mv tests/kg_client                packages/ennam-kg-indexer/tests/kg_client
 ```
 
-Rewrite imports in the moved tests:
+- [ ] **Step 7: Rewrite imports in ALL remaining service code, the root script, AND the service tests that stay**
+
+The moved indexer tests are now out of `tests/`. The service tests that REMAIN and still import the moved modules (`test_worker.py`, `test_token_propagation.py`, `test_streaming/test_engine.py`, `test_api_indexing.py`, `test_agentic/test_tools.py`) must also be rewritten — so the rewrite must cover `tests/` too, not just `src/`.
+
 ```bash
 cd $PY
-grep -rl "ennam_kg\.\(parsers\|indexer\|kg_client\)" packages/ennam-kg-indexer/tests \
+# Service package (src/), workspace-root script (../scripts/), AND remaining service tests (tests/)
+grep -rl "ennam_kg\.\(parsers\|indexer\|kg_client\)" src/ ../scripts/ tests/ \
+  | xargs sed -i '' \
+    -e 's/ennam_kg\.parsers/ennam_kg_indexer.parsers/g' \
+    -e 's/ennam_kg\.indexer/ennam_kg_indexer.indexer/g' \
+    -e 's/ennam_kg\.kg_client/ennam_kg_indexer.kg_client/g'
+
+# The moved package (src + tests)
+grep -rl "ennam_kg\.\(parsers\|indexer\|kg_client\)" packages/ennam-kg-indexer \
   | xargs sed -i '' \
     -e 's/ennam_kg\.parsers/ennam_kg_indexer.parsers/g' \
     -e 's/ennam_kg\.indexer/ennam_kg_indexer.indexer/g' \
     -e 's/ennam_kg\.kg_client/ennam_kg_indexer.kg_client/g'
 ```
+
+Verify the OLD paths are fully gone from service code, scripts, and service tests:
+Run: `cd $PY && grep -rn "ennam_kg\.parsers\|ennam_kg\.indexer\|ennam_kg\.kg_client" src/ ../scripts/ tests/`
+Expected: no output.
 
 - [ ] **Step 8: Update the root `pyproject.toml` (workspace + deps)**
 
@@ -574,9 +578,9 @@ Expected: `import ok`, and all three "absent: OK" lines print (the heavy deps di
 
 ```bash
 cd $PY
-grep -rn "from ennam_kg.kg_client\|from ennam_kg.indexer\|from ennam_kg.parsers\|ennam_kg\.kg_client\|ennam_kg\.indexer\|ennam_kg\.parsers" src/ ../scripts/ packages/ennam-kg-indexer/src
+grep -rn "from ennam_kg.kg_client\|from ennam_kg.indexer\|from ennam_kg.parsers\|ennam_kg\.kg_client\|ennam_kg\.indexer\|ennam_kg\.parsers" src/ ../scripts/ tests/ packages/ennam-kg-indexer
 ```
-Expected: no output.
+Expected: no output (covers service code, root script, remaining service tests, and the whole moved package).
 
 - [ ] **Step 3: Bring up the dev stack and smoke-test indexing end-to-end**
 
@@ -620,16 +624,17 @@ git add -A && git commit -m "fix: address indexer-split verification findings"
 | 1. Decouple `embed_texts` from config | Task 1 |
 | 2. Drop `config`/`Settings` + both callers | Task 2 |
 | 3. Move three directories | Task 4 (Step 2) |
-| 4. Rewrite imports inside moved modules | Task 4 (Step 3) |
-| 5. Rewrite ALL ~15 service imports | Task 4 (Step 6) |
-| 6. Update worker.py + api/indexing.py indexer imports | Task 4 (Step 6 sed covers them) |
+| 4. Rewrite imports inside moved modules | Task 4 (Step 3, plus Step 7 package pass for moved tests) |
+| 5. Rewrite ALL ~15 service imports | Task 4 (Step 7, over `src/`) |
+| 6. Update worker.py + api/indexing.py indexer imports | Task 4 (Step 7 sed covers them) |
 | 7. Remove dead summarizer wiring | Task 3 |
-| 8. Rewrite root script consumer | Task 4 (Step 6 includes `../scripts/`) |
+| 8. Rewrite root script consumer | Task 4 (Step 7 includes `../scripts/`) |
+| 8b. Rewrite remaining SERVICE tests that import moved modules (test_worker, test_token_propagation, test_streaming/test_engine, test_api_indexing, test_agentic/test_tools) | Task 4 (Step 7 includes `tests/`) |
 | 9. Set up uv workspace | Task 4 (Steps 5, 8) |
 | 10. Regenerate uv.lock | Task 4 (Step 9) |
 | 11. Rewrite Dockerfile | Task 5 |
-| 12. Move tests | Task 4 (Step 7) |
-| Verification: clean-room install, no old paths, no regression | Task 6 |
+| 12. Move tests (incl. `tests/kg_client/` + `tests/test_kg_client/`) | Task 4 (Step 6) |
+| Verification: clean-room install, no old paths (src+scripts+tests+package), no regression | Task 6 |
 
 ### Placeholder scan
 
