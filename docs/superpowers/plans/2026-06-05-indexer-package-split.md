@@ -465,18 +465,22 @@ Expected: `uv.lock` updates to a workspace-aware lock with both members. No reso
 
 ```bash
 cd $PY
+# clear stale bytecode left behind by git mv (gitignored __pycache__ does not move)
+find . -name __pycache__ -type d -prune -exec rm -rf {} +
 uv sync
 uv run pytest packages/ennam-kg-indexer/tests -q
 ```
-Expected: all moved indexer tests pass under the new `ennam_kg_indexer` namespace.
+Expected: all moved indexer tests pass under the new `ennam_kg_indexer` namespace. (An explicit path is required because the root `[tool.pytest.ini_options] testpaths = ["tests"]` would otherwise skip the package tests.)
 
-- [ ] **Step 11: Run the FULL suite (service + indexer)**
+- [ ] **Step 11: Run BOTH suites green (service + indexer)**
+
+The root config has `testpaths = ["tests"]`, so a bare `pytest` runs only the SERVICE suite. Pass both paths explicitly so a single invocation covers everything (no basename collisions exist across the two trees — the moved files have left `tests/`):
 
 ```bash
 cd $PY
-uv run pytest -q
+uv run pytest tests packages/ennam-kg-indexer/tests -q
 ```
-Expected: full suite green — service imports resolve `ennam_kg_indexer.*`, no `ModuleNotFoundError`, no behavior regression.
+Expected: both suites green — service imports resolve `ennam_kg_indexer.*`, no `ModuleNotFoundError`, no behavior regression, and the indexer tests pass too.
 
 - [ ] **Step 12: Verify the service no longer hosts the moved modules**
 
