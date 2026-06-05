@@ -1,10 +1,17 @@
 # MCP `kg_index_source` Tool — Design Spec
 
 **Date**: 2026-06-05
-**Status**: Approved (design)
+**Status**: Approved (design) — **BLOCKED-ON: MCP stdio serve loop**
 **Goal**: Add MCP tools that let ANY agent (any model / MCP host, including non-shell ones) trigger local code indexing through the `kg-bridge`, by shelling out to the locally-installed `ennam-kg-index` CLI. Indexing runs asynchronously so it never hits MCP host tool-call timeouts.
 
-**Depends on**: `2026-06-05-indexer-cli-packaging-design.md` (DONE — `ennam-kg-index` CLI exists and is verified).
+**Depends on**:
+- `2026-06-05-indexer-cli-packaging-design.md` (DONE — `ennam-kg-index` CLI exists and is verified).
+- **MCP stdio serve loop (NOT YET IMPLEMENTED — hard blocker).** Investigation (2026-06-05) found the `kg-bridge` binary has no `serve` command and the `internal/bridge` package has no stdio JSON-RPC server: `HandleToolCall`/`ListTools` have no production caller, there is no `os.Stdin`/JSON-RPC loop, and no MCP library in `go.mod`. The package holds only building blocks (schemas, validation, HTTP-forward client, response formatting). This design assumes a live MCP server hosting `HandleToolCall`; that server must be built first (its own spec: "MCP bridge stdio serve loop", which completes BA-002 Phase 1). Until then, `kg_index_source` cannot be reached by any agent.
+
+> **Corrections applied after code review (2026-06-05):**
+> - `job_id` is generated with `crypto/rand` (the repo has **no** uuid dependency; `crypto/rand` is the established ID pattern — see `internal/middleware/requestid.go`, `internal/models/apikey.go`), not a uuid library.
+> - The `project_id` fallback uses the existing bridge config field **`default_project_id`** (`DefaultProjectID` in `internal/bridge/init.go`).
+> - `indexer_cli_path` must be added as a new field to the bridge `Config` struct (yaml tag) in `internal/bridge/init.go`.
 
 ---
 
@@ -110,7 +117,7 @@ type indexJob struct {
 jobs map[string]*indexJob
 mu   sync.Mutex
 ```
-- `kg_index_source`: generate `job_id` (uuid), set `jobs[job_id] = {running}`, launch `exec.CommandContext(ctx, cli, args...)` in a **goroutine** with stdout+stderr captured, return `job_id` immediately.
+- `kg_index_source`: generate `job_id` = `"idx-" + hex(crypto/rand 8 bytes)` (no uuid dep in repo), set `jobs[job_id] = {running}`, launch `exec.CommandContext(ctx, cli, args...)` in a **goroutine** with stdout+stderr captured, return `job_id` immediately.
 - On subprocess exit: exit 0 → parse stdout JSON → `{done, summary}`; exit ≠ 0 → `{error, stderr tail}`; unparseable stdout → `{error, "could not parse indexer output"}`.
 - **Timeout backstop:** `ctx` carries a configurable deadline (default 30 min). Async, so it never blocks the agent; the deadline only prevents a hung subprocess from living forever.
 - `kg_index_status`: read `jobs[job_id]` under the mutex.
