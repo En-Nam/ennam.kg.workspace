@@ -84,25 +84,35 @@ ennam-kg-index --path /tmp/clone-abc \
 
 > **Critical KG-system safety guarantee:** code nodes share a project with human-authored knowledge nodes (decision/concept/requirement/…). A full re-index **must never archive human nodes** — only code nodes (`created_by == "python-indexer"`).
 
-### 2.1 Repo-relative `file_path`
+### 2.1 Repo-relative `file_path` — normalize on the Symbol, EARLY
 
-Parsers must read files by their **physical** path (`file_path.read_bytes()`), so relativization happens **after** parsing, in the extractor. `NodeExtractor.symbol_to_node` gains two distinct inputs:
+> **Critical (found in review):** relativization must NOT happen inside `symbol_to_node`. `discover_files` calls `root.resolve()`, so `symbol.file_path` is absolute. The engine builds `node_id_map` keys from the node **payload** (`props.file_path`), while `extract_edges` builds keys directly from `symbol.file_path`. If only `symbol_to_node` relativized, `node_id_map` keys would be relative but edge-lookup keys absolute → **all edges silently fail to create**. The two must agree.
+
+**Fix:** normalize `file_path` to repo-relative **once, on the Symbol objects in `engine._process_files`, immediately after parsing and before BOTH `symbol_to_node` and `extract_edges`.** After this step every downstream consumer (payload keys, `node_id_map`, edge keys) sees the same relative path.
 
 ```python
-def symbol_to_node(self, symbol, project_id, *, physical_root: str, repo_key: str) -> dict:
-    ...
-    rel_path = os.path.relpath(symbol.file_path, physical_root)  # stable across checkouts
+# in IndexingEngine._process_files, after parsing all_symbols, before extraction:
+resolved_root = Path(repo_path).resolve()
+for s in all_symbols:
+    s.file_path = os.path.relpath(s.file_path, resolved_root)   # Symbol.file_path is now repo-relative
+```
+
+`NodeExtractor.symbol_to_node` then changes ONLY to store the `repo_key` (it already stores `symbol.file_path`, which is now relative):
+
+```python
+def symbol_to_node(self, symbol, project_id, *, repo_key: str) -> dict:
     ...
     "properties": {
         ...
-        "file_path": rel_path,     # was: symbol.file_path (absolute)
-        "repo_path": repo_key,     # was: the absolute scan root; now the stable logical key
+        "file_path": symbol.file_path,   # already repo-relative (normalized in the engine)
+        "repo_path": repo_key,           # was: absolute scan root; now the stable logical key
         ...
     }
 ```
 
-- `physical_root` = the `--path` actually read from (used ONLY to compute the relative path).
+- The engine resolves `repo_path` once (`Path(repo_path).resolve()`) and uses that SAME resolved root both for discovery and for relativization, so a relative or unnormalized `--path` cannot cause a mismatch. (`discover_files` already resolves internally; the engine mirrors it for the relpath base.)
 - `repo_key` = the stable logical identity (`--repo-key`, default = `--path`), stored in the existing `properties.repo_path` field — **no schema change** (verified: no consumer reads `properties.repo_path` as a real filesystem path; the only `repo_path` reference elsewhere is the `IndexMessage` transport field in Go).
+- `extract_edges` is unchanged — it keeps reading `symbol.file_path`, which is now relative, so its keys match `node_id_map`.
 
 ### 2.2 Stable `repo_key` identity
 
@@ -133,6 +143,8 @@ async def incremental_scan(self, project_id, repo_path, changed_files, *, repo_k
 ```
 
 `repo_path` is the physical root (read + relativize). `repo_key` defaults to `repo_path` when omitted. Existing callers (`worker.py` mount path, `api/indexing.py` `/index` + `/index/batch`) keep working unchanged — they get `repo_key == repo_path`, preserving today's behavior modulo the relative-path migration (§4).
+
+**Incremental `changed_files` resolution (found in review):** the CLI receives `--changed-files` as **repo-relative** paths (Q3). `incremental_scan` currently does `Path(f)` directly, which would resolve relative to the process CWD — wrong. The engine must **join each changed file to the resolved `repo_path`** before parsing (`(resolved_root / f)`), so the parser opens the correct file. The same early normalization (§2.1) then turns `symbol.file_path` back to repo-relative for keys. For backward compatibility, if a caller passes already-absolute `changed_files` (the current worker/queue path sends absolute mount paths), join is a no-op (`resolved_root / abs == abs`), so existing behavior is preserved.
 
 ---
 
@@ -179,7 +191,8 @@ CLI and Docker are thin shells over the same `IndexingEngine` + `KGClient` + RES
 All tests live in `packages/ennam-kg-indexer/tests/`.
 
 - **CLI (`cli.py`)**: full vs incremental parsing; `--mode incremental` without `--changed-files` → exit `2`; missing `--project-id` → exit `2`; env-vs-flag precedence; unreachable API → exit `1` (pre-flight); non-existent `--path` → exit `1`.
-- **Extractor**: given `physical_root` + an absolute file path → `properties.file_path` is the correct repo-relative path; `properties.repo_path` equals the passed `repo_key`.
+- **Extractor**: after engine normalization, `properties.file_path` is the correct repo-relative path; `properties.repo_path` equals the passed `repo_key`.
+- **Edges stay intact after relativization (regression guard for the review finding)**: a full scan of a file with a parent→child containment (e.g. a class with a method) produces the containment edge — proving `node_id_map` keys (from payload) and `extract_edges` keys (from `symbol.file_path`) still agree once normalization happens early in `_process_files`. If relativization were done only in `symbol_to_node`, this test fails (0 edges).
 - **Differ — full (`archive_scope="repo"`)**: code node with matching `repo_key` absent from the new scan → archived (incl. a node whose whole file was deleted); a node with `created_by != "python-indexer"` (human knowledge) is **never** archived; a node with a different `repo_key` (another repo in the same project) is untouched.
 - **Differ — incremental (`archive_scope="file"`)**: per-file scope unchanged; only `--changed-files` nodes considered.
 - **Integration (the core "no accumulation" guarantee)**: `full_scan` twice with the same `repo_key`; second scan removes one symbol and adds two → the removed node is archived (not duplicated), the two new are created, and the active code-node count reflects the latest state (e.g. 100 → 101 active, never 201). Run from a *different* `physical_root` on the second pass to prove path-stability (relative keys still match).
