@@ -135,7 +135,15 @@ async def diff(self, project_id, new_symbols, file_paths, *,
 
 > **Human-node safety implementation:** the primary filter is `created_by == "python-indexer"`. `get_nodes` (via `POST /api/v1/query`) returns full node dicts including `created_by`. Belt-and-suspenders: nodes without a `properties.file_path` (all human knowledge nodes) are excluded regardless. Both conditions must hold for a node to be archive-eligible.
 
-### 2.4 Engine signatures (backward compatible)
+### 2.4 Edge semantics on re-index
+
+The user's "no accumulation" requirement names both nodes **and** edges (100 nodes / 19 edges). Edge behavior (verified against the schema):
+
+- **No duplicate edges across re-indexes.** `knowledge_edges` has `UNIQUE (source_id, target_id, edge_type)` (migration 000006). Re-creating an identical edge returns 409; the engine catches it and does not count or duplicate it. So edge count does not inflate on repeated scans.
+- **Orphan edges to archived nodes are NOT auto-archived (documented limitation).** When a symbol is deleted, its node is archived (§2.3) but edges previously created to/from it remain in the table. They are inert: any active-node graph view that filters to `status='active'` endpoints will not surface them, so the *visible* edge count still reflects the latest state.
+- **Explicit orphan-edge cleanup is OUT OF SCOPE** for this spec, consistent with the soft-archive decision (Q4). If a future need arises (e.g. the edge table growing or a view that doesn't filter archived endpoints), add an edge-archival pass keyed off the archived node ids — tracked as follow-up, not built here.
+
+### 2.5 Engine signatures (backward compatible)
 
 ```python
 async def full_scan(self, project_id, repo_path, *, repo_key: str | None = None) -> IndexResult
