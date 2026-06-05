@@ -431,7 +431,7 @@ func makeToolHandler(handler *MCPToolHandler, cfg BridgeConfig, toolName string)
 		}
 		result, errResp := handler.HandleToolCall(ctx, toolName, params)
 		if errResp != nil {
-			return nil, fmt.Errorf("%s", errResp.Error.Message) // protocol-level error
+			return nil, fmt.Errorf("%s", errResp.Message) // protocol-level error
 		}
 		return toCallToolResult(result), nil
 	}
@@ -464,7 +464,7 @@ func argsToMap(req *mcp.CallToolRequest) (map[string]interface{}, error) {
 var _ = os.Stderr
 ```
 
-> The `MCPErrorResponse` field path (`errResp.Error.Message`) must match the real struct — confirm from `mcpresponse.go` and adjust. The `_ = os.Stderr` line is a reminder marker; replace with real stderr logging if any is added (never `fmt.Print` to stdout in this file).
+> `MCPErrorResponse` is a flat struct `{Code int; Message string}` (verified, mcpresponse.go:56-58) — use `errResp.Message` (NOT `errResp.Error.Message`). The `_ = os.Stderr` line is a reminder marker; replace with real stderr logging if any is added (never `fmt.Print` to stdout in this file).
 
 - [ ] **Step 5: Run tests — expect PASS**
 
@@ -512,31 +512,23 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// fakeForwarder lets us drive makeToolHandler without a live API.
-// It records the params it received and returns a canned MCPToolResult.
-
 func TestStoreSession_InjectsSessionIDAndWritesFile(t *testing.T) {
-	// Arrange: a temp cwd so WriteSessionFile lands somewhere we can inspect.
-	tmp := t.TempDir()
-	orig, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(orig) })
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatal(err)
-	}
+	tmp := t.TempDir() // dir passed to dispatchStoreSession — no os.Chdir needed
 
 	var seenParams map[string]interface{}
 	result := &MCPToolResult{
 		Content: []MCPContent{{Type: "text", Text: `{"session":{"id":"ignored","started_at":"2026-06-05T00:00:00Z"}}`}},
 		IsError: false,
 	}
-	// dispatchStoreSession is the extracted unit that performs id-gen, forward, file write.
 	out, sessionID, err := dispatchStoreSession(
 		context.Background(),
 		map[string]interface{}{"project_id": "p1", "agent_name": "tester", "work_scope": "testing"},
 		BridgeConfig{ServerURL: "http://kg:8080"},
+		tmp,
 		func(_ context.Context, params map[string]interface{}) (*MCPToolResult, *MCPErrorResponse) {
 			seenParams = params
 			return result, nil
@@ -552,24 +544,14 @@ func TestStoreSession_InjectsSessionIDAndWritesFile(t *testing.T) {
 	if seenParams["session_id"] == nil || seenParams["session_id"] != sessionID {
 		t.Fatalf("session_id not injected; seen=%v generated=%v", seenParams["session_id"], sessionID)
 	}
-	// .kg_session written with the generated id
+	// .kg_session written with the generated id + server-provided started_at
 	data, err := os.ReadFile(filepath.Join(tmp, DefaultSessionFileName))
 	if err != nil {
 		t.Fatalf("session file not written: %v", err)
 	}
-	if !contains(string(data), sessionID) || !contains(string(data), "2026-06-05T00:00:00Z") {
+	if !strings.Contains(string(data), sessionID) || !strings.Contains(string(data), "2026-06-05T00:00:00Z") {
 		t.Fatalf("session file missing fields: %s", data)
 	}
-}
-
-func contains(s, sub string) bool { return len(s) >= len(sub) && (stringIndex(s, sub) >= 0) }
-func stringIndex(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 ```
 
@@ -583,14 +565,14 @@ Expected: FAIL — `dispatchStoreSession` undefined.
 Add to `serve.go`:
 
 ```go
-import "time" // add to the import block
-
 // forwardFunc abstracts HandleToolCall so the session logic is unit-testable.
 type forwardFunc func(ctx context.Context, params map[string]interface{}) (*MCPToolResult, *MCPErrorResponse)
 
 // dispatchStoreSession generates a session_id, injects it, forwards, and on
-// success writes the .kg_session file. Returns the result and the generated id.
-func dispatchStoreSession(ctx context.Context, params map[string]interface{}, cfg BridgeConfig, forward forwardFunc) (*mcp.CallToolResult, string, error) {
+// success writes the .kg_session file into dir. Returns the result and the id.
+// (dir is passed in — production uses "." = the bridge cwd; tests pass a temp dir,
+// avoiding fragile process-global os.Chdir.)
+func dispatchStoreSession(ctx context.Context, params map[string]interface{}, cfg BridgeConfig, dir string, forward forwardFunc) (*mcp.CallToolResult, string, error) {
 	sessionID, err := newUUIDv4()
 	if err != nil {
 		return nil, "", err
@@ -599,11 +581,11 @@ func dispatchStoreSession(ctx context.Context, params map[string]interface{}, cf
 
 	result, errResp := forward(ctx, params)
 	if errResp != nil {
-		return nil, sessionID, fmt.Errorf("%s", errResp.Error.Message)
+		return nil, sessionID, fmt.Errorf("%s", errResp.Message)
 	}
 	if !result.IsError {
 		sf := buildSessionFile(params, result, sessionID, cfg.ServerURL)
-		if _, werr := WriteSessionFile(".", sf); werr != nil {
+		if _, werr := WriteSessionFile(dir, sf); werr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to write %s: %v\n", DefaultSessionFileName, werr)
 		}
 	}
@@ -612,14 +594,15 @@ func dispatchStoreSession(ctx context.Context, params map[string]interface{}, cf
 
 // buildSessionFile assembles the .kg_session contents from generated id (SessionID),
 // request params, the create-session response (started_at, nested under "session"),
-// and config (server_url).
+// and config (server_url). If started_at can't be parsed it is left empty —
+// WriteSessionFile defaults an empty StartedAt to time.Now() (session.go:64-65).
 func buildSessionFile(params map[string]interface{}, result *MCPToolResult, sessionID, serverURL string) SessionFile {
-	startedAt := time.Now().UTC().Format(time.RFC3339)
+	startedAt := ""
 	if len(result.Content) > 0 {
 		var body map[string]any
 		if err := json.Unmarshal([]byte(result.Content[0].Text), &body); err == nil {
 			if sess, ok := body["session"].(map[string]any); ok {
-				if s, ok := sess["started_at"].(string); ok && s != "" {
+				if s, ok := sess["started_at"].(string); ok {
 					startedAt = s
 				}
 			}
@@ -661,12 +644,12 @@ func makeToolHandler(handler *MCPToolHandler, cfg BridgeConfig, toolName string)
 		}
 		switch toolName {
 		case "kg_store_session":
-			out, _, derr := dispatchStoreSession(ctx, params, cfg, forward)
+			out, _, derr := dispatchStoreSession(ctx, params, cfg, ".", forward)
 			return out, derr
 		case "kg_end_session":
 			result, errResp := forward(ctx, params)
 			if errResp != nil {
-				return nil, fmt.Errorf("%s", errResp.Error.Message)
+				return nil, fmt.Errorf("%s", errResp.Message)
 			}
 			if !result.IsError {
 				if rerr := RemoveSessionFile("."); rerr != nil {
@@ -677,7 +660,7 @@ func makeToolHandler(handler *MCPToolHandler, cfg BridgeConfig, toolName string)
 		default:
 			result, errResp := forward(ctx, params)
 			if errResp != nil {
-				return nil, fmt.Errorf("%s", errResp.Error.Message)
+				return nil, fmt.Errorf("%s", errResp.Message)
 			}
 			return toCallToolResult(result), nil
 		}
