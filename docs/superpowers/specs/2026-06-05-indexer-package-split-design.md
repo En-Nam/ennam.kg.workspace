@@ -48,36 +48,32 @@ So the core indexer is genuinely standalone and AI-free **once `embed_texts` and
 
 ## Target Structure
 
+**Layout decision (refined from approval):** Only the indexer is extracted into `packages/`. The **service stays in place** at `src/ennam_kg/` and the repo root `pyproject.toml` doubles as both the service package definition AND the uv workspace root. Rationale: the user's constraint is "do not break existing features" — keeping the service physically untouched minimizes the breakage surface (only ~17 import lines change, no 20+ module relocation), while still achieving the goal (`pip install ennam-kg-indexer` works standalone because it has its own `pyproject.toml`). uv workspaces support the root package being a workspace member.
+
 ```
 ennam.kg.python/
-├── pyproject.toml                  # uv workspace root
-├── packages/
-│   ├── ennam-kg-indexer/           # NEW core package (lightweight, publishable)
-│   │   ├── pyproject.toml
-│   │   └── src/ennam_kg_indexer/
-│   │       ├── __init__.py         # public API: IndexingEngine, IndexResult, KGClient
-│   │       ├── parsers/            # MOVED from ennam_kg/parsers/
-│   │       │   ├── base.py         (Symbol, SymbolKind, BaseParser)
-│   │       │   ├── typescript.py
-│   │       │   ├── python_lang.py
-│   │       │   ├── dart.py
-│   │       │   └── __init__.py     (get_parser registry)
-│   │       ├── indexer/            # MOVED from ennam_kg/indexer/
-│   │       │   ├── scanner.py      (discover_files, filter_changed)
-│   │       │   ├── extractor.py    (NodeExtractor)
-│   │       │   ├── differ.py       (IndexDiffer)
-│   │       │   └── engine.py       (IndexingEngine, IndexResult)
-│   │       └── kg_client/          # MOVED from ennam_kg/kg_client/
-│   │           ├── client.py       (KGClient — httpx push)
-│   │           └── models.py
-│   └── ennam-kg/                   # service package (everything else)
-│       ├── pyproject.toml          # depends on ennam-kg-indexer
-│       └── src/ennam_kg/
-│           ├── worker.py           # imports from ennam_kg_indexer
-│           ├── main.py, api/
-│           ├── queue/, ingestion/, nl_query/, streaming/,
-│           ├── kg_generator/, benchmark/, agentic/, embeddings/,
-│           ├── ai_client/, db_client/, summarizer/, config.py, crypto.py
+├── pyproject.toml                  # SERVICE package + [tool.uv.workspace] root
+├── uv.lock                         # regenerated (workspace-aware)
+├── Dockerfile                      # minor update (COPY packages/ + lock)
+├── src/ennam_kg/                   # SERVICE — stays put, NOT relocated
+│   ├── worker.py                   # imports IndexingEngine from ennam_kg_indexer
+│   ├── main.py, api/, queue/, ingestion/, nl_query/, streaming/,
+│   ├── kg_generator/, benchmark/, agentic/, embeddings/,
+│   ├── ai_client/, db_client/, summarizer/, config.py, crypto.py
+│   └── (parsers/, indexer/, kg_client/ REMOVED — moved to indexer pkg)
+├── tests/                          # service tests stay; indexer tests move
+└── packages/
+    └── ennam-kg-indexer/           # NEW core package (lightweight, publishable)
+        ├── pyproject.toml
+        ├── tests/                  # moved parser/indexer/kg_client tests
+        └── src/ennam_kg_indexer/
+            ├── __init__.py         # public API: IndexingEngine, IndexResult, KGClient
+            ├── parsers/            # MOVED from ennam_kg/parsers/
+            │   ├── base.py  typescript.py  python_lang.py  dart.py  __init__.py
+            ├── indexer/            # MOVED from ennam_kg/indexer/
+            │   ├── scanner.py  extractor.py  differ.py  engine.py
+            └── kg_client/          # MOVED from ennam_kg/kg_client/
+                ├── client.py  models.py
 ```
 
 ### What moves to `ennam-kg-indexer`
@@ -119,12 +115,16 @@ dependencies = [
 
 No `anthropic`, `fastapi`, `redis`, `sentence-transformers`, `pymssql`, `pypdf`, `uvicorn`, `pydantic-settings`.
 
-### `ennam-kg/pyproject.toml` (service)
+### Root `pyproject.toml` (service package **and** workspace root)
+
+The existing `ennam.kg.python/pyproject.toml` stays as the service package (name `ennam-kg`, `src/ennam_kg`). It gains a workspace declaration and a dependency on the indexer. `tree-sitter*` and `pathspec` are REMOVED from the service deps (they come transitively via the indexer); `anthropic`, `fastapi`, `redis`, etc. stay.
 
 ```toml
 [project]
+name = "ennam-kg"
+# ... existing fields ...
 dependencies = [
-    "ennam-kg-indexer",   # workspace dependency
+    "ennam-kg-indexer",          # workspace dependency (pulls tree-sitter*, pathspec, httpx, pydantic)
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "pydantic-settings>=2.7",
@@ -138,18 +138,17 @@ dependencies = [
     "pypdf>=5.0",
     "python-docx>=1.1",
     "openpyxl>=3.1",
-    # httpx, pydantic come transitively via ennam-kg-indexer
+    # REMOVED (now transitive via ennam-kg-indexer): tree-sitter*, pathspec, httpx
 ]
+
+[tool.uv.workspace]
+members = ["packages/ennam-kg-indexer"]   # root itself is a member by virtue of [project]
 
 [tool.uv.sources]
 ennam-kg-indexer = { workspace = true }
-```
 
-### Workspace root `pyproject.toml`
-
-```toml
-[tool.uv.workspace]
-members = ["packages/ennam-kg-indexer", "packages/ennam-kg"]
+[project.scripts]
+ennam-kg-worker = "ennam_kg.worker:main"   # unchanged
 ```
 
 ---
@@ -217,24 +216,27 @@ result = await engine.full_scan(project_id, "/path/to/repo")
 
 The current [`Dockerfile`](../../ennam.kg.python/Dockerfile) is single-package: multi-stage, `COPY src/ src/`, `uv sync --frozen --no-dev`, `PYTHONPATH=/app/src`, `CMD uvicorn ennam_kg.main:app`. `docker-compose.yml` runs **two** services from this image — `indexer` (`uvicorn ennam_kg.main:app`) and `worker` (`python -m ennam_kg.worker`).
 
-After the split, the build context still installs the **service** package (which pulls the indexer via the workspace), so both runtime commands are unchanged. Concrete changes:
+With Layout 1, the service still lives at `src/ennam_kg/`; only the indexer is added under `packages/`. The builder must copy BOTH `src/` and `packages/` before `uv sync`. Concrete changes:
 
 ```dockerfile
 # builder stage
 COPY pyproject.toml uv.lock* ./
-COPY packages/ packages/          # was: COPY src/ src/
-RUN uv sync --frozen --no-dev     # resolves the whole workspace
+COPY packages/ packages/          # NEW — indexer workspace member (must come before sync)
+COPY src/ src/                    # unchanged — service stays here
+RUN uv sync --frozen --no-dev     # resolves the whole workspace (service + indexer)
 
 # runtime stage
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/packages /app/packages
-# Package is installed into the venv (editable/wheel) — drop PYTHONPATH=/app/src.
-# If PYTHONPATH is kept, point it at both: /app/packages/ennam-kg/src:/app/packages/ennam-kg-indexer/src
+COPY --from=builder /app/src /app/src           # unchanged
+COPY --from=builder /app/packages /app/packages # NEW
+# The indexer is installed into the venv (editable), so importable without PYTHONPATH tweaks.
+# Existing PYTHONPATH=/app/src stays valid for the service; the indexer resolves via the venv.
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src"
 CMD ["uvicorn", "ennam_kg.main:app", "--host", "0.0.0.0", "--port", "8081"]  # unchanged
 ```
 
-The `worker` service's `command: ["python", "-m", "ennam_kg.worker"]` in `docker-compose.yml` is unchanged. Verify both `import ennam_kg.main` and `import ennam_kg_indexer` resolve inside the built image.
+Both `docker-compose.yml` service commands (`uvicorn ennam_kg.main:app` for `indexer`, `python -m ennam_kg.worker` for `worker`) are unchanged. Verify both `import ennam_kg.main` and `import ennam_kg_indexer` resolve inside the built image.
 
 ---
 
