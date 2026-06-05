@@ -354,6 +354,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/mcp/jsonschema"
@@ -399,7 +401,10 @@ func RunServe(_ []string) error {
 	if err := registerTools(server, handler, cfg); err != nil {
 		return err
 	}
-	return server.Run(context.Background(), &mcp.StdioTransport{})
+	// Clean shutdown on SIGINT/SIGTERM; Run also returns on stdin EOF (host disconnect).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
 // registerTools binds every tool from the schema registry to the SDK server.
@@ -765,6 +770,74 @@ func TestServe_ListTools_E2E(t *testing.T) {
 
 Run: `cd $GO && go test ./internal/bridge/ -run TestServe_ListTools_E2E -v`
 Expected: PASS — handshake + tools/list return all registered tools.
+
+- [ ] **Step 2b: Add a `tools/call` integration test (catches schema-validation divergence)**
+
+`tools/list` does not exercise the call path. The round-tripped input schema (`buildInputSchema` map → `jsonschema.Schema`) could diverge and make the SDK reject otherwise-valid calls. This test drives a real `tools/call` through the SDK against a stubbed Go API, proving: SDK arg validation → dispatch → `HandleToolCall` → client HTTP → result mapping. Add to `serve_e2e_test.go`:
+
+```go
+import (
+	"net/http"
+	"net/http/httptest"
+)
+
+func TestServe_CallTool_E2E(t *testing.T) {
+	ctx := context.Background()
+
+	// Stub the Go API: any request returns a canned search payload.
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"filtered_nodes":[{"id":"n1","title":"hit"}],"total_count":1}`))
+	}))
+	defer backend.Close()
+
+	client, err := NewClient(backend.URL, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewMCPToolHandler(client)
+	server := mcp.NewServer(&mcp.Implementation{Name: "ennam-kg", Version: "v1"}, nil)
+	if err := registerTools(server, handler, BridgeConfig{ServerURL: backend.URL}); err != nil {
+		t.Fatalf("registerTools: %v", err)
+	}
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	go func() { _ = server.Run(ctx, serverTransport) }()
+
+	c := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v1"}, nil)
+	session, err := c.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	defer session.Close()
+
+	// kg_search requires project_id (UUID format) + query — supply schema-valid args.
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "kg_search",
+		Arguments: map[string]any{
+			"project_id": "11111111-1111-4111-8111-111111111111",
+			"query":      "anything",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool failed (schema validation or transport?): %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("tool returned error result: %+v", res.Content)
+	}
+	if len(res.Content) == 0 {
+		t.Fatal("expected non-empty content from forwarded API response")
+	}
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok || !strings.Contains(tc.Text, "hit") {
+		t.Fatalf("forwarded API body not in result: %#v", res.Content[0])
+	}
+}
+```
+(Requires `strings` + `net/http` + `net/http/httptest` imports in `serve_e2e_test.go`.)
+
+Run: `cd $GO && go test ./internal/bridge/ -run TestServe_CallTool_E2E -v`
+Expected: PASS — a schema-valid `kg_search` flows through to the stub and the body round-trips into the tool result. **If this fails at `CallTool` with a validation error, the schema round-trip diverged — fix `toMCPInputSchema` (or relax the registered schema) before proceeding.**
 
 - [ ] **Step 3: Assert stdout discipline in serve.go**
 
