@@ -89,13 +89,15 @@ onToolCall(name, rawArgs):
 
 | Field | Source |
 |-------|--------|
-| `SessionID` | HTTP response (the created session's `id`) |
-| `StartedAt` | HTTP response (`started_at`) |
+| `SessionID` | created-session response, field `id` |
+| `StartedAt` | created-session response, field `started_at` |
 | `ProjectID` | request params (`project_id`) |
 | `Agent` | request params (`agent_name`) |
 | `Scope` | request params (`work_scope`, optional) |
 | `TaskDescription` | request params (`task_description`, optional) |
 | `ServerURL` | resolved bridge config `server_url` |
+
+> **How to read the response (verified against `mcpresponse.go`):** `HandleToolCall` does NOT expose the raw API body — it returns `*MCPToolResult` whose `Content[0].Text` is `json.MarshalIndent` of the response body (mcpresponse.go:124-136). So `buildSessionFile` must **`json.Unmarshal(result.Content[0].Text)` back into a `map[string]any`** and read `["id"]` / `["started_at"]`. (Confirm the create-session API returns those exact field names during implementation; if the body nests the session under a key, adjust the path. If parsing fails, skip the file write and log to stderr — do not fail the tool call.)
 
 `cwd()` = `os.Getwd()` of the bridge process. The bridge runs as a subprocess of the MCP host, inheriting the host's working directory (the agent's project directory) — which is where git pre-commit hooks expect `.kg_session` (BR-004.3).
 
@@ -108,6 +110,16 @@ onToolCall(name, rawArgs):
 This preserves BA-002's two-tier error distinction.
 
 ---
+
+## stdout discipline (CRITICAL for stdio MCP)
+
+MCP stdio uses **stdout as the JSON-RPC channel**. A single stray write to stdout (a stray `fmt.Print`, a library log line) corrupts the protocol stream and breaks every client. Requirements:
+
+- During `serve`, **stdout is owned exclusively by the MCP server** (the SDK, or the hand-rolled loop) for protocol frames.
+- ALL diagnostics, logs, and errors from `RunServe`, config loading, the dispatch, and session-file handling go to **stderr** (`fmt.Fprintln(os.Stderr, ...)` / `slog` with a stderr handler).
+- The existing `fmt.Printf`/`fmt.Println` calls in `init.go` are fine — they run only under the `init` command, never under `serve`. The serve code path must add **no** stdout writes.
+- **SDK gate addition:** verify the chosen SDK writes protocol to stdout and its own diagnostics to stderr (or makes the log destination configurable). Reject an SDK that logs to stdout.
+- A test asserts the `tools/list` E2E smoke produces **only** valid JSON-RPC on stdout (no extra lines).
 
 ## Error handling
 
