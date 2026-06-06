@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-07
 **Status**: Approved (design)
-**Goal**: Define the end-to-end flow for **LAAM (a satellite runtime) to persist "things to remember" as `.md` files into the central Ennam KG, and recall them semantically** — using the existing Phase 6 ingestion + decomposition + embedding pipeline. This is an **integration / convention spec**, not a new parser: the markdown parsing and embedding mechanisms already exist (see "Already Built").
+**Goal**: Define the end-to-end flow for **LAAM (a satellite runtime) to persist "things to remember" as `.md` files into the central Ennam KG, and recall them semantically**. The **ingestion + decomposition + embedding** half is reused from the existing Phase 6 pipeline (no new parser — see "Already Built"); the **semantic recall** half is **not yet wired and is the substantive work this spec scopes** (see "NOT built — the recall half is the real work"). Net: this is part integration spec, part build spec for recall + small ingest plumbing.
 
 **Depends on (all DONE):** BA-022 (Unified Ingestion / draft nodes), BA-023 (file adapters), BA-024 (public ingest API + MCP), BA-025 (document decomposition + section embeddings, Phase 6.2).
 
@@ -18,13 +18,21 @@ The full parse → node → embed → recall chain exists. This spec **wires LAA
 |-------|-----------|-------|
 | Markdown parse | `ennam.kg.python/.../ingestion/pipeline/document_tree.py::parse_markdown_sections` | Deterministic, PageIndex-style section split by heading boundaries |
 | File extraction | `ingestion/adapters/files.py::extract_file_text` | `.md` → `("…", "markdown")`; also pdf/docx/xlsx/csv |
-| Decompose → nodes | `ingestion/pipeline/decompose.py::decompose_document` | A `document` hub → `document_section` child nodes (Phase 6.2 / BA-025) |
-| Embedding | `decompose.py` → `LocalEmbeddingModel` (sentence-transformers, **384-dim**) → `kg.upsert_node_embeddings` | Stored in `knowledge_node_embeddings (embedding vector(384))`, HNSW cosine index (migration 000055) |
+| Decompose → nodes | `ingestion/pipeline/decompose.py::decompose_document` | hub (`document` **or `external`** — see node-type note) → `document_section` child nodes (Phase 6.2 / BA-025). Decompose runs for node_type ∈ {`document`,`external`} AND content_format ∈ `_TEXT_FORMATS` = {`md`,`markdown`,`txt`,`text`,`plain_text`} (verified — markdown qualifies). |
+| Embedding (ingest side) | `decompose.py` → `LocalEmbeddingModel` (sentence-transformers, **384-dim**) → `kg.upsert_node_embeddings` | Stored in `knowledge_node_embeddings (embedding vector(384))`, HNSW cosine index (migration 000055) |
+| Section vector store + search primitive | `internal/store/node_embedding.go::SemanticSearch(projectID, queryVec, …)` + `search.go` semantic branch (requires `semantic=true` **and a caller-supplied `query_embedding []float32`**) | The store-level search exists, but the caller must pass a **pre-computed 384-dim vector** |
 | Ingest entry (MCP) | bridge tool `kg_ingest_node` (`title`, `content_raw`, `source_id`, `content_format`, `auto_approve`) + `kg_ingest_batch` | Forwards to public ingest API |
-| Ingest entry (HTTP) | `POST /api/v1/projects/{id}/ingest/upload` (multipart) | What `scripts/ingest-md-via-api.sh` uses |
 | Dedup on re-send | `draft_nodes` `ON CONFLICT (project_id, source_type, source_id) DO UPDATE` | Re-sending the same `source_id` **updates in place** (status `created`→`updated`), never duplicates |
 | Processing trigger | `kg_process_drafts` MCP tool / `ingestion.auto_queue_processing` setting | Runs decompose + embed |
-| Semantic recall | `internal/handler/search.go` → `NodeEmbeddingStore.SemanticSearch(QueryEmbedding, …)` (HNSW cosine) | `kg_search` returns semantically-near nodes |
+
+### NOT built — the recall half is the real work (verified 2026-06-07)
+
+The ingestion + embedding half above is built. **Semantic recall of those 384-dim section embeddings is NOT reachable today** — this is the substantive work this spec scopes, not a thin wrapper:
+
+- **`kg_search` and `kg_query` MCP tools are keyword/filter only** — neither exposes `semantic` or `query_embedding`. So an MCP agent (LAAM) cannot trigger the section vector search through them.
+- **Nothing produces the 384-dim query vector in a server- or MCP-reachable place.** `search.go`'s semantic branch needs a caller-supplied `query_embedding`; the only model that generates 384-dim vectors is the **Python** `LocalEmbeddingModel`.
+- **The one server-side query-embedding path is the wrong space:** `context_builder.go` embeds queries with `text-embedding-3-small` (**1536-dim**, OpenAI-compatible) and searches **table** embeddings (`EmbeddingStore`, migration 039) — a different model, dimension, AND store from the 384-dim section embeddings. It cannot be reused for section recall.
+- **`source_url` is not carried by the ingest path:** the `kg_ingest_node` schema and the Go `IngestItem` request struct have no `source_url` field (the `draft_nodes.source_url` column exists, but nothing threads a value into it from public ingest).
 
 ---
 
@@ -43,11 +51,11 @@ LAAM (satellite, MCP client)
 Go public ingest API → draft_nodes UPSERT (ON CONFLICT source_id → update)
   ▼  (processing trigger — see Decisions)
 Python decompose_document(draft):
-     parse_markdown_sections → document hub + document_section nodes
+     parse_markdown_sections → "external" hub (satellite_api maps to external) + document_section nodes
      LocalEmbeddingModel(384) → knowledge_node_embeddings (per section)
   ▼
-Recall: any agent → kg_search(query, semantic) → SemanticSearch over the 384-dim
-        section embeddings → returns the remembered sections.
+Recall (TO BUILD — see "NOT built"): query text → embed with the SAME 384-dim local model
+        → section SemanticSearch → remembered sections. No MCP-reachable path does this yet.
 ```
 
 ### Conventions (defined here)
@@ -55,8 +63,8 @@ Recall: any agent → kg_search(query, semantic) → SemanticSearch over the 384
 - **`source_id` scheme:** `laam:memory:<stable-key>` where `<stable-key>` is LAAM's own stable id for that memory (e.g. a note id or content slug). Re-sending an updated memory with the **same** `source_id` updates the draft in place (verified `ON CONFLICT` upsert), so LAAM memory does not accumulate duplicates — the knowledge analog of the indexer's "re-index = latest state".
 - **`source_type`:** `satellite_api` (`DraftSourceTypeSatelliteAPI`) — already what the public ingest path tags MCP/satellite submissions.
 - **`content_format`:** `"markdown"` — drives `extract_file_text`/section parsing.
-- **`source_url` (provenance):** `laam://memory/<id>` (or a hub URL) — a **pointer back to LAAM's own copy** of the original file. KG references where the original lives instead of storing the file blob (see "Transport: Path B, not A" for the rationale).
-- **Node types produced:** one `document` hub + N `document_section` nodes (one per heading section). Memory is recalled at **section** granularity (each section independently embedded), so LAAM should structure a memory file with meaningful `##` headings.
+- **`source_url` (provenance):** `laam://memory/<id>` (or a hub URL) — a **pointer back to LAAM's own copy** of the original file. KG references where the original lives instead of storing the file blob (see "Why Path B" for the rationale). **Build note:** the `kg_ingest_node` MCP schema and the Go `IngestItem` request do **not** currently carry `source_url` (only `draft_nodes.source_url` exists at the DB layer) — wiring it through is a small ingest-side addition this plan includes.
+- **Node types produced:** one **`external` hub** (because `resolve_node_type("satellite_api", …)` returns `external` — verified) + N `document_section` child nodes (decompose accepts `external` and runs for markdown). Memory is recalled at **section** granularity (each section independently embedded), so LAAM should structure a memory file with meaningful `##` headings. *(If an `external` hub is undesirable for memory and a `document` hub is preferred, that is a small `resolve_node_type` change — call it out in the plan; the section/embedding behavior is identical either way.)*
 - **`project_id`:** LAAM targets a dedicated memory project (e.g. a per-tenant or per-LAAM project UUID), passed by LAAM. Not hard-coded here.
 
 ### Decisions
@@ -86,7 +94,7 @@ KG's role in the system (per the platform/vertical-apps architecture: KG = the s
 | Artifact | Stored in | Durability |
 |----------|-----------|------------|
 | Raw markdown text | `draft_nodes.content_raw` (Postgres `TEXT`) — retained after processing (`processed_at` + `knowledge_node_id` set; draft not deleted) | DB volume |
-| Decomposed knowledge | `document` hub (`properties.document_tree`) + `document_section` nodes (`properties.content` ≤ 50k, `summary` ≤ 8k) | DB volume |
+| Decomposed knowledge | `external` hub (`properties.document_tree`) + `document_section` nodes (`properties.content` ≤ 50k, `summary` ≤ 8k) | DB volume |
 | Embeddings | `knowledge_node_embeddings` (`vector(384)`, HNSW cosine), one per section | DB volume |
 | Original file blob | **Not stored** (no `uploaded_files` row, nothing written to `./data/uploads`) | — |
 | Provenance | `draft_nodes.source_url` → LAAM's own copy | DB volume |
@@ -95,11 +103,17 @@ Everything the memory flow persists lives in **Postgres** → covered by the exi
 
 ---
 
-## Likely gap to build (to be confirmed in the plan)
+## Work to build (the recall half is the bulk; ingestion is reused as-is)
 
-Everything above is built **except** possibly a smooth single-call path. Today LAAM may need two MCP calls (`kg_ingest_node` → `kg_process_drafts`) unless `auto_queue_processing` is enabled. **Candidate (optional, decide in plan):** a thin convenience MCP tool `kg_remember(title, content, source_id, project_id)` that wraps ingest(markdown, auto_approve) + process in one call — the knowledge analog of `kg_index_source` for code. If `auto_queue_processing=true` makes a single `kg_ingest_node` sufficient, **no new tool is needed** (YAGNI) and this spec reduces to enabling that setting + documenting the convention.
+Ordered by importance. The plan should treat **recall** as the core deliverable — without it, embedded memories are write-only.
 
-**The plan's first task is to determine empirically which is true** (does `kg_ingest_node` + `auto_queue_processing` already produce recallable embedded sections in one call?), then either (a) document the existing one-call flow, or (b) add the thin `kg_remember` wrapper.
+1. **MCP-reachable semantic recall over section embeddings (CORE).** Provide a path where a text query is embedded with the **same 384-dim local model** used at ingest, then matched against `knowledge_node_embeddings` via `NodeEmbeddingStore.SemanticSearch`. Concretely, decide and spec one of:
+   - **(a) Recall lives in Python** (where the 384-dim `LocalEmbeddingModel` already is): a Python endpoint/tool embeds the query and calls the Go semantic-search store (or queries pgvector directly), exposed to LAAM via MCP. *Avoids re-implementing the model in Go; keeps model parity by construction.*
+   - **(b) Go embeds via a Python embedding endpoint:** extend `kg_search` (MCP + handler) to accept a text `query` + `semantic=true`, have the Go server call a Python `/embed` (384-dim) service, then run `SemanticSearch`. *Keeps recall on the existing kg_search tool but adds a Go→Python embed hop.*
+   - **Hard constraint (Q5):** whichever path, the query MUST be embedded by the **same model/dimension (384, sentence-transformers)** as ingestion. The existing `context_builder` path (1536-dim `text-embedding-3-small`, table store) is **not reusable** and must not be conflated.
+2. **`source_url` plumbing (small):** add `source_url` to the `kg_ingest_node` MCP schema + Go `IngestItem` + map to `draft.SourceURL`. Enables the provenance pointer.
+3. **One-call ingest+process (small/optional):** today LAAM needs `kg_ingest_node` then `kg_process_drafts` unless `ingestion.auto_queue_processing` is enabled. **Preferred:** enable `auto_queue_processing` so a single `kg_ingest_node` yields a recallable memory; only add a `kg_remember` convenience tool if a single call proves insufficient (YAGNI). The plan's first task verifies which.
+4. **(Decision) hub node_type:** accept `external` (current) or change `resolve_node_type` to emit `document` for satellite memory — cosmetic for recall; pick one.
 
 ---
 
@@ -107,18 +121,18 @@ Everything above is built **except** possibly a smooth single-call path. Today L
 
 - A markdown parser in the code indexer (`ennam-kg-indexer`) — wrong layer (would emit `architecture` nodes and duplicate this pipeline).
 - **Path A — storing the original file blob** (`POST /ingest/upload` → `./data/uploads` + `uploaded_files` + download/delete lifecycle). KG is not a file store for LAAM memory (see "Why Path B, not Path A"); LAAM keeps its own original, KG holds the knowledge + a `source_url` pointer. (The upload endpoint still exists for other use cases; it is just not the LAAM-memory path.)
-- New embedding infrastructure — `knowledge_node_embeddings` (384-dim, HNSW) and `LocalEmbeddingModel` already exist.
+- New embedding **storage** or the ingest-side embedding model — `knowledge_node_embeddings` (384-dim, HNSW) and the `LocalEmbeddingModel` already exist and are reused. *(Note: wiring the recall **query** embedding + MCP semantic-search path is explicitly IN scope — see "Work to build".)*
+- Changing the embedding dimension/model (stays 384-dim local; a different model is a separate migration + re-embed).
 - Re-specifying decomposition — BA-025 / `decompose.py` already define section decomposition + embeddings.
 - AI cross-source linking tuning (`cross_edges.py`) — available but not required for basic memory recall.
-- Changing the embedding model/dimension (stays 384-dim local; changing it is a separate migration).
 
 ---
 
 ## Verification (end-to-end, requires running stack)
 
 1. `kg_ingest_node` a small markdown memory (`content_format=markdown`, `source_id=laam:memory:test-1`, `auto_approve=true`) → returns a draft, status `created`.
-2. Ensure processing ran (auto-queue or `kg_process_drafts`) → assert `document` hub + ≥1 `document_section` nodes exist, and `knowledge_node_embeddings` has rows for them.
-3. `kg_search` with a query semantically related to a section → the section is returned (semantic recall works; confirms model parity).
-4. Re-`kg_ingest_node` the **same** `source_id` with edited content → draft status `updated`, sections refreshed, **no duplicate** document hub (dedup holds).
+2. Ensure processing ran (auto-queue or `kg_process_drafts`) → assert an **`external` hub** (or `document` if Q-hub changed) + ≥1 `document_section` nodes exist, and `knowledge_node_embeddings` has 384-dim rows for them.
+3. **Recall (the new path):** issue a text query semantically related to a section → the new recall path embeds it at **384-dim** and returns that section. Explicitly assert the query was embedded with the section model/dimension (NOT the 1536-dim table path).
+4. Re-`kg_ingest_node` the **same** `source_id` with edited content → draft status `updated`, sections refreshed, **no duplicate** hub (dedup holds).
 5. A query unrelated to any memory → does not spuriously return the memory (sanity).
-6. **Path B confirmed:** after ingest, **no `uploaded_files` row** exists and nothing was written to `./data/uploads`; the draft carries the `source_url` provenance pointer, and `draft_nodes.content_raw` holds the full markdown.
+6. **Path B confirmed:** after ingest, **no `uploaded_files` row** exists and nothing was written to `./data/uploads`; the draft carries the `source_url` provenance pointer (once plumbed), and `draft_nodes.content_raw` holds the full markdown.
