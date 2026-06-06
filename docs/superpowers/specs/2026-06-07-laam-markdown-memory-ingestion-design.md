@@ -36,7 +36,8 @@ LAAM (satellite, MCP client)
   │     title       = "<memory title>",
   │     content_raw = "<full .md content>",
   │     content_format = "markdown",
-  │     source_id   = "laam:memory:<stable-key>",   # dedup key
+  │     source_id   = "laam:memory:<stable-key>",   # dedup key → upsert
+  │     source_url  = "laam://memory/<id>",         # provenance pointer to LAAM's original
   │     auto_approve = true)
   ▼
 Go public ingest API → draft_nodes UPSERT (ON CONFLICT source_id → update)
@@ -54,6 +55,7 @@ Recall: any agent → kg_search(query, semantic) → SemanticSearch over the 384
 - **`source_id` scheme:** `laam:memory:<stable-key>` where `<stable-key>` is LAAM's own stable id for that memory (e.g. a note id or content slug). Re-sending an updated memory with the **same** `source_id` updates the draft in place (verified `ON CONFLICT` upsert), so LAAM memory does not accumulate duplicates — the knowledge analog of the indexer's "re-index = latest state".
 - **`source_type`:** `satellite_api` (`DraftSourceTypeSatelliteAPI`) — already what the public ingest path tags MCP/satellite submissions.
 - **`content_format`:** `"markdown"` — drives `extract_file_text`/section parsing.
+- **`source_url` (provenance):** `laam://memory/<id>` (or a hub URL) — a **pointer back to LAAM's own copy** of the original file. KG references where the original lives instead of storing the file blob (see "Transport: Path B, not A" for the rationale).
 - **Node types produced:** one `document` hub + N `document_section` nodes (one per heading section). Memory is recalled at **section** granularity (each section independently embedded), so LAAM should structure a memory file with meaningful `##` headings.
 - **`project_id`:** LAAM targets a dedicated memory project (e.g. a per-tenant or per-LAAM project UUID), passed by LAAM. Not hard-coded here.
 
@@ -66,6 +68,30 @@ Recall: any agent → kg_search(query, semantic) → SemanticSearch over the 384
 | Q3 | Draft review vs auto-approve? | **`auto_approve=true`** for LAAM memory (trusted satellite; no human gate per note). Memory is meant to be immediately recallable. |
 | Q4 | Processing trigger | **LAAM submits then triggers processing in the same interaction.** Two viable mechanisms — pick one in the plan: (a) enable `ingestion.auto_queue_processing` so ingest auto-enqueues decompose+embed; or (b) LAAM calls `kg_process_drafts` after `kg_ingest_node`. **(a) is preferred** so a single `kg_ingest_node` call yields a recallable memory without a second round-trip. |
 | Q5 | Embedding model parity | The **recall query must be embedded with the same 384-dim model** (`sentence-transformers`, `settings.embedding_model_name`) that `decompose.py` uses, or cosine search is meaningless. `kg_search`'s `QueryEmbedding` must come from that same model. This parity is a **hard requirement** the plan must verify end-to-end. |
+| Q6 | Transport: keep the original file (Path A `/ingest/upload` → disk) **or** text-only (Path B MCP `kg_ingest_node`)? | **Path B — MCP, text-only, with `source_url` provenance.** No file blob is stored; KG keeps the decomposed knowledge + a pointer to LAAM's original. Rationale below. |
+
+### Why Path B, not Path A (decision rationale)
+
+KG's role in the system (per the platform/vertical-apps architecture: KG = the small shared **single source of truth**, accessed via **MCP**) makes the text-only MCP path the right fit:
+
+1. **MCP is the system's contract.** KG is reached via MCP everywhere (`kg_query`, `kg_store_*`, `kg_get_context`), and the platform direction is to standardize satellite↔KG on MCP. `kg_ingest_node` rides that same channel; Path A's HTTP multipart upload is a second, off-contract ingress.
+2. **KG is a knowledge brain, not a file store.** Path A persists the original blob to disk (`./data/uploads` + `uploaded_files` + download/delete/retention/size limits), turning KG into a document-management system — scope creep beyond "single source of truth." What KG should own is the **distilled knowledge**: `document_section` nodes + embeddings + recall + cross-source links.
+3. **No data loss, lighter ops.** The raw markdown **text is still retained** in `draft_nodes.content_raw` (Postgres, safe under the DB volume) plus full per-section text in `document_section.properties.content` — so text-only is not lossy. Path B avoids an uploads disk volume, file GC, blob backup, and the download/delete lifecycle.
+4. **Provenance by reference, not by copy.** `draft_nodes.source_url` points back to LAAM's own copy. This is the correct "single source of truth" split: **LAAM is the source-of-record for its files; KG is the source-of-truth for the knowledge + links.** Each side owns its layer.
+
+**When Path A would be justified (not here):** a hard requirement to re-download the byte-exact original (audit / compliance / regulated provenance). For LAAM's "things to remember," that is the app's concern, not KG's — so Path A stays out of scope for this flow.
+
+### Storage & Retention (where a LAAM memory lives, Path B)
+
+| Artifact | Stored in | Durability |
+|----------|-----------|------------|
+| Raw markdown text | `draft_nodes.content_raw` (Postgres `TEXT`) — retained after processing (`processed_at` + `knowledge_node_id` set; draft not deleted) | DB volume |
+| Decomposed knowledge | `document` hub (`properties.document_tree`) + `document_section` nodes (`properties.content` ≤ 50k, `summary` ≤ 8k) | DB volume |
+| Embeddings | `knowledge_node_embeddings` (`vector(384)`, HNSW cosine), one per section | DB volume |
+| Original file blob | **Not stored** (no `uploaded_files` row, nothing written to `./data/uploads`) | — |
+| Provenance | `draft_nodes.source_url` → LAAM's own copy | DB volume |
+
+Everything the memory flow persists lives in **Postgres** → covered by the existing DB volume; **no separate uploads disk volume is needed** for this flow (that concern applied only to Path A, which is out of scope here).
 
 ---
 
@@ -80,6 +106,7 @@ Everything above is built **except** possibly a smooth single-call path. Today L
 ## Out of Scope
 
 - A markdown parser in the code indexer (`ennam-kg-indexer`) — wrong layer (would emit `architecture` nodes and duplicate this pipeline).
+- **Path A — storing the original file blob** (`POST /ingest/upload` → `./data/uploads` + `uploaded_files` + download/delete lifecycle). KG is not a file store for LAAM memory (see "Why Path B, not Path A"); LAAM keeps its own original, KG holds the knowledge + a `source_url` pointer. (The upload endpoint still exists for other use cases; it is just not the LAAM-memory path.)
 - New embedding infrastructure — `knowledge_node_embeddings` (384-dim, HNSW) and `LocalEmbeddingModel` already exist.
 - Re-specifying decomposition — BA-025 / `decompose.py` already define section decomposition + embeddings.
 - AI cross-source linking tuning (`cross_edges.py`) — available but not required for basic memory recall.
@@ -94,3 +121,4 @@ Everything above is built **except** possibly a smooth single-call path. Today L
 3. `kg_search` with a query semantically related to a section → the section is returned (semantic recall works; confirms model parity).
 4. Re-`kg_ingest_node` the **same** `source_id` with edited content → draft status `updated`, sections refreshed, **no duplicate** document hub (dedup holds).
 5. A query unrelated to any memory → does not spuriously return the memory (sanity).
+6. **Path B confirmed:** after ingest, **no `uploaded_files` row** exists and nothing was written to `./data/uploads`; the draft carries the `source_url` provenance pointer, and `draft_nodes.content_raw` holds the full markdown.
