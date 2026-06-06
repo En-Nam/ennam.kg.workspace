@@ -45,8 +45,10 @@ The indexer has real parsers for TypeScript (`typescript.py`) and Python (`pytho
 
 Notes:
 - `struct`→`CLASS` is the closest existing kind (no `STRUCT` kind, and the extractor maps every code symbol to the `architecture` node type regardless of kind — so the choice is cosmetic for the KG).
-- A `const`/`var` block with multiple specs/names yields **one Symbol per name**.
-- Methods set `parent` = receiver type name; the extractor's containment logic looks up `parent` among `CLASS`/`MODULE`/`COMPONENT`/`WIDGET` kinds, and `struct`=`CLASS`, so the `Repo`→`Save` containment edge is created automatically (no extractor change).
+- **Multi-name specs (verified):** a single `const_spec`/`var_spec` can declare several names in the `x, y = …` form. `var a, b int` parses as **one** `var_spec` whose `child_by_field_name("name")` returns only `a`. The handler MUST **iterate the `identifier` child nodes** of each spec and emit one Symbol per identifier — do **not** rely on the `name` field. (A `const (…)` block instead produces one `const_spec` per line, each typically one name; iterating identifiers handles both shapes uniformly.)
+- Methods set `parent` = receiver type name; the extractor's containment logic looks up `parent` among `CLASS`/`MODULE`/`COMPONENT`/`WIDGET` kinds, and `struct`=`CLASS`, so the `Repo`→`Save` containment edge is created automatically (no extractor change) — **when the receiver type and the method are in the same file** (see Edges limitation below).
+
+**Edges limitation (honest, documented):** the extractor keys containment edges on `f"{file_path}:{parent}:{kind}"`, i.e. it matches the parent within the **same file**. Python class methods always live in the class body (same file), so this always works there. Go permits a type's methods to be split across multiple files in the same package; for a method whose receiver type is declared in a *different* file, no containment edge forms under the current file+name edge model. This is a known limitation (same family as the skipped import edges), not a parser bug — cross-file/method-set edges would need a package-scoped edge pass, tracked as future work.
 
 ---
 
@@ -63,11 +65,11 @@ Notes:
     - `function_declaration` → `_handle_function(parent=None)`
     - `method_declaration` → `_handle_method` (extract receiver type → parent, then emit METHOD)
     - `type_declaration` → `_handle_type` (iterate `type_spec`/`type_alias` children → CLASS/INTERFACE/TYPE_ALIAS)
-    - `const_declaration` / `var_declaration` → `_handle_value_spec` (one Symbol per name)
+    - `const_declaration` / `var_declaration` → `_handle_value_spec` (iterate `const_spec`/`var_spec` children; for each, iterate its `identifier` children → one `CONSTANT`/`VARIABLE` Symbol per name; `signature`/`body_hash` taken from the enclosing spec node)
 - Helpers mirrored from `python_lang.py`: `_text`, `_child_text`, `_child_by_type`, `_compute_body_hash` (inherited), plus:
   - `_signature_line(node)` — text up to the first `{` (or first newline if none), whitespace-collapsed.
-  - `_leading_doc_comment(node, source)` — collect the contiguous run of `comment` siblings (`//…`) immediately preceding the declaration node, strip the `//` markers, join with newlines. Empty if none.
-  - `_receiver_type(method_node, source)` — from the `receiver` field (`parameter_list` → `parameter_declaration` → `type`), descend through an optional `pointer_type` to the `type_identifier` and return its text; `None` if not found.
+  - `_leading_doc_comment(decl_node, preceding_comments, source)` — the source_file walk accumulates consecutive `comment` siblings; when a declaration follows, attach the accumulated block **only if it is line-adjacent** (the last comment's end row is the row directly above the declaration's start row — no blank-line gap), strip the leading `//` from each line, join with newlines. Any non-comment, non-declaration node resets the accumulator. Empty if none/ not adjacent. (Adjacency prevents a file-level or unrelated comment separated by a blank line from being mis-attached — matches Go's godoc convention.)
+  - `_receiver_type(method_node, source)` — from the `receiver` field (`parameter_list` → `parameter_declaration` → `type`), descend through an optional `pointer_type` wrapper to the `type_identifier` and return its text; `None` if not found (method still emitted with `parent=None`).
 
 **Registry:** in `parsers/__init__.py`, import `GoParser`, add to `__all__`, and `_register(GoParser)` alongside the others.
 
@@ -92,9 +94,9 @@ Mirror `test_python.py` structure. Use small inline Go sources written to `tmp_p
 2. **Functions:** a file with `func Hello()` → one `FUNCTION` symbol named `Hello`, correct line span, signature starts with `func Hello`.
 3. **Methods + receiver parent:** `func (r *Repo) Save() error` → `METHOD` named `Save` with `parent == "Repo"` (pointer receiver). Also test a value receiver `func (r Repo) Name() string` → `parent == "Repo"`.
 4. **Structs / interfaces / aliases:** `type Repo struct{}` → `CLASS`; `type Store interface{}` → `INTERFACE`; `type ID = string` and `type Celsius float64` → `TYPE_ALIAS`.
-5. **Const / var:** `const Max = 10` → `CONSTANT` `Max`; `var count int` → `VARIABLE` `count`; a `const ( A = 1\n B = 2 )` block → two `CONSTANT` symbols `A`, `B`.
+5. **Const / var (incl. multi-name):** `const Max = 10` → `CONSTANT` `Max`; `var count int` → `VARIABLE` `count`; a `const ( A = 1\n B = 2 )` block → two `CONSTANT` symbols `A`, `B`; **`var a, b int` → two `VARIABLE` symbols `a` and `b`** (regression guard for the single-spec/multi-identifier case — fails if the handler uses `child_by_field_name("name")`).
 6. **Unexported included:** a lowercase `func helper()` → emitted (scope decision: index all).
-7. **Doc comment:** a `// Save persists the repo.` line directly above `func (r *Repo) Save()` → `docstring` contains "Save persists the repo." (and a declaration with no preceding comment → empty `docstring`).
+7. **Doc comment + adjacency:** a `// Save persists the repo.` line directly above `func (r *Repo) Save()` → `docstring` contains "Save persists the repo."; a declaration with no preceding comment → empty `docstring`; **a comment separated from the declaration by a blank line → NOT attached** (empty `docstring`) — guards the line-adjacency rule.
 8. **Containment edge (integration):** a full `engine.full_scan` (mocked KG client) over a file with a struct + a method on it produces ≥1 edge (receiver→method), proving `parent` flows into `extract_edges`. (Mirror the edge-regression test in `test_engine_relative_paths.py`.)
 9. **Resilience:** a syntactically broken `.go` file does not raise from `parse()` (returns the parseable subset or `[]`).
 
