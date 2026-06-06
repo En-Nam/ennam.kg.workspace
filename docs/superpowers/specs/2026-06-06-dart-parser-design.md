@@ -78,7 +78,7 @@ Members are irregular — both `method_signature` (members **with** a body) and 
 **Walk (`source_file` and each container body share one routine):**
 - Maintain a `pending_doc` accumulator of consecutive `documentation_comment` siblings; attach to the next declaration **only if line-adjacent** (last comment's end row is the row directly above the declaration's start row); any non-doc, non-declaration node resets it.
 - Dispatch by node type:
-  - `class_definition` / `mixin_declaration` / `enum_declaration` / `extension_declaration` → emit the type symbol (CLASS / TYPE_ALIAS per table; skip an unnamed extension), then **recurse into the `class_body`** to emit members with `parent` = the type's name.
+  - `class_definition` / `mixin_declaration` / `enum_declaration` / `extension_declaration` → emit the type symbol (CLASS per table; skip an unnamed extension), then **recurse into the type's body child to emit members** with `parent` = the type's name. **The body node type differs per construct (verified):** `class` and `mixin` → `class_body`; `extension` → `extension_body`; `enum` → `enum_body`. Locate it by matching the child whose type ends in `_body` (do **not** hard-code `class_body`, or extension/enum members are silently missed). Inside `enum_body`, skip `enum_constant` children (enum values are out of scope, like fields).
   - `type_alias` → emit `TYPE_ALIAS`.
   - `function_signature` → emit `FUNCTION` (pair with the next `function_body` sibling for the end span; see pairing).
   - `method_signature` → classify by inner node → emit `METHOD` (pair with next `function_body`).
@@ -91,7 +91,7 @@ Members are irregular — both `method_signature` (members **with** a body) and 
 
 **Helpers** (mirror `python_lang.py`: `_text`, `_child_by_type`, `_compute_body_hash` inherited), plus:
 - `_node_name(node)` — per-table name extraction: `name` field for class/enum/extension/function_signature; first `identifier` for mixin/getter/setter/constructor; first `type_identifier` for type_alias; constructor text up to `formal_parameter_list`.
-- `_classify_member(node)` — returns `(SymbolKind, signature_node)` or `None` (field/skip) given a `method_signature` or `declaration`.
+- `_classify_member(node)` — given a `method_signature` or `declaration`, **scan its children for the first signature node** (`constructor_signature` / `function_signature` / `getter_signature` / `setter_signature`), **skipping leading modifier tokens** (`static`, `external`, `abstract`, `factory`, `const`, `final`, `late`, `covariant`) — verified that e.g. a static method parses as `method_signature` → `[static, function_signature]`, so the signature is **not** always the first child. Returns `(SymbolKind, signature_node)`, or `None` when no signature node is present (a plain field declaration → skip).
 - `_signature_line(node)` — text up to the first `{`, `=>`, or `;` (whichever first), whitespace-collapsed.
 - `_leading_doc(decl_node, pending_doc, source)` — strip `///` / `/** */` markers from the adjacent `documentation_comment` block; empty if none/not adjacent.
 
@@ -120,12 +120,13 @@ Mirror `test_python.py`. Inline Dart written to `tmp_path`; **fixtures must be v
 
 1. **Registration & non-stub:** `get_parser(Path("x.dart"))` returns a `DartParser`; `supported_extensions() == {".dart"}`; `parse()` of a valid file does **not** raise `NotImplementedError` (regression guard against the old stub).
 2. **Top-level function:** `int topLevel(String s) => s.length;` → one `FUNCTION` `topLevel`, span covers signature **and** body (`line_end` > `line_start`).
-3. **Class + methods (parent):** a class `Foo` with `int bar(int a) => …` → `CLASS` `Foo` and `METHOD` `bar` with `parent == "Foo"`.
+3. **Class + methods (parent), incl. modifiers:** a class `Foo` with `int bar(int a) => …` → `CLASS` `Foo` and `METHOD` `bar` with `parent == "Foo"`; a `static int s() => 1;` → `METHOD` `s` (regression guard: `method_signature` is `[static, function_signature]`, so classification must skip the `static` modifier, not read the first child).
 4. **Constructors:** `Foo(this.x);` → `METHOD` `Foo`; named `Foo.named(this.x);` → `METHOD` `Foo.named`.
 5. **Getter / setter:** `int get val => x;` → `METHOD` `val`; `set val(int v) {…}` → `METHOD` `val`.
 6. **Abstract method (no body):** `void doThing();` inside a class → `METHOD` `doThing` (regression guard: abstract members parse as `declaration`, not `method_signature`).
 7. **Field skipped:** `int x = 0;` inside a class → **no** symbol named `x` (fields are not indexed).
-8. **mixin / enum / extension / typedef:** `mixin Logger {}` → `CLASS` `Logger` (name via `identifier`, not the `name` field); `enum Color {…}` → `CLASS` `Color`; `extension StrX on String {}` → `CLASS` `StrX`; **unnamed `extension on int {}` → no symbol**; `typedef IntList = List<int>;` → `TYPE_ALIAS` `IntList` (name via first `type_identifier`).
+8. **mixin / enum / extension / typedef:** `mixin Logger {}` → `CLASS` `Logger` (name via `identifier`, not the `name` field); `enum Color {…}` → `CLASS` `Color`; `extension StrX on String {}` → `CLASS` `StrX`; **unnamed `extension on int {}` → no symbol**; `typedef IntList = List<int>;` → `TYPE_ALIAS` `IntList` (name via first `type_identifier`); a function typedef `typedef Compare = int Function(int a, int b);` → `TYPE_ALIAS` `Compare`.
+8b. **Members in extension_body / enum_body (regression guard for the body-node variance):** an extension `extension StrX on String { String shout() => …; }` → `METHOD` `shout` with `parent == "StrX"`; an enhanced enum `enum Planet { earth, mars; bool get habitable => …; }` → `METHOD` `habitable` with `parent == "Planet"` **and no symbol for the `earth`/`mars` enum constants**. (Fails if the walk hard-codes `class_body` instead of matching the `_body` suffix.)
 9. **Doc comment + adjacency:** `/// Persists.` directly above a method → `docstring` contains "Persists."; a `documentation_comment` separated by a blank line → empty `docstring`.
 10. **Containment edge (integration):** `engine.full_scan` (mocked KG client) over a class with a method produces ≥1 edge (type→method), mirroring the edge-regression test.
 11. **Resilience:** a syntactically broken `.dart` file does not raise from `parse()` (returns the parseable subset or `[]`).
