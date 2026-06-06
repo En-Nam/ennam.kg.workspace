@@ -55,15 +55,19 @@
 
 ### Class / mixin / enum / extension members (walk the `class_body`)
 
-Members are irregular — both `method_signature` (members **with** a body) and `declaration` (members **without** a body: abstract methods, constructors, fields) wrap an inner signature node. Classify by the inner node:
+Members are irregular — both `method_signature` (members **with** a body) and `declaration` (members **without** a body: abstract methods, constructors, fields) wrap an inner signature node. **Classify by scanning the member's children for the first node whose type ends in `_signature`** (a robust rule that future-proofs against grammar additions — verified there are at least six such variants). If none is found, it's a field → skip.
 
-| Inner signature node | SymbolKind | name | parent |
-|----------------------|------------|------|--------|
+| Inner `*_signature` node | SymbolKind | name | parent |
+|--------------------------|------------|------|--------|
 | `function_signature` | `METHOD` | signature `name` field / first `identifier` | enclosing type |
 | `getter_signature` | `METHOD` | `identifier` child | enclosing type |
 | `setter_signature` | `METHOD` | `identifier` child | enclosing type |
 | `constructor_signature` | `METHOD` | text before the `formal_parameter_list` (`Foo`, or `Foo.named`) | enclosing type |
-| field (`declaration` with `type_identifier` + `initialized_identifier_list`, no signature node) | — | — | **skip** |
+| `factory_constructor_signature` | `METHOD` | text before the `formal_parameter_list` (`Foo.make`) | enclosing type |
+| `operator_signature` | `METHOD` | `"operator " + <operator token>` (e.g. `operator +`, `operator ==`) | enclosing type |
+| *(no `*_signature` child)* — field, e.g. `declaration` with `type_identifier` + `initialized_identifier_list` | — | — | **skip** |
+
+Modifier tokens (`static`, `external`, `abstract`, `factory`, `const`, `final`, `late`, `covariant`) and sibling nodes like `initializers` are naturally ignored by the scan because they do not end in `_signature` (verified: a static method is `method_signature` → `[static, function_signature]`; a constructor with an initializer list is `method_signature` → `[constructor_signature, initializers]` + `function_body`).
 
 ---
 
@@ -90,8 +94,8 @@ Members are irregular — both `method_signature` (members **with** a body) and 
 - `body_hash` = SHA-256 over `[signature.start_byte, end_byte]` where `end_byte` is the body's end if paired, else the signature/declaration's end.
 
 **Helpers** (mirror `python_lang.py`: `_text`, `_child_by_type`, `_compute_body_hash` inherited), plus:
-- `_node_name(node)` — per-table name extraction: `name` field for class/enum/extension/function_signature; first `identifier` for mixin/getter/setter/constructor; first `type_identifier` for type_alias; constructor text up to `formal_parameter_list`.
-- `_classify_member(node)` — given a `method_signature` or `declaration`, **scan its children for the first signature node** (`constructor_signature` / `function_signature` / `getter_signature` / `setter_signature`), **skipping leading modifier tokens** (`static`, `external`, `abstract`, `factory`, `const`, `final`, `late`, `covariant`) — verified that e.g. a static method parses as `method_signature` → `[static, function_signature]`, so the signature is **not** always the first child. Returns `(SymbolKind, signature_node)`, or `None` when no signature node is present (a plain field declaration → skip).
+- `_node_name(node)` — per-table name extraction: `name` field for class/enum/extension/function_signature; first `identifier` for mixin/getter/setter; first `type_identifier` for type_alias; for `constructor_signature`/`factory_constructor_signature` the text before the `formal_parameter_list` (`Foo`, `Foo.named`, `Foo.make`); for `operator_signature` the string `"operator " + <operator token>`.
+- `_classify_member(node)` — given a `method_signature` or `declaration`, **scan its children for the first node whose `type` ends in `_signature`** (`function_signature`, `getter_signature`, `setter_signature`, `constructor_signature`, `factory_constructor_signature`, `operator_signature`). This suffix rule naturally skips modifier tokens (`static`, `external`, `abstract`, `factory`, …) and sibling nodes (`initializers`) without enumerating them, and is robust to additional signature variants. Returns `(METHOD, signature_node)`, or `None` when no `*_signature` child is present (a plain field declaration → skip).
 - `_signature_line(node)` — text up to the first `{`, `=>`, or `;` (whichever first), whitespace-collapsed.
 - `_leading_doc(decl_node, pending_doc, source)` — strip `///` / `/** */` markers from the adjacent `documentation_comment` block; empty if none/not adjacent.
 
@@ -121,8 +125,8 @@ Mirror `test_python.py`. Inline Dart written to `tmp_path`; **fixtures must be v
 1. **Registration & non-stub:** `get_parser(Path("x.dart"))` returns a `DartParser`; `supported_extensions() == {".dart"}`; `parse()` of a valid file does **not** raise `NotImplementedError` (regression guard against the old stub).
 2. **Top-level function:** `int topLevel(String s) => s.length;` → one `FUNCTION` `topLevel`, span covers signature **and** body (`line_end` > `line_start`).
 3. **Class + methods (parent), incl. modifiers:** a class `Foo` with `int bar(int a) => …` → `CLASS` `Foo` and `METHOD` `bar` with `parent == "Foo"`; a `static int s() => 1;` → `METHOD` `s` (regression guard: `method_signature` is `[static, function_signature]`, so classification must skip the `static` modifier, not read the first child).
-4. **Constructors:** `Foo(this.x);` → `METHOD` `Foo`; named `Foo.named(this.x);` → `METHOD` `Foo.named`.
-5. **Getter / setter:** `int get val => x;` → `METHOD` `val`; `set val(int v) {…}` → `METHOD` `val`.
+4. **Constructors (incl. factory & with-body):** `Foo(this.x);` → `METHOD` `Foo`; named `Foo.named(this.x);` → `METHOD` `Foo.named`; **`factory Foo.make() => …;` → `METHOD` `Foo.make`** (regression guard: factory parses as `factory_constructor_signature`, distinct from `constructor_signature`); a constructor with an initializer list + body `Foo(this.x) : assert(x>0) { … }` → `METHOD` `Foo` with span covering the body.
+5. **Getter / setter / operator:** `int get val => x;` → `METHOD` `val`; `set val(int v) {…}` → `METHOD` `val`; **`Vec operator +(Vec o) => …;` → `METHOD` `operator +`** (regression guard: operator overloads parse as `operator_signature` — verifies the `_signature`-suffix scan catches them).
 6. **Abstract method (no body):** `void doThing();` inside a class → `METHOD` `doThing` (regression guard: abstract members parse as `declaration`, not `method_signature`).
 7. **Field skipped:** `int x = 0;` inside a class → **no** symbol named `x` (fields are not indexed).
 8. **mixin / enum / extension / typedef:** `mixin Logger {}` → `CLASS` `Logger` (name via `identifier`, not the `name` field); `enum Color {…}` → `CLASS` `Color`; `extension StrX on String {}` → `CLASS` `StrX`; **unnamed `extension on int {}` → no symbol**; `typedef IntList = List<int>;` → `TYPE_ALIAS` `IntList` (name via first `type_identifier`); a function typedef `typedef Compare = int Function(int a, int b);` → `TYPE_ALIAS` `Compare`.
