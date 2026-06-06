@@ -69,7 +69,7 @@ Notes:
 - Helpers mirrored from `python_lang.py`: `_text`, `_child_text`, `_child_by_type`, `_compute_body_hash` (inherited), plus:
   - `_signature_line(node)` — text up to the first `{` (or first newline if none), whitespace-collapsed.
   - `_leading_doc_comment(decl_node, preceding_comments, source)` — the source_file walk accumulates consecutive `comment` siblings; when a declaration follows, attach the accumulated block **only if it is line-adjacent** (the last comment's end row is the row directly above the declaration's start row — no blank-line gap), strip the leading `//` from each line, join with newlines. Any non-comment, non-declaration node resets the accumulator. Empty if none/ not adjacent. (Adjacency prevents a file-level or unrelated comment separated by a blank line from being mis-attached — matches Go's godoc convention.)
-  - `_receiver_type(method_node, source)` — from the `receiver` field (`parameter_list` → `parameter_declaration` → `type`), descend through an optional `pointer_type` wrapper to the `type_identifier` and return its text; `None` if not found (method still emitted with `parent=None`).
+  - `_receiver_type(method_node, source)` — from the `receiver` field (`parameter_list` → `parameter_declaration` → `type`), **recursively descend to the first `type_identifier`** and return its text. Recursion (not a single pointer-unwrap) is required because the receiver may be `Repo`, `*Repo`, or a **generic** receiver `Box[T]` / `*Box[T]` — the latter nests `pointer_type` → `generic_type` → `type_identifier` (verified against tree-sitter-go 0.25.0). Returns `None` if no `type_identifier` is found (method still emitted with `parent=None`).
 
 **Registry:** in `parsers/__init__.py`, import `GoParser`, add to `__all__`, and `_register(GoParser)` alongside the others.
 
@@ -88,11 +88,11 @@ Notes:
 
 ## Testing (TDD) — `tests/test_parsers/test_go.py`
 
-Mirror `test_python.py` structure. Use small inline Go sources written to `tmp_path`.
+Mirror `test_python.py` structure. Use small inline Go sources written to `tmp_path`. **Fixtures must be valid gofmt-formatted Go** — grouped blocks need each spec on its own indented line (`var (\n\tx = 1\n\ty = 2\n)`); malformed Go (e.g. a spec on the `(` line) trips `root_node.has_error` and tree-sitter error-recovery, which can drop or mangle symbols and make assertions flaky. (The parser itself stays robust — it logs on `has_error` and extracts what parses — but test fixtures should be clean so assertions are deterministic.)
 
 1. **Registration:** `get_parser(Path("x.go"))` returns a `GoParser`; `supported_extensions()` == `{".go"}`.
 2. **Functions:** a file with `func Hello()` → one `FUNCTION` symbol named `Hello`, correct line span, signature starts with `func Hello`.
-3. **Methods + receiver parent:** `func (r *Repo) Save() error` → `METHOD` named `Save` with `parent == "Repo"` (pointer receiver). Also test a value receiver `func (r Repo) Name() string` → `parent == "Repo"`.
+3. **Methods + receiver parent (incl. generic):** `func (r *Repo) Save() error` → `METHOD` `Save`, `parent == "Repo"` (pointer receiver); value receiver `func (r Repo) Name() string` → `parent == "Repo"`; **generic receiver `func (b *Box[T]) Get() T` → `parent == "Box"`** (regression guard for the recursive `_receiver_type` — fails if it only unwraps a single `pointer_type`, since `*Box[T]` nests `pointer_type`→`generic_type`→`type_identifier`).
 4. **Structs / interfaces / aliases:** `type Repo struct{}` → `CLASS`; `type Store interface{}` → `INTERFACE`; `type ID = string` and `type Celsius float64` → `TYPE_ALIAS`.
 5. **Const / var (incl. multi-name):** `const Max = 10` → `CONSTANT` `Max`; `var count int` → `VARIABLE` `count`; a `const ( A = 1\n B = 2 )` block → two `CONSTANT` symbols `A`, `B`; **`var a, b int` → two `VARIABLE` symbols `a` and `b`** (regression guard for the single-spec/multi-identifier case — fails if the handler uses `child_by_field_name("name")`).
 6. **Unexported included:** a lowercase `func helper()` → emitted (scope decision: index all).
