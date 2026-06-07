@@ -33,9 +33,12 @@ The grammar yields `document` → nested `section` nodes; each `section` begins 
 
 | Source | Produces | SymbolKind → node_type | name |
 |--------|----------|------------------------|------|
-| the `.md` file | one **document hub** | `DOCUMENT` → `document` | first H1 text, else the file's basename |
-| each heading `section` | one **section node** | `SECTION` → `document_section` | the `atx_heading`'s `inline` text |
-| heading nesting (`##` ⊃ `###`) | containment edge | — | child section's `parent` = enclosing section's heading (top-level sections' `parent` = the document hub) |
+| the `.md` file | one **document hub** | `DOCUMENT` → `document` | the file **basename** (e.g. `BA-002-mcp-bridge.md`) — **not** the first H1 (verified: a file may have **multiple H1s or none**, so the H1 is not a stable hub identity) |
+| each heading `section` (has an `atx_heading`) | one **section node** | `SECTION` → `document_section` | the `atx_heading`'s `inline` text |
+| a `section` with **no** `atx_heading` (preamble text before the first heading) | — | — | **skipped** (verified: leading content parses as a headingless `section`; it has no name) |
+| heading nesting (`##` ⊃ `###`) | containment edge (`contains_section`) | — | child section's `parent` = enclosing section's heading; top-level sections' `parent` = the document hub (its basename) |
+
+> **Verified grammar edge cases:** preamble before any heading → a headingless `section` (skip); multiple H1 → multiple sibling top-level `section`s (all become document_sections under the hub); a `#` inside a fenced code block is `code_fence_content`, not a heading.
 
 - **`file_path`** = repo-relative path of the `.md` (engine already normalizes — repo-relative + `repo_key`, checkout-stable, re-index archives removed sections).
 - **natural key** = `file_path:name:kind` (same model as code parsers): `doc.md:Section A:document_section`. Re-index updates/archives sections deterministically.
@@ -50,9 +53,10 @@ The grammar yields `document` → nested `section` nodes; each `section` begins 
 - `DOC_LANGUAGE = get_language("markdown")` (from `tree_sitter_language_pack`); `Parser(DOC_LANGUAGE)`.
 - `supported_extensions() -> {".md", ".markdown"}`.
 - `parse(file_path)`: read bytes (`OSError` → log + `[]`); parse; on `has_error` log + extract what parses; emit:
-  - one `DOCUMENT` symbol for the file (`name` = first H1 inline text, else `file_path.stem`; `parent=None`).
-  - walk `section` nodes recursively → one `SECTION` symbol each; `name` = heading inline text; `parent` = the enclosing section's heading text, or the document hub's name for top-level sections.
-- Helpers: `_heading_text(section)` (find child `atx_heading` → child `inline` → text; skip `setext_heading` edge case or handle similarly), `_section_own_range(section)` (start_byte → first child `section`'s start_byte, else section end) for `body_hash`/content.
+  - one `DOCUMENT` hub symbol per file — `name = file_path.name` (basename; **not** the first H1, which is unstable), `parent=None`.
+  - walk `section` nodes recursively → for each section that **has an `atx_heading`**, one `SECTION` symbol; `name` = heading inline text; `level` from the `atx_h{N}_marker`; `parent` = the enclosing heading section's name, or the hub basename for top-level sections.
+  - a `section` with **no** `atx_heading` (preamble) → **skip** (recurse into any well-formed children).
+- Helpers: `_heading(section)` → the child `atx_heading` or `None`; `_heading_text(atx)` (child `inline` text); `_heading_level(atx)` (from the `atx_h{N}_marker` type); `_section_own_range(section)` (start_byte → first child `section`'s start_byte, else section end) for `content`/`body_hash`. (`setext_heading` — `===`/`---` underline form — is best-effort; see Out of Scope.)
 
 **Modify:** `parsers/base.py` — add to `SymbolKind`:
 ```python
@@ -61,9 +65,22 @@ SECTION = "document_section"
 ```
 (values chosen so the extractor maps them with **no `_KIND_TO_TYPE` entry**: `map_kind_to_type` falls back to `kind.value`, yielding `"document"` / `"document_section"` automatically.)
 
-**Modify:** `indexer/extractor.py` — two targeted changes:
-1. `symbol_to_node`: for `DOCUMENT`/`SECTION`, put the section text in `properties.content` (heading + own-content) and set `arch_type` to a doc-appropriate value (or omit it for these kinds). They must NOT be forced to `arch_type="pattern"`.
-2. `extract_edges`: extend the containment **parent-kind search set** (currently `CLASS, MODULE, COMPONENT, WIDGET`) to also include `DOCUMENT, SECTION`, so `section → subsection` and `document → section` containment edges are created. This is the one cross-cutting extractor change (other parsers are unaffected — they don't emit DOCUMENT/SECTION).
+**Modify:** `indexer/extractor.py` — three targeted changes (larger than first thought; verified against `config/config.yaml` schemas + edge whitelist):
+
+1. **`symbol_to_node` — distinct property shape for `DOCUMENT`/`SECTION`** (the code shape `arch_type`/`signature` does not fit). The `document_section` schema (verified) is `required: [title]` with fields `summary` (≤8000), `content` (≤50000), `line_start`, `line_end`, `level`, `document_id` (all optional). So for a `SECTION` symbol emit:
+   ```
+   node_type=document_section, title=<heading>, status=active, created_by=python-indexer,
+   properties = { summary: <section text ≤8000>, content: <section text ≤50000>,
+                  line_start, line_end, level: <heading level 1-6>, body_hash: <hash> }
+   ```
+   For a `DOCUMENT` hub: `node_type=document, title=<basename>, properties={ summary, body_hash }`. Do **not** emit `arch_type`/`signature`/code fields for these kinds.
+   - **`body_hash` placement (verify in plan):** the differ detects change via `properties.body_hash`, but `body_hash` is not a declared `document_section` field. Confirm Gate 1 permits properties beyond the schema (the `properties` JSONB is a bag — likely validates declared fields' types + `required` presence, ignoring extras). If Gate 1 is strict, fall back to having the differ hash `content` for these node types instead. (Edge whitelist rejects unknown *relationships*; node-property strictness must be checked.)
+
+2. **`extract_edges` — relationship + parent-kind, for doc kinds.** Two coupled changes:
+   - Add `DOCUMENT, SECTION` to the containment **parent-kind search set** (currently `CLASS, MODULE, COMPONENT, WIDGET`).
+   - **Use relationship `contains_section` (NOT `relates_to`) when the parent is a `DOCUMENT`/`SECTION`.** Verified the edge whitelist allows only `document --contains_section--> document_section` and `document_section --contains_section--> document_section`; sending `relates_to` is rejected by Gate 1 (`edge_whitelist.go`: "unknown relationship type") → 422. So `extract_edges` must choose the relationship by parent kind: `contains_section` for doc kinds, `relates_to` for the existing code kinds.
+
+3. These are cross-cutting but isolated to the new kinds; the code parsers (which never emit `DOCUMENT`/`SECTION`) keep producing `architecture` nodes + `relates_to` edges unchanged.
 
 **Modify:** `parsers/__init__.py` — import + `_register(MarkdownParser)`.
 
@@ -87,14 +104,15 @@ Both this parser and the ingestion `decompose` path create `document` / `documen
 ## Testing (TDD) — `tests/test_parsers/test_markdown.py`
 Mirror `test_python.py`. Inline markdown to `tmp_path`.
 1. **Registration:** `get_parser(Path("x.md"))` → `MarkdownParser`; `supported_extensions() == {".md", ".markdown"}`.
-2. **Document hub:** a file with `# Title` → one `DOCUMENT` symbol named `Title` (→ node_type `document`).
-3. **Sections + node_type:** `## Section A` / `### Sub A1` → `SECTION` symbols `Section A`, `Sub A1`, mapping to node_type `document_section` (assert `map_kind_to_type(SymbolKind.SECTION) == "document_section"`).
-4. **Hierarchy / parent:** `Sub A1`.parent == `Section A`; top-level `Section A`.parent == the document hub name (`Title`).
-5. **Containment edges (integration):** `engine.full_scan` (mocked KG client) over a doc with `#`/`##`/`###` produces document→section and section→subsection edges (verifies the `extract_edges` parent-kind extension).
-6. **Code fence is not a heading:** a fenced block containing a line `# not a heading` → **no** section named "not a heading" (regression guard for the tree-sitter choice).
-7. **No-heading file:** a `.md` with only prose → exactly one `DOCUMENT` symbol, zero sections.
-8. **Resilience:** malformed markdown does not raise from `parse()`.
-9. **created_by isolation (unit):** indexed nodes carry `created_by="python-indexer"` (so the differ never archives ingestion-created document_sections).
+2. **Document hub (basename, not H1):** a file `notes.md` with `# Title` → one `DOCUMENT` symbol named **`notes.md`** (→ node_type `document`), not `Title`.
+3. **Sections + node_type + props:** `## Section A` / `### Sub A1` → `SECTION` symbols `Section A`, `Sub A1` → node_type `document_section` (assert `map_kind_to_type(SymbolKind.SECTION) == "document_section"`); assert section properties carry `content`, `level` (2 and 3), `line_start`/`line_end` — and **not** `arch_type`/`signature`.
+4. **Hierarchy / parent:** `Sub A1`.parent == `Section A`; top-level `Section A`.parent == the hub basename (`notes.md`).
+5. **Containment edges + relationship (integration):** `engine.full_scan` (mocked KG client) over a doc with `#`/`##`/`###` produces document→section and section→subsection edges, and the created edges use **`relationship == "contains_section"`** (regression guard — `relates_to` would be rejected by the edge whitelist).
+6. **Multiple H1 / preamble:** a file with preamble text then `# A` and `# B` (two H1s) → the preamble yields **no** section, and `A`, `B` are both `SECTION` symbols with `parent` == the hub basename.
+7. **Code fence is not a heading:** a fenced block containing a line `# not a heading` → **no** section named "not a heading".
+8. **No-heading file:** a `.md` with only prose → exactly one `DOCUMENT` symbol, zero sections.
+9. **Resilience:** malformed markdown does not raise from `parse()`.
+10. **created_by isolation (unit):** indexed nodes carry `created_by="python-indexer"` (so the differ never archives ingestion-created document_sections).
 
 Run: `uv run pytest packages/ennam-kg-indexer/tests/test_parsers/test_markdown.py -v`, then full suite.
 
