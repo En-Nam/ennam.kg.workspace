@@ -34,7 +34,7 @@ The `knowledge_node_embeddings` table already has an **HNSW cosine index** (`idx
 | D2 | **RRF compute location** | **Go app-layer merge.** Run the two existing queries (FTS + `SemanticSearch`), then fuse by rank in Go. Reuses both code paths untouched, trivial to unit-test, clean fail-soft. |
 | D3 | **Re-embed trigger** | **Admin REST endpoint on the Python service** (`POST /api/v1/admin/reembed`), paginating over `knowledge_node_embeddings`, re-encoding with e5, upserting back. |
 | D4 | **Embedding model** | `intfloat/multilingual-e5-small` (384-dim). `embedding_dimensions` stays **384** → no column/index migration. |
-| D5 | **Speed** | The two hybrid arms run **concurrently** (goroutines + `errgroup`); query embedding is computed once and shared. |
+| D5 | **Speed** | The two hybrid arms run **concurrently** (two goroutines + `sync.WaitGroup`, matching the codebase convention — `golang.org/x/sync/errgroup` is **not** a dependency); query embedding is computed once and shared. |
 
 ---
 
@@ -52,6 +52,9 @@ The `knowledge_node_embeddings` table already has an **HNSW cosine index** (`idx
 - Any dimension ≠ 384 (would force a `vector(...)` column + index migration).
 - Changing the decomposition/ingest pipeline shape (BA-022/024/025) — only the embedding *model* changes, not *how* sections are produced.
 - Embedding-version columns / dual-write / zero-downtime cutover (recorded as a future upgrade path, not built now).
+- **The BA-020 table-schema embedding system is explicitly untouched.** There are two unrelated embedding systems in the codebase; this IMP affects only the first:
+  - **Node section embeddings** — `knowledge_node_embeddings` table, **384-dim**, local sentence-transformers, written by [`decompose.py`](../../../ennam.kg.python/src/ennam_kg/ingestion/pipeline/decompose.py) → [`NodeEmbeddingStore`](../../../ennam.kg.go/internal/store/node_embedding.go). **This is what `kg_search semantic`/`hybrid` queries — and the only thing this IMP changes.**
+  - **Table-schema embeddings (BA-020)** — a separate `EmbeddingStore` populated by [`internal/service/embedding_generator.go`](../../../ennam.kg.go/internal/service/embedding_generator.go) at **1536-dim** via OpenAI `text-embedding-3-small`, used for NL→SQL table retrieval. Different table, dimension, model, and purpose. The re-embed job (FR-3) **must not** touch it; the model swap (FR-2) does **not** apply to it.
 
 ---
 
@@ -95,6 +98,8 @@ var hybridEmbeddedNodeTypes = []string{"document_section"}
 - The FTS arm therefore receives the **same** `NodeTypes` filter as the semantic arm — no universe mismatch.
 
 > Rationale: the IMP flags that FTS covers all node types while only `document_section` is embedded. Restricting FTS to the embedded set guarantees RRF fuses two views of the *same* candidate pool. When the embedded set later grows (e.g. the worker starts embedding `document`/`concept`), this one slice is the only thing to update — keep it aligned with the worker.
+>
+> BA-028 coverage: satellite memory ingested via `kg_ingest_node` flows through the ingest pipeline and is decomposed into `document_section` nodes (verified: [`decompose.py`](../../../ennam.kg.python/src/ennam_kg/ingestion/pipeline/decompose.py) runs for `document`/`external` hubs and emits `document_section`). So LAAM memory is embedded as `document_section` and is fully covered by both `semantic` and `hybrid` with this scope.
 
 ### Fusion algorithm (D2 — app layer)
 
@@ -122,8 +127,8 @@ RRF(lists [][]SearchResult, k int, limit int) []SearchResult:
 ```
 HandleSearch (mode=hybrid):
     1. ensureQueryEmbedding(req)        // embed query once (e5 "query:" prefix, server-side)
-       └─ on embedding-service error → log, FALL BACK to mode=fulltext (BR-004), return FTS results
-    2. errgroup:
+       └─ on embedding-service error → log, FALL BACK to plain fulltext (BR-004): see "fallback scope" below
+    2. two goroutines + sync.WaitGroup (each writes its result/err to its own var):
          g1: lexical  = store.Search(FTS, nodeTypes=scope, topK)
          g2: semantic = nodeEmb.SemanticSearch(queryEmbedding, nodeTypes=scope, topK)
        └─ if the semantic arm errors but lexical succeeds → log, return lexical-only (degrade, don't 502)
@@ -133,6 +138,8 @@ HandleSearch (mode=hybrid):
     4. respond 200 with fused (optional debug: per-arm rank when ?debug=true)
 ```
 
+- **Concurrency uses stdlib `sync.WaitGroup`** (two goroutines, each writing to its own result/error variable — no shared map, so no lock needed). `errgroup` is deliberately avoided because it is not a project dependency.
+- **Fallback scope (resolves the ambiguity):** when the embedding hop fails and we fall back to fulltext, the fallback is a **plain full-text search honoring only the caller's explicit `node_types`** (no injected `document_section` restriction). It does **not** apply the hybrid embedded-set scope — the embedded-set restriction exists only so the two arms fuse over the same universe, which is irrelevant once there is a single (lexical) arm. This gives the most useful degradation: a normal full-text search.
 - Fail-soft is the headline behavior: **a dead embedding service must never 502 a hybrid query** — it silently becomes full-text (acceptance criterion). This mirrors the existing handler, which today returns `502` on embedding error for `semantic` mode; for `hybrid` we instead degrade.
 - Running the two arms in parallel keeps hybrid latency ≈ `max(FTS, semantic)`, not their sum (D5 — "speed at best").
 
@@ -297,7 +304,7 @@ Python side — no new config beyond the `embedding_model_name` value change (`e
 |-----------|--------|-------|
 | Go: hybrid handler branch + mode normalization + fail-soft | Medium | `internal/handler/search.go` (+ test) |
 | Go: RRF fusion helper | Small | `internal/store/search.go` or new `internal/search/rrf.go` (+ table-driven test) |
-| Go: concurrent arms (errgroup) | Small | `internal/handler/search.go` |
+| Go: concurrent arms (`sync.WaitGroup`) | Small | `internal/handler/search.go` |
 | Go: embedding-rows read endpoint (for backfill paging) | Small | `internal/handler/` + `internal/store/node_embedding.go` (+ test) |
 | Go: `mode` param on `kg_search` schema | Small | `internal/bridge/schema.go` (+ schema test) |
 | Go: search config (`rrf_k`, `hybrid_arm_k`) | Small | `internal/config/` |
