@@ -234,11 +234,11 @@ The ingest pipeline embeds sections as **passages**. Route `decompose.py` throug
 
 **Files:**
 - Modify: `ennam.kg.python/src/ennam_kg/ingestion/pipeline/decompose.py:194`
-- Test: `ennam.kg.python/tests/test_pipeline/test_decompose_passage.py` (create)
+- Test: `ennam.kg.python/tests/ingestion/test_decompose_passage.py` (create)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `ennam.kg.python/tests/test_pipeline/test_decompose_passage.py`:
+Create `ennam.kg.python/tests/ingestion/test_decompose_passage.py`:
 
 ```python
 """IMP-005: decompose embeds sections as passages."""
@@ -255,7 +255,7 @@ def test_decompose_uses_encode_passage_not_raw_encode():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd ennam.kg.python && uv run pytest tests/test_pipeline/test_decompose_passage.py -v`
+Run: `cd ennam.kg.python && uv run pytest tests/ingestion/test_decompose_passage.py -v`
 Expected: FAIL — `decompose.py` still calls `model.encode(batch_texts)`.
 
 - [ ] **Step 3: Switch to `encode_passage`**
@@ -268,19 +268,19 @@ In `ennam.kg.python/src/ennam_kg/ingestion/pipeline/decompose.py`, change the en
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd ennam.kg.python && uv run pytest tests/test_pipeline/test_decompose_passage.py -v`
+Run: `cd ennam.kg.python && uv run pytest tests/ingestion/test_decompose_passage.py -v`
 Expected: PASS (1 passed)
 
 - [ ] **Step 5: Run the existing pipeline tests to confirm no regression**
 
-Run: `cd ennam.kg.python && uv run pytest tests/test_pipeline/ -v`
+Run: `cd ennam.kg.python && uv run pytest tests/ingestion/ tests/test_ingestion_pipeline.py -v`
 Expected: PASS (all existing pipeline tests still green)
 
 - [ ] **Step 6: Commit**
 
 ```bash
 cd ennam.kg.python
-git add src/ennam_kg/ingestion/pipeline/decompose.py tests/test_pipeline/test_decompose_passage.py
+git add src/ennam_kg/ingestion/pipeline/decompose.py tests/ingestion/test_decompose_passage.py
 git commit -m "feat: embed ingested sections as e5 passages (IMP-005 FR-2)"
 ```
 
@@ -1188,7 +1188,7 @@ Add `list_node_embeddings` to the client, then an admin endpoint that re-encodes
 - Modify: `ennam.kg.python/packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py`
 - Create: `ennam.kg.python/src/ennam_kg/api/admin.py`
 - Modify: `ennam.kg.python/src/ennam_kg/main.py:60`
-- Test: `ennam.kg.python/tests/test_api/test_reembed.py` (create)
+- Test: `ennam.kg.python/tests/test_admin_api.py` (create)
 
 - [ ] **Step 1: Add the client method**
 
@@ -1210,7 +1210,7 @@ In `ennam.kg.python/packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/cli
 
 - [ ] **Step 2: Write the failing test**
 
-Create `ennam.kg.python/tests/test_api/test_reembed.py`:
+Create `ennam.kg.python/tests/test_admin_api.py`:
 
 ```python
 """IMP-005: re-embed admin endpoint re-encodes all rows for given projects."""
@@ -1254,7 +1254,7 @@ def test_reembed_reencodes_and_upserts(mock_model_cls, mock_build_client):
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `cd ennam.kg.python && uv run pytest tests/test_api/test_reembed.py -v`
+Run: `cd ennam.kg.python && uv run pytest tests/test_admin_api.py -v`
 Expected: FAIL — `404` (route not registered) / import error for `ennam_kg.api.admin`.
 
 - [ ] **Step 4: Implement the admin endpoint**
@@ -1352,14 +1352,14 @@ app.include_router(admin.router)
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `cd ennam.kg.python && uv run pytest tests/test_api/test_reembed.py -v`
+Run: `cd ennam.kg.python && uv run pytest tests/test_admin_api.py -v`
 Expected: PASS (1 passed)
 
 - [ ] **Step 7: Commit**
 
 ```bash
 cd ennam.kg.python
-git add packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py src/ennam_kg/api/admin.py src/ennam_kg/main.py tests/test_api/test_reembed.py
+git add packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py src/ennam_kg/api/admin.py src/ennam_kg/main.py tests/test_admin_api.py
 git commit -m "feat: /api/v1/admin/reembed backfill endpoint + KGClient list method (IMP-005 FR-3)"
 ```
 
