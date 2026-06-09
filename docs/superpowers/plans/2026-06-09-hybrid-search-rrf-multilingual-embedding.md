@@ -1002,7 +1002,7 @@ Back the backfill: a paginated, project-scoped read of embedding rows. No existi
 
 - [ ] **Step 1: Write the failing test (store method, DB-backed)**
 
-Create `ennam.kg.go/internal/store/node_embedding_list_test.go`. Mirror the DB setup helper used by the existing embedding/store tests in this package (e.g. `newTestDB(t)` or equivalent — use whatever `node_embedding`-adjacent tests already use; do not invent a new harness):
+Create `ennam.kg.go/internal/store/node_embedding_list_test.go`. The store package uses a real DB via `setupTestDB(t)` (defined in `favorite_test.go`; it skips when the test DB env is unset). Seed a project + a `document_section` node with raw SQL (columns verified against migration `000004` + `000055`; only `project_id`, `node_type`, `title`, `created_by` are NOT NULL beyond defaults):
 
 ```go
 package store
@@ -1013,11 +1013,28 @@ import (
 )
 
 func TestNodeEmbeddingStore_ListByProject(t *testing.T) {
-	db := newTestDB(t) // reuse the existing store test DB helper
+	db := setupTestDB(t) // shared store test DB helper (favorite_test.go); skips if no test DB
 	s := NewNodeEmbeddingStore(db)
 	ctx := context.Background()
 
-	projectID, nodeID := seedProjectAndNode(t, db) // reuse existing seed helper
+	const projectID = "11111111-1111-1111-1111-111111111111"
+	const nodeID = "22222222-2222-2222-2222-222222222222"
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO projects (id, name, description) VALUES ($1, $2, $3)
+		 ON CONFLICT (id) DO NOTHING`,
+		projectID, "imp005-test", "",
+	); err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO knowledge_nodes (id, project_id, node_type, title, created_by)
+		 VALUES ($1, $2, 'document_section', 'T', 'test')
+		 ON CONFLICT (id) DO NOTHING`,
+		nodeID, projectID,
+	); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
 	if err := s.Upsert(ctx, NodeEmbeddingUpsert{
 		ProjectID: projectID, NodeID: nodeID,
 		ChunkText: "hello world", ContentHash: "h1",
@@ -1039,7 +1056,7 @@ func TestNodeEmbeddingStore_ListByProject(t *testing.T) {
 }
 ```
 
-> If the store package has no shared DB helper, place this test under the same build tag / setup as the existing `search_test.go` DB-backed tests and copy their setup. If the package's store tests are fully mocked rather than DB-backed, instead assert the generated SQL via a `sqlmock` in the style already used in this package.
+> Confirm the exact `setupTestDB` skip behavior (it reads a test DB DSN from env and calls `t.Skip` when unset) — run with the store package's usual DB env, the same way `favorite_test.go`/`search_test.go` are run in CI.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1219,7 +1236,7 @@ def test_reembed_reencodes_and_upserts(mock_model_cls, mock_build_client):
         {"items": [], "total_count": 2},
     ]
     kg.upsert_node_embeddings.return_value = 2
-    mock_build_client.return_value.__aenter__.return_value = kg
+    mock_build_client.return_value = kg  # KGClient is not a context manager
 
     model = mock_model_cls.return_value
     model.encode_passage.return_value = [[0.0] * 384, [0.0] * 384]
@@ -1274,10 +1291,14 @@ class ReembedResponse(BaseModel):
 
 
 def _build_kg_client():
-    """Construct an async KGClient context manager (kept indirect for test patching)."""
+    """Construct a KGClient (kept indirect so tests can patch it).
+
+    KGClient is NOT a context manager — it is constructed positionally as
+    KGClient(base_url, api_key) and used directly (matches worker.py).
+    """
     from ennam_kg_indexer.kg_client.client import KGClient
 
-    return KGClient(base_url=settings.embedding_service_url.replace(":8081", ":8080"))
+    return KGClient(settings.go_api_url, settings.go_api_key)
 
 
 @router.post("/api/v1/admin/reembed", response_model=ReembedResponse)
@@ -1286,41 +1307,46 @@ async def reembed(body: ReembedRequest, authorization: str | None = Header(defau
         raise HTTPException(status_code=401, detail="Authorization header required")
 
     model = LocalEmbeddingModel(model_name=settings.embedding_model_name)
+    kg = _build_kg_client()
     total = 0
 
-    async with _build_kg_client() as kg:
-        for project_id in body.project_ids:
-            offset = 0
-            while True:
-                page = await kg.list_node_embeddings(project_id, limit=_PAGE, offset=offset)
-                items = page.get("items", [])
-                if not items:
-                    break
-                vectors = model.encode_passage([it["chunk_text"] for it in items])
-                upsert_items = [
-                    {
-                        "node_id": it["node_id"],
-                        "chunk_text": it["chunk_text"],
-                        "content_hash": it["content_hash"],  # preserved unchanged
-                        "embedding": vec,
-                    }
-                    for it, vec in zip(items, vectors, strict=True)
-                ]
-                total += await kg.upsert_node_embeddings(project_id, upsert_items)
-                offset += len(items)
+    for project_id in body.project_ids:
+        offset = 0
+        while True:
+            page = await kg.list_node_embeddings(project_id, limit=_PAGE, offset=offset)
+            items = page.get("items", [])
+            if not items:
+                break
+            vectors = model.encode_passage([it["chunk_text"] for it in items])
+            upsert_items = [
+                {
+                    "node_id": it["node_id"],
+                    "chunk_text": it["chunk_text"],
+                    "content_hash": it["content_hash"],  # preserved unchanged
+                    "embedding": vec,
+                }
+                for it, vec in zip(items, vectors, strict=True)
+            ]
+            total += await kg.upsert_node_embeddings(project_id, upsert_items)
+            offset += len(items)
 
     logger.info("reembed complete: %d rows, model=%s", total, model.model_name)
     return ReembedResponse(reembedded=total, model=model.model_name)
 ```
 
-> Confirm `KGClient` is an async context manager and how it is normally constructed elsewhere (e.g. base URL + bearer token); reuse that construction. If KGClient needs an auth token, read it from `settings` the same way the worker does and pass it in `_build_kg_client`. The `.replace(":8081", ":8080")` is a pragmatic default to reach the Go API — replace with the canonical Go-API URL setting if one exists in `settings`.
+> `KGClient(base_url, api_key, http_client=None)` is positional and has no `__aenter__`; `settings.go_api_url` / `settings.go_api_key` are the canonical Go-API settings (verified — used by `worker.py`). `upsert_node_embeddings(project_id, items) -> int` returns the upserted count; its body endpoint expects `{"items": [...]}`.
 
 - [ ] **Step 5: Register the router**
 
-In `ennam.kg.python/src/ennam_kg/main.py`, add after the other `include_router` lines (~line 61):
+In `ennam.kg.python/src/ennam_kg/main.py`, add `admin` to the existing combined api-imports line (line 10):
 
 ```python
-from ennam_kg.api import admin  # noqa: E402  (add to the existing api imports block)
+from ennam_kg.api import health, indexing, phase2, streaming, embeddings, agentic, admin
+```
+
+and register it alongside the other routers (after `app.include_router(agentic.router)`):
+
+```python
 app.include_router(admin.router)
 ```
 
