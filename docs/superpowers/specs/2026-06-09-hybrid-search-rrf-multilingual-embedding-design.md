@@ -206,21 +206,30 @@ Old (`all-MiniLM`) and new (e5) vectors live in **different spaces** — cosine 
 ```
 reembed():
     model = LocalEmbeddingModel(settings.embedding_model_name)   # e5
-    cursor = 0
-    loop:
-        rows = KG API: list embeddings page (project_id, node_id, chunk_text) LIMIT N OFFSET cursor
-        if empty: break
-        vectors = model.encode_passage([r.chunk_text for r in rows])   # passages
-        upsert each (node_id, chunk_text, content_hash, vector) via KGClient.upsert_node_embeddings
-        cursor += len(rows)
+    total = 0
+    for project in KG API: list projects:
+        offset = 0
+        loop:
+            page = KG API: GET /api/v1/projects/{project}/node-embeddings?limit=N&offset=offset
+                   → items[{node_id, chunk_text, content_hash}]
+            if page.items empty: break
+            vectors = model.encode_passage([it.chunk_text for it in page.items])   # passages
+            upsert each (project, node_id, chunk_text, content_hash, vector)
+                   via KGClient.upsert_node_embeddings   # ON CONFLICT(node_id) DO UPDATE
+            total += len(page.items); offset += len(page.items)
     return {reembedded: total}
 ```
 
+- **Per-project iteration**: the list endpoint is project-scoped (matches the existing route + `Upsert`/`SemanticSearch` shape), so the job loops over projects, then pages each. `content_hash` is read back from the endpoint and re-stored unchanged (it tracks source-text identity, independent of the embedding model — re-embedding the same `chunk_text` must not change it).
 - **Node-type-agnostic**: it re-encodes **whatever is currently in `knowledge_node_embeddings`** (today `document_section`), so it stays correct if the embedded set changes later.
 - **Idempotent + batched**: upsert is `ON CONFLICT (node_id) DO UPDATE` (existing `NodeEmbeddingStore.Upsert`); batch size reuses the worker's `_EMBED_BATCH = 32`. Safe to re-run.
 - **`chunk_text` is reused as-is** — it is the stored passage text; the `passage:` prefix is applied transiently inside `encode_passage` and is **not** persisted (consistent with ingest).
 
-A read endpoint is needed to page the rows: add a Go endpoint `GET /api/v1/embeddings/rows?limit=&offset=` (admin-scoped) returning `{node_id, project_id, chunk_text}` so the Python job can iterate without direct DB access. (Python has no DB connection — it only talks to the Go API.)
+A read endpoint is needed to page the rows (verified: `document.go` exposes only `GetDocumentStructure`, `GetSectionContent`, and `POST .../node-embeddings/batch` — **no list endpoint exists to reuse**, so one must be added). Add a Go endpoint following the existing route convention:
+
+`GET /api/v1/projects/{id}/node-embeddings?limit=&offset=` → `{ items: [{node_id, chunk_text, content_hash}], total_count }`
+
+returning rows for one project so the Python job can iterate without direct DB access (Python has no DB connection — it only talks to the Go API). The re-embed job iterates `(project, page)`: it first lists the caller's projects (existing project API), then pages each project's embeddings. A new `SearchStore`/`NodeEmbeddingStore` method backs the endpoint (e.g. `ListByProject(ctx, projectID, limit, offset)`). `project_id` is implicit in the route, so each upsert back uses that project. (Keeping it project-scoped matches the existing `POST .../node-embeddings/batch` route and the per-project `Upsert`/`SemanticSearch` shape.)
 
 ### Operational cutover (maintenance window)
 
@@ -305,7 +314,7 @@ Python side — no new config beyond the `embedding_model_name` value change (`e
 | Go: hybrid handler branch + mode normalization + fail-soft | Medium | `internal/handler/search.go` (+ test) |
 | Go: RRF fusion helper | Small | `internal/store/search.go` or new `internal/search/rrf.go` (+ table-driven test) |
 | Go: concurrent arms (`sync.WaitGroup`) | Small | `internal/handler/search.go` |
-| Go: embedding-rows read endpoint (for backfill paging) | Small | `internal/handler/` + `internal/store/node_embedding.go` (+ test) |
+| Go: `GET .../node-embeddings` list endpoint + `NodeEmbeddingStore.ListByProject` (for backfill paging) | Small | `internal/handler/document.go` + `internal/store/node_embedding.go` (+ test) |
 | Go: `mode` param on `kg_search` schema | Small | `internal/bridge/schema.go` (+ schema test) |
 | Go: search config (`rrf_k`, `hybrid_arm_k`) | Small | `internal/config/` |
 | Python: model config change | Trivial | `config.py` |
