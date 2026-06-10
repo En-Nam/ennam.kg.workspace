@@ -96,3 +96,29 @@ Verified IMP-005 end-to-end on the running stack; the "Next steps" above are now
 - Optional `/code-review` of the IMP-005 diff. Expand eval to 20–30 pairs / larger corpus. Persistent HF
   cache volume. Consider `mode=hybrid` default after tuning `k`.
 - Separate debt: ~9 Python fails in agentic/streaming/benchmark (pre-existing) + earlier Go handler/middleware/models debt.
+
+---
+
+# Session 3 (2026-06-10) — review LOW #4/#5 + clear pre-existing test debt
+
+## What was done
+- **LOW #4** (`local_model.py`): `_needs_e5_prefix` now matches `"e5-"` token (not bare `"e5"`).
+- **LOW #5** (`search.go`): hybrid serves full-text only when no query vector (no embedder/empty
+  query) instead of firing a doomed SemanticSearch.
+- **Python pre-existing test debt — all fixed (stale doubles after prod migrations, NOT bugs):**
+  - agentic engine (4): mocked `messages.stream` as a streaming async-CM (engine moved
+    `create`→streaming); set `cache_*_input_tokens=0` so token math stays int.
+  - agentic prompts (3): assert current identity + tier wording (`Effort: low|high`, `Cross-verify`).
+  - benchmark + streaming (2): added `complete_with_tools` to test AI doubles (intent parser
+    migrated `complete`→`complete_with_tools`), delegating to `complete` like the real base.
+  - e2e (17): fixtures now `pytest.skip` (not error) when stack/data prereqs absent (no C4K source).
+- **Go test debt**: re-verified already GREEN (resolved in prior sessions) — `go test ./...` 0 FAIL.
+
+## Current state
+- Python: **288 passed, 17 skipped (e2e), 0 failed**, ruff clean. Go: build + full suite green.
+- All committed on `task/implement_mcp` (go ×1, python ×3). Both repos 0 pending.
+
+## Known residual (non-blocking)
+- 4 RuntimeWarnings in agentic engine tests (`prompts.py:261` dialect built from an AsyncMock
+  coroutine) — cosmetic, tests pass.
+- e2e only run meaningfully against a seeded stack (C4K MSSQL data source); otherwise auto-skip.
