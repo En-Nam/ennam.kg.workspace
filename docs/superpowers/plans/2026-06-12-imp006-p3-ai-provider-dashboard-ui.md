@@ -41,6 +41,7 @@
 - `ennam.kg.next/src/app/(dashboard)/admin/settings/ai-providers/page.tsx` — the page.
 
 **Frontend (modify):**
+- `ennam.kg.next/src/types/settings.ts` — add optional `category` to `UpdateSettingRequest` (so assignments keep the `ai` category — the Go upsert overwrites `category` with whatever the PUT sends, defaulting to `general`).
 - `ennam.kg.next/src/components/layout/Sidebar.tsx` — ADMIN nav item.
 
 ---
@@ -383,9 +384,23 @@ git commit -m "feat(ui): hooks for AI provider/model catalog + function registry
 ## Task 4: Per-function model assignment panel
 
 **Files:**
+- Modify: `ennam.kg.next/src/types/settings.ts`
 - Create: `ennam.kg.next/src/components/settings/AIModelAssignments.tsx`
 
-- [ ] **Step 1: Write the component**
+- [ ] **Step 1: Allow an optional category on setting updates**
+
+In `ennam.kg.next/src/types/settings.ts`, extend `UpdateSettingRequest` so callers can preserve a setting's category (the Go upsert sets `category = EXCLUDED.category`, defaulting to `general` when the PUT omits it):
+
+```typescript
+export interface UpdateSettingRequest {
+  value: unknown;
+  description?: string;
+  category?: SettingCategory;
+}
+```
+> `SettingCategory` is already exported from this file. Existing `useUpdateSetting` callers are unaffected (field is optional).
+
+- [ ] **Step 2: Write the component**
 
 Create `ennam.kg.next/src/components/settings/AIModelAssignments.tsx`:
 
@@ -429,7 +444,9 @@ export default function AIModelAssignments() {
 
   const onChange = (fnKey: string, value: string) => {
     updateSetting.mutate(
-      { key: `ai.model.${fnKey}`, input: { value } },
+      // category 'ai' keeps the setting in the AI group (the Go upsert overwrites
+      // category with whatever the PUT sends; omitting it would reset to "general").
+      { key: `ai.model.${fnKey}`, input: { value, category: 'ai' } },
       {
         onSuccess: () => setToast({ message: `Saved ai.model.${fnKey}`, type: 'success' }),
         onError: (e) => setToast({ message: (e as Error).message, type: 'error' }),
@@ -499,15 +516,15 @@ export default function AIModelAssignments() {
 }
 ```
 
-- [ ] **Step 2: Verify type-check + lint**
+- [ ] **Step 3: Verify type-check + lint**
 
 Run: `cd ennam.kg.next && npx tsc --noEmit && npm run lint`
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/components/settings/AIModelAssignments.tsx
+git add src/types/settings.ts src/components/settings/AIModelAssignments.tsx
 git commit -m "feat(ui): per-function AI model assignment dropdowns (IMP-006 P3)"
 ```
 
