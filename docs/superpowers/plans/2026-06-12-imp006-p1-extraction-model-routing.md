@@ -845,16 +845,23 @@ git commit -m "feat(ai): selector routes to assigned model before priority (IMP-
 **Files:**
 - Modify: `ennam.kg.go/cmd/kg-server/main.go` (where the selector is constructed)
 
-- [ ] **Step 1: Construct the resolver and attach it**
+- [ ] **Step 1: Construct the resolver and attach it (mind the ordering)**
 
-In `ennam.kg.go/cmd/kg-server/main.go`, after the `*ai.Selector` is constructed (search for `ai.NewSelector(`) and after the `SettingsService` and stores are available, add:
+In `ennam.kg.go/cmd/kg-server/main.go`, two facts dictate placement:
+- The selector is the variable **`aiSelector`** (`*ai.Selector`), built around line 420 and **may be nil** (only built when an encryption key is configured).
+- The settings service **`settingsSvc`** is created later, around line 464 (`settingsSvc := service.NewSettingsService(settingsStore, auditStore, logger)`).
+
+So add the wiring **after `settingsSvc` is created** (i.e., after ~line 464), guarded for nil selector:
 
 ```go
+	// IMP-006: per-function model routing for the AI selector.
 	aiModelStore := store.NewAIModelStore(db)
-	modelResolver := service.NewSettingsModelResolver(settingsService, aiModelStore)
-	selector.SetModelResolver(modelResolver)
+	if aiSelector != nil {
+		aiSelector.SetModelResolver(service.NewSettingsModelResolver(settingsSvc, aiModelStore))
+	}
 ```
-> Use the existing variable names for the DB handle (`db`), the settings service, and the selector as they appear in `main.go`. Place this after both are initialized. `*service.SettingsService` already has `Get(ctx, key)`; `*store.AIModelStore` already has `GetByID` — both satisfy the resolver's interfaces.
+
+> `db *sql.DB` is in scope. `*service.SettingsService` has `Get(ctx, key) (*models.SystemSetting, error)`; `*store.AIModelStore` has `GetByID` — both satisfy the resolver's `settingGetter` / `modelGetter` interfaces. The resolver survives `aiHandler.SetRebuildSelector(...)` (which calls `UpdateEntries` on provider CRUD): `UpdateEntries` replaces `s.entries` only, leaving `s.modelResolver` intact, so a newly-registered BytePlus connection is picked up automatically on the next request.
 
 - [ ] **Step 2: Build the server**
 
