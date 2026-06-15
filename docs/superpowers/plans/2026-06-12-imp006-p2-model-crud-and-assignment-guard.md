@@ -18,6 +18,7 @@
 
 **Create:**
 - `ennam.kg.go/internal/models/ai_function.go` — `AIFunction` registry + `LookupAIFunction`.
+- `ennam.kg.go/db/migrations/000058_reconcile_ai_model_settings.up.sql` / `.down.sql` — clean legacy free-text `ai.model.*` settings.
 
 **Modify:**
 - `ennam.kg.go/internal/store/ai_model.go` — add `Update`, `Delete`.
@@ -628,19 +629,95 @@ git commit -m "feat(ai): wire ai_models store into provider + settings handlers 
 
 ---
 
-## Task 7: Live acceptance (against the running stack)
+## Task 7: Reconcile legacy free-text `ai.model.*` settings (migration 000058)
 
-- [ ] **Step 1: Register a provider → auto-seed**
+The platform already has legacy `ai.model.*` rows holding **free-text model names** (e.g. `ai.model.table_filter = "claude-haiku-4-5-20251001"`) and **orphan function keys** (`ai.model.sql_generation` — not a real RequestType; the real one is `nl_query_intent`). These never routed (the resolver falls back), but the P2 guard (Task 5) would reject re-saving them. This migration cleans them to the registry contract (IMP-006 §8 "legacy free-text migration").
+
+**Files:**
+- Create: `ennam.kg.go/db/migrations/000058_reconcile_ai_model_settings.up.sql`
+- Create: `ennam.kg.go/db/migrations/000058_reconcile_ai_model_settings.down.sql`
+
+- [ ] **Step 1: Write the up migration**
+
+Create `ennam.kg.go/db/migrations/000058_reconcile_ai_model_settings.up.sql`:
+
+```sql
+-- IMP-006 P2: reconcile legacy ai.model.* settings to the ai_models registry.
+
+-- 1. Remap a free-text model-name value to the matching ai_models.id (as a JSON string).
+UPDATE system_settings s
+SET value = to_jsonb(m.id::text)
+FROM ai_models m
+WHERE s.key LIKE 'ai.model.%'
+  AND (s.value #>> '{}') = m.model_id;
+
+-- 2. Any remaining ai.model.* value that is neither a UUID nor "auto" -> "auto".
+UPDATE system_settings
+SET value = '"auto"'::jsonb
+WHERE key LIKE 'ai.model.%'
+  AND (value #>> '{}') !~ '^[0-9a-fA-F-]{36}$'
+  AND (value #>> '{}') <> 'auto';
+
+-- 3. Delete orphan keys whose function is not in the known registry (must match
+--    models.AIFunctions in internal/models/ai_function.go).
+DELETE FROM system_settings
+WHERE key LIKE 'ai.model.%'
+  AND key NOT IN (
+    'ai.model.extraction',
+    'ai.model.nl_query_intent',
+    'ai.model.sql_verification',
+    'ai.model.table_filter',
+    'ai.model.kg_implicit_scoring',
+    'ai.model.kg_description',
+    'ai.model.embedding_description'
+  );
+```
+
+- [ ] **Step 2: Write the down migration**
+
+Create `ennam.kg.go/db/migrations/000058_reconcile_ai_model_settings.down.sql`:
+
+```sql
+-- Data reconciliation is not reversible (original free-text values are discarded).
+-- No-op down migration.
+SELECT 1;
+```
+
+- [ ] **Step 3: Apply + verify**
+
+Run:
+```bash
+cd ennam.kg.go && go run ./cmd/kg-migrate/ up
+docker exec ennam-kg-postgres psql -U ennam_kg -d ennam_kg -c \
+  "SELECT key, value#>>'{}' AS val FROM system_settings WHERE key LIKE 'ai.model.%' ORDER BY key;"
+```
+Expected: `ai.model.sql_generation` is gone; `ai.model.table_filter` / `ai.model.sql_verification` are now `auto` (their old model names had no matching `ai_models.model_id`); `ai.model.extraction` is unchanged (already a valid UUID).
+
+- [ ] **Step 4: Commit**
 
 ```bash
+git add db/migrations/000058_reconcile_ai_model_settings.up.sql db/migrations/000058_reconcile_ai_model_settings.down.sql
+git commit -m "feat(ai): reconcile legacy free-text ai.model.* settings to the registry (IMP-006 P2)"
+```
+
+---
+
+## Task 8: Live acceptance (against the running stack)
+
+> Note: the **BytePlus Ark** provider + its `gpt-oss-120b` `ai_models` row already exist (registered during P1 live setup, with `ai.model.extraction` pointing at it). To verify **auto-seed** specifically, register a NEW throwaway provider (auto-seed only fires on create), then delete it.
+
+- [ ] **Step 1: Register a NEW provider → verify auto-seed**
+
+```bash
+# A throwaway openai-compatible provider reusing the BytePlus base_url + key.
 curl -s -X POST http://localhost:8080/api/v1/ai-providers \
   -H "Authorization: Bearer ennam_kg_dev_000000000000000000000000" -H "Content-Type: application/json" \
-  -d '{"name":"byteplus-ark","provider_type":"openai","base_url":"https://ark.ap-southeast.bytepluses.com/api/coding/v3","api_key":"<KEY>","model_id":"gpt-oss-120b","priority":50}'
-# The provider id is in the response; list its models (should already contain gpt-oss-120b via auto-seed):
+  -d '{"name":"p2-autoseed-test","provider_type":"openai","base_url":"https://ark.ap-southeast.bytepluses.com/api/coding/v3","api_key":"<BYTEPLUS_KEY>","model_id":"glm-4.7","priority":90}'
+# The provider id is in the response; list its models (should already contain glm-4.7 via auto-seed):
 PID=<provider-id>
 curl -s "http://localhost:8080/api/v1/ai-providers/$PID/models" -H "Authorization: Bearer ennam_kg_dev_000000000000000000000000"
 ```
-Expected: the `models` array contains the auto-seeded `gpt-oss-120b` row.
+Expected: the `models` array contains the auto-seeded `glm-4.7` row (proof auto-seed fired on create).
 
 - [ ] **Step 2: Add a second model + edit capability**
 
@@ -684,6 +761,7 @@ Expected: `204`. (Per BR-006.6, any setting pointing at it should then resolve t
 - `models.AIFunction` registry with the seven real functions; `go test ./...` green; `go build ./...` clean.
 - Registering a provider auto-creates an `ai_models` row; `ai_models` CRUD endpoints work (list/add/update/delete).
 - `PUT /api/v1/settings/ai.model.<fn>` rejects unknown function, non-existent model, and capability mismatch (400); accepts `auto` and a valid capable model id (200).
+- Migration 000058 reconciled legacy free-text `ai.model.*` settings (orphan `sql_generation` removed; free-text model names → `auto` or matched `ai_models.id`); `ai.model.extraction` (live UUID) unchanged.
 - All wiring via optional setters; existing tests unaffected.
 
 **Not in P2 (later plans):** dashboard provider/model UI + per-function dropdowns (P3, uses `AIFunctions` + the CRUD endpoints); agentic Path B OpenAI-compatible client (P4, registers an `agentic` function with `RequiresTools=true`).
