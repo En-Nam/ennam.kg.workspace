@@ -184,20 +184,6 @@ func NewAIModelStore(db *sql.DB) *AIModelStore {
 	return &AIModelStore{db: db}
 }
 
-const aiModelColumns = `id, provider_id, model_id, display_name,
-	supports_tools, supports_json, is_active, created_at, updated_at`
-
-func scanAIModel(row interface{ Scan(...any) error }) (*models.AIModel, error) {
-	m := &models.AIModel{}
-	if err := row.Scan(
-		&m.ID, &m.ProviderID, &m.ModelID, &m.DisplayName,
-		&m.SupportsTools, &m.SupportsJSON, &m.IsActive, &m.CreatedAt, &m.UpdatedAt,
-	); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 // Create inserts a new model and fills generated fields.
 func (s *AIModelStore) Create(ctx context.Context, m *models.AIModel) error {
 	if s.db == nil {
@@ -217,8 +203,14 @@ func (s *AIModelStore) GetByID(ctx context.Context, id string) (*models.AIModel,
 	if s.db == nil {
 		return nil, fmt.Errorf("GetByID: nil database")
 	}
-	query := `SELECT ` + aiModelColumns + ` FROM ai_models WHERE id = $1`
-	m, err := scanAIModel(s.db.QueryRowContext(ctx, query, id))
+	query := `
+		SELECT id, provider_id, model_id, display_name, supports_tools, supports_json, is_active, created_at, updated_at
+		FROM ai_models WHERE id = $1`
+	m := &models.AIModel{}
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&m.ID, &m.ProviderID, &m.ModelID, &m.DisplayName,
+		&m.SupportsTools, &m.SupportsJSON, &m.IsActive, &m.CreatedAt, &m.UpdatedAt,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("ai model %q not found", id)
@@ -233,7 +225,9 @@ func (s *AIModelStore) ListByProvider(ctx context.Context, providerID string) ([
 	if s.db == nil {
 		return nil, fmt.Errorf("ListByProvider: nil database")
 	}
-	query := `SELECT ` + aiModelColumns + ` FROM ai_models WHERE provider_id = $1 ORDER BY is_active DESC, model_id`
+	query := `
+		SELECT id, provider_id, model_id, display_name, supports_tools, supports_json, is_active, created_at, updated_at
+		FROM ai_models WHERE provider_id = $1 ORDER BY is_active DESC, model_id`
 	rows, err := s.db.QueryContext(ctx, query, providerID)
 	if err != nil {
 		return nil, fmt.Errorf("list ai models: %w", err)
@@ -241,8 +235,11 @@ func (s *AIModelStore) ListByProvider(ctx context.Context, providerID string) ([
 	defer rows.Close()
 	out := make([]*models.AIModel, 0)
 	for rows.Next() {
-		m, err := scanAIModel(rows)
-		if err != nil {
+		m := &models.AIModel{}
+		if err := rows.Scan(
+			&m.ID, &m.ProviderID, &m.ModelID, &m.DisplayName,
+			&m.SupportsTools, &m.SupportsJSON, &m.IsActive, &m.CreatedAt, &m.UpdatedAt,
+		); err != nil {
 			return nil, fmt.Errorf("scan ai model: %w", err)
 		}
 		out = append(out, m)
