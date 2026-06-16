@@ -4,11 +4,11 @@
 
 **Goal:** Let LAAM cite the source document of any `kg_search` hit by adding a `kg_get_document` MCP tool (hub id → filename/source/section_count) and persisting the file reference on ingest — without touching the shipped hybrid/e5 retrieval.
 
-> **EXECUTION OUTCOME (2026-06-16):** Tasks 1, 2, 4, 5 done + FR-1 verified E2E (with a security fix). **Task 3 / FR-2
-> deferred** — `stored_path` is wiped from the hub by the decompose update because of a pre-existing platform bug:
-> `UpdateService` is built without a node reader (`main.go:369`), so partial node updates REPLACE properties.
-> Filed in `.serena` backlog `go-updateservice-nodereader-nil-replaces-properties`. The citation goal is met by
-> FR-1 alone (`title` = filename survives; `stored_path` isn't exposed by the API). FR-2 code is kept future-ready.
+> **EXECUTION OUTCOME (2026-06-16):** All tasks done + FR-1 and FR-2 verified E2E. Plus a security fix
+> (project-access check + no `stored_path` in the response) and a **platform bug fix**: `UpdateService` was
+> built without a node reader (`main.go:369`), so partial node updates REPLACED properties (the decompose step
+> wiped `stored_path`). Fixed by wiring `service.WithNodeReader(nodeStore)` — merge semantics restored, Gate 2
+> stays off (no update config wired), full internal Go suite green (20 packages, no regressions).
 
 **Architecture:** Three small slices. (1) Go: a new lightweight `GET /nodes/{id}/document-meta` endpoint + an MCP routed-proxy tool `kg_get_document`. (2) Python: thread the already-available `stored_path` from the `extract_upload` worker through `run_batch` into `build_node_payload` so the hub node stores it. (3) A one-off SQL backfill for the existing hub. The bloated synthetic-id `document_tree` is deliberately NOT used (see spec §3/§6).
 

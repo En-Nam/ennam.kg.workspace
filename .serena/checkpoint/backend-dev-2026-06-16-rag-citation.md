@@ -41,3 +41,10 @@
 ## Blockers / Risks
 - The nodeReader-nil bug means partial updates are lossy platform-wide. Fixing it may surface Gate-2
   validation on updates that currently bypass it. Needs deliberate testing.
+
+## UPDATE — bug fixed, FR-2 now works (same day)
+- Fixed the UpdateService nodeReader bug: `cmd/kg-server/main.go` now wires
+  `service.WithNodeReader(nodeStore)` → partial updates MERGE properties (Gate 2 stays off, no cfg wired).
+- Full internal Go suite green (20 packages, no regressions). E2E: PUT preserves properties; a fresh upload
+  hub now carries both `stored_path` and `document_tree`. FR-2 is no longer deferred.
+- Removed the backlog item (resolved). Both FR-1 and FR-2 verified.
