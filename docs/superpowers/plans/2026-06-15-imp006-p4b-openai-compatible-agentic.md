@@ -432,6 +432,28 @@ async def test_client_streams_text_and_final(httpx_mock):
     assert "".join(deltas) == "Hi there"
     assert final.stop_reason == "end_turn"
     assert final.usage.input_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_stream_accepts_no_tools(httpx_mock):
+    # The engine's budget-exceeded synthesis path calls stream(...) WITHOUT tools=.
+    httpx_mock.add_response(
+        url="https://x.test/v1/chat/completions", method="POST",
+        status_code=200,
+        content=b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        headers={"content-type": "text/event-stream"},
+    )
+    client = OpenAIDirectClient(api_key="k", model_id="glm-4.7", base_url="https://x.test/v1")
+    async with client._client.messages.stream(
+        model="glm-4.7", max_tokens=100,
+        system=[{"type": "text", "text": "sys"}],
+        messages=[{"role": "user", "content": "hi"}],
+    ) as stream:  # no tools= kwarg
+        async for _ in stream:
+            pass
+        final = await stream.get_final_message()
+    await client.close()
+    assert final.stop_reason == "end_turn"
 ```
 
 > If the installed `pytest-httpx` mocks streaming differently (e.g. requires `stream=...` instead of `content=...`), adjust the `add_response` call to that version's API — the assertions are the contract.
@@ -521,7 +543,20 @@ class _OpenAIMessages:
         self._url = openai_completions_url(base_url)
         self._api_key = api_key
 
-    def stream(self, *, model: str, max_tokens: int, system: list[dict], messages: list[dict], tools: list[dict]) -> _OpenAIStreamCM:
+    def stream(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        system: list[dict],
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> _OpenAIStreamCM:
+        # NOTE: `tools` MUST default to None — the engine's budget-exceeded synthesis
+        # call (engine.py ~line 606) invokes messages.stream(...) WITHOUT a tools=
+        # arg, matching the Anthropic SDK where tools is optional. A required kwarg
+        # here would TypeError on that path.
+        #
         # `stream_options.include_usage` makes the gateway emit token usage in the
         # final chunk. Most OpenAI-compatible gateways (incl. BytePlus Ark) honor it;
         # if a provider 400s on this unknown field (watch for it in Task 6), drop the
@@ -534,7 +569,7 @@ class _OpenAIMessages:
             "stream_options": {"include_usage": True},
             "messages": anthropic_messages_to_openai(system, messages),
         }
-        oai_tools = anthropic_tools_to_openai(tools)
+        oai_tools = anthropic_tools_to_openai(tools or [])
         if oai_tools:
             payload["tools"] = oai_tools
         headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
