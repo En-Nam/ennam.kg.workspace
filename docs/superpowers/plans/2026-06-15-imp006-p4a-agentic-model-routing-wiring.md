@@ -67,10 +67,10 @@ Expected: FAIL — `agentic` not found.
 In `ennam.kg.go/internal/models/ai_function.go`, append to the `AIFunctions` slice (after `embedding_description`):
 
 ```go
-	{Key: "agentic", DisplayName: "Conversational agent (chat)", RequiresTools: true, RequiresJSON: true},
+	{Key: "agentic", DisplayName: "Conversational agent (chat)", RequiresTools: true},
 }
 ```
-> `RequiresTools: true` makes the P2 guard reject assigning a non-tool model. `RequiresJSON: true` is harmless (tool-capable chat models also do JSON). This is the only Path-B entry.
+> `RequiresTools: true` makes the P2 guard reject assigning a non-tool-capable model. `RequiresJSON` is intentionally **false**: the agentic loop streams text + `tool_use` blocks (tool-calling), it does not rely on JSON response-format — so requiring JSON would needlessly reject tool-capable, non-JSON models. This is the only Path-B entry.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -471,7 +471,7 @@ Expected: FAIL — current `_resolve_chat_model` returns the hard-coded `_CHAT_M
 
 - [ ] **Step 3: Make `_resolve_chat_model` respect the client model**
 
-In `ennam.kg.python/src/ennam_kg/agentic/engine.py`, replace `_resolve_chat_model`:
+In `ennam.kg.python/src/ennam_kg/agentic/engine.py`, also **delete** the now-unused module constant `_CHAT_MODEL_OVERRIDE = "claude-haiku-4-5-20251001"` (verified referenced only inside `_resolve_chat_model`, which is being replaced), then replace `_resolve_chat_model`:
 
 ```python
 def _resolve_chat_model(ai_client: Any) -> str:
@@ -488,7 +488,7 @@ def _resolve_chat_model(ai_client: Any) -> str:
         return override
     return ai_client._model
 ```
-> This flips the default from "force `_CHAT_MODEL_OVERRIDE`" to "use the injected/resolved model". The `_CHAT_MODEL_OVERRIDE` constant can be removed if now unused (check with `grep _CHAT_MODEL_OVERRIDE src/ennam_kg/agentic/engine.py`; if referenced only here, delete the constant; otherwise leave it).
+> This flips the default from "force Haiku" to "use the injected/resolved model" (the `_CHAT_MODEL_OVERRIDE` constant was deleted in this step). `CHAT_MODEL_OVERRIDE` now means an explicit env-forced model id (a debugging escape hatch), and the legacy `"0"`/`"1"` sentinel values are treated as "no override".
 
 - [ ] **Step 4: Run tests to verify they pass**
 
