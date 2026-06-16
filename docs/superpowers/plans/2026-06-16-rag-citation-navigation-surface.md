@@ -4,6 +4,12 @@
 
 **Goal:** Let LAAM cite the source document of any `kg_search` hit by adding a `kg_get_document` MCP tool (hub id → filename/source/section_count) and persisting the file reference on ingest — without touching the shipped hybrid/e5 retrieval.
 
+> **EXECUTION OUTCOME (2026-06-16):** Tasks 1, 2, 4, 5 done + FR-1 verified E2E (with a security fix). **Task 3 / FR-2
+> deferred** — `stored_path` is wiped from the hub by the decompose update because of a pre-existing platform bug:
+> `UpdateService` is built without a node reader (`main.go:369`), so partial node updates REPLACE properties.
+> Filed in `.serena` backlog `go-updateservice-nodereader-nil-replaces-properties`. The citation goal is met by
+> FR-1 alone (`title` = filename survives; `stored_path` isn't exposed by the API). FR-2 code is kept future-ready.
+
 **Architecture:** Three small slices. (1) Go: a new lightweight `GET /nodes/{id}/document-meta` endpoint + an MCP routed-proxy tool `kg_get_document`. (2) Python: thread the already-available `stored_path` from the `extract_upload` worker through `run_batch` into `build_node_payload` so the hub node stores it. (3) A one-off SQL backfill for the existing hub. The bloated synthetic-id `document_tree` is deliberately NOT used (see spec §3/§6).
 
 **Tech Stack:** Go (stdlib `net/http`, `database/sql`), the bridge's `toolRoutes`/`buildToolSchemas` registry, Python 3.12 (pytest), Postgres (pgvector). No new dependencies.

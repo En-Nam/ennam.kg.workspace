@@ -1,7 +1,9 @@
 # RAG Citation & Document Navigation Surface (Phase 1) — Design Spec
 
 **Date:** 2026-06-16
-**Status:** Approved by CTO — both pre-implementation conditions resolved (backfill decided §7; `stored_path` visibility clarified §4). Ready for implementation plan.
+**Status:** IMPLEMENTED (2026-06-16). FR-1 (`kg_get_document` + `document-meta` endpoint) shipped and verified
+E2E, with a security fix (project-access check + no `stored_path` in response). FR-2 (`stored_path` on hub)
+is **deferred** — blocked by a pre-existing platform bug (see FR-2 / §11.2). Citation goal met by FR-1 alone.
 **Affects:** BA-002 (MCP bridge), BA-025 (Document Decomposition & Retrieval), LAAM (consumer)
 **Untouched (shipped):** hybrid RRF + `multilingual-e5-small` 384-dim (IMP-005)
 
@@ -100,7 +102,13 @@ recommended option — no clickable-file expectation is created.
 
 ### In scope (D1-A + D2-A)
 - **FR-1** — MCP tool `kg_get_document`: resolves a hub `document_id` → citation metadata `{node_id, title (filename), source_url, stored_path, section_count}`. **No `document_tree`** (see §6).
-- **FR-2** — Provenance backfill: the ingest pipeline **persists `source_url`/`stored_path`** onto the hub node (currently empty) so citation can point back to the source.
+- **FR-2** — ⚠️ **DEFERRED (implemented but currently a no-op).** The ingest pipeline persists
+  `stored_path` onto the hub, but the decompose step's hub update wipes it because `PUT /nodes/{id}`
+  replaces (not merges) properties — a pre-existing platform bug (`UpdateService` built without a node
+  reader, `main.go:369`). Filed in `.serena` backlog `go-updateservice-nodereader-nil-replaces-properties`.
+  FR-2 becomes effective once that bug is fixed. **Citation does not depend on FR-2** — it cites by `title`
+  (filename, a top-level column, never wiped) + section/lines from `kg_search`. `stored_path` is not exposed
+  by the API anyway, so deferring FR-2 has no effect on Phase 1's citation goal.
 - ~~**FR-3** — add `document_title` to `kg_search`~~ — **dropped** (belonged to D1-B; D1-A is locked, so `kg_search` stays untouched).
 - **FR-4** — Docs: the LAAM "search → get_document → answer with citation" pattern, **including the graceful-empty citation fallback** (filename + section + lines when `stored_path`/`source_url` are empty).
 
@@ -227,7 +235,7 @@ No retrieval changes; every piece exists after FR-1 + FR-2.
 
 1. **Given** a `document_id` from `kg_search`, **when** calling `kg_get_document`, **then** it returns `{node_id, title (filename), source_url, section_count}` — a small fixed payload, **not** `document_tree` and **not** `stored_path` (internal path).
 1b. **Given** a caller without access to the node's project, **when** calling `kg_get_document`, **then** it returns **404** (no cross-tenant disclosure).
-2. **Given** a **newly** ingested document, **when** inspecting the hub node, **then** `properties.stored_path` (and `source_url` if present) is stored — no longer empty.
+2. ⚠️ **DEFERRED** — **Given** a **newly** ingested document, **when** inspecting the hub node, **then** `properties.stored_path` is stored. *Currently fails* due to the `UpdateService` nodeReader bug (FR-2); re-test after that bug is fixed.
 3. **Given** LAAM answers from `kg_search` + `kg_get_document`, **then** it can cite `[filename, section, lines]` **without** manually calling `kg_get_node` for the hub.
 4. **Given** the shipped hybrid/e5 system, **when** Phase 1 is complete, **then** `kg_search`/retrieval behavior is **unchanged** (no regression).
 5. **Given** the bridge adds `kg_get_document`, **then** the tool count rises correctly and all cross-check tests are green.
