@@ -12,6 +12,8 @@
 
 - **Spec authority:** `docs/superpowers/specs/2026-06-17-canonical-ingest-core-design.md`. Where this plan and the BA disagree, the spec wins (it encodes the TC/CTO ruling).
 - **v1 scope:** FR-001, FR-002 (incl. normalization), FR-003, FR-004, FR-006. **FR-005 (context headers) and the 2 GET endpoints are CUT** — do not implement.
+- **Chunkable-format gate (decided 2026-06-17):** the canonical builder produces sections/chunks **only** for formats decomposed today — `CHUNKABLE_FORMATS = {markdown, md, plain_text, txt, text}` (mirrors `decompose.py:20` `_TEXT_FORMATS`). `.pdf`/`.docx` extract to `plain_text` so they ARE chunked; **`.json`/`.csv`/`.xlsx` stay hub-only (no chunks), preserving current behavior** (AGENTS.md Rule 3). A `canonical_document` row + `content_hash` is still produced for every format (FR-001/FR-004 are universal); only chunk production is gated.
+- **NFR-239 (reframed):** cross-path equivalence is asserted for **text-format** content — the same logical text via a text-format upload vs `satellite_api` yields identical `content_hash` and chunks (both flow through the canonical builder + normalization). Structured formats (json/csv/xlsx) are hub-only; cross-path *structural* hash parity for them is **not** guaranteed and is out of scope (they are never chunked).
 - **No new infra:** no new system binary, no new Python/Go dependency, no Docker image growth. OCR is out of scope.
 - **Determinism (NFR-240):** extraction/normalization/hashing/chunk-keys are pure deterministic transforms — **no AI/model call** in this path (AGENTS.md Rule 5).
 - **Approval gate (HARD, Option A):** extraction + canonicalization may run pre-approval; **decomposition / indexing / any KG mutation MUST NOT run before approval** — for **both** text and binary uploads.
@@ -92,8 +94,8 @@ DROP TABLE IF EXISTS canonical_document;
 
 - [ ] **Step 3: Apply up then down then up, verify clean**
 
-Run: `cd ennam.kg.go && make migrate-up && make migrate-down && make migrate-up` (or the repo's migrate target; if none, `migrate -path db/migrations -database "$DATABASE_URL" up` / `down 1`).
-Expected: up creates the table, down drops it with no error, re-up succeeds. Verify `\d canonical_document` shows the three indexes.
+Run: `cd ennam.kg.go && make db-migrate && make db-migrate-down && make db-migrate` (targets wrap `go run ./cmd/kg-migrate/ up|down`; `make db-migrate-version` prints the current version).
+Expected: up creates the table, down drops it with no error, re-up succeeds. Verify via `make db-shell` then `\d canonical_document` shows the three indexes.
 
 - [ ] **Step 4: Commit**
 
@@ -104,24 +106,23 @@ git commit -m "feat(db): add canonical_document table (BA-030 FR-001, migration 
 
 ### Task 0.2: Characterization test of current pipeline output
 
-> Pins today's section/chunk content + offsets for markdown, JSON, and CSV so the P1–P5 refactor is regression-guarded. Reads the **current** path (`content_raw` → `parse_markdown_sections` → `chunk_section`).
+> Pins today's section/chunk content + offsets for the formats that are **actually chunked** — markdown, plain-text, and extracted-PDF text (which `files.py` returns as `plain_text` with `## Page N` markers). JSON/CSV/XLSX are **hub-only** today (the `_TEXT_FORMATS` gate at `decompose.py:50` skips them), so they are **not** part of this chunk-path guard. Reads the current path (`parse_markdown_sections` → `chunk_section`).
 
 **Files:**
 - Create: `ennam.kg.python/tests/ingestion/test_characterization.py`
-- Create: `ennam.kg.python/tests/ingestion/fixtures/char_sample.md`, `char_sample.json`, `char_sample.csv`
+- Create: `ennam.kg.python/tests/ingestion/fixtures/char_sample.md`, `char_sample.txt`, `char_sample_pdf.txt` (the last simulates pypdf output: `## Page 1\n\n<text>\n\n## Page 2\n\n<text>`)
 
 **Interfaces:**
-- Consumes: `parse_markdown_sections` (`document_tree.py:22`), `chunk_section` (`chunker.py:72`), `extract_file_text` (`adapters/files.py:15`).
-- Produces: a committed golden snapshot (`tests/ingestion/fixtures/char_golden.json`) of `{section_path, chunk_key, content, char_start, char_end}` per chunk.
+- Consumes: `parse_markdown_sections` (`document_tree.py:22`), `chunk_section` (`chunker.py:72`).
+- Produces: a committed golden snapshot (`tests/ingestion/fixtures/char_golden.json`) of `{section_title, ordinal, content, char_start, char_end}` per chunk. **Note:** `chunk_key` is intentionally **excluded** from the golden — in production it embeds the persisted section-node UUID, which placeholder ids can't reproduce; the guard pins content/offsets/ordinal, which is what the refactor must preserve.
 
-- [ ] **Step 1: Write fixtures** — a 3-heading markdown doc, a small JSON object, a 3-row CSV (real content, ≤2 KB each).
+- [ ] **Step 1: Write fixtures** — a 3-heading markdown doc, a plain-text doc, and a `## Page N`-structured text doc (real content, ≤2 KB each).
 
 - [ ] **Step 2: Write the failing characterization test**
 
 ```python
 import json
 from pathlib import Path
-from ennam_kg.ingestion.adapters.files import extract_file_text
 from ennam_kg.ingestion.pipeline.document_tree import parse_markdown_sections
 from ennam_kg.ingestion.pipeline.chunker import chunk_section
 
@@ -131,11 +132,11 @@ GOLDEN = FIX / "char_golden.json"
 def _pipeline(content: str) -> list[dict]:
     out = []
     for sec_idx, sec in enumerate(parse_markdown_sections(content)):
-        sec_id = f"sec{sec_idx}"
+        sec_id = f"sec{sec_idx}"  # placeholder; real key uses persisted node id
         for ch in chunk_section(sec_id, "doc0", sec.title, sec.text, sec.line_start):
             out.append({
                 "section_title": sec.title,
-                "chunk_key": ch.chunk_key,
+                "ordinal": ch.ordinal,
                 "content": ch.content,
                 "char_start": ch.char_start,
                 "char_end": ch.char_end,
@@ -144,27 +145,24 @@ def _pipeline(content: str) -> list[dict]:
 
 def test_characterization_matches_golden():
     samples = {}
-    for name, fmt_file in [("md", "char_sample.md"), ("json", "char_sample.json"), ("csv", "char_sample.csv")]:
-        text, _ = extract_file_text(FIX / fmt_file)
-        samples[name] = _pipeline(text)
+    for name, f in [("md", "char_sample.md"), ("txt", "char_sample.txt"), ("pdf", "char_sample_pdf.txt")]:
+        samples[name] = _pipeline((FIX / f).read_text(encoding="utf-8"))
     expected = json.loads(GOLDEN.read_text())
-    assert samples == expected, "current pipeline output drifted from golden snapshot"
+    assert samples == expected, "current chunk-path output drifted from golden snapshot"
 ```
 
 - [ ] **Step 3: Generate the golden snapshot once, then run the test**
 
-First run will fail (no golden). Generate it deterministically:
-Run: `cd ennam.kg.python && uv run python -c "import json,sys; sys.path.insert(0,'tests/ingestion'); from test_characterization import _pipeline; from pathlib import Path; from ennam_kg.ingestion.adapters.files import extract_file_text; FIX=Path('tests/ingestion/fixtures'); out={n:_pipeline(extract_file_text(FIX/f)[0]) for n,f in [('md','char_sample.md'),('json','char_sample.json'),('csv','char_sample.csv')]}; (FIX/'char_golden.json').write_text(json.dumps(out,ensure_ascii=False,indent=2))"`
+First run fails (no golden). Generate it deterministically:
+Run: `cd ennam.kg.python && uv run python -c "import json,sys; sys.path.insert(0,'tests/ingestion'); from test_characterization import _pipeline; from pathlib import Path; FIX=Path('tests/ingestion/fixtures'); out={n:_pipeline((FIX/f).read_text()) for n,f in [('md','char_sample.md'),('txt','char_sample.txt'),('pdf','char_sample_pdf.txt')]}; (FIX/'char_golden.json').write_text(json.dumps(out,ensure_ascii=False,indent=2))"`
 Then: `uv run pytest tests/ingestion/test_characterization.py -v`
 Expected: PASS.
 
-- [ ] **Step 4: Eyeball the golden for the known JSON/CSV reformatting** — confirm the JSON golden shows pretty-printed text and the CSV golden shows `\r\n`-joined rows (this is the divergence P1 will normalize; capturing it here proves the snapshot is honest).
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add ennam.kg.python/tests/ingestion/test_characterization.py ennam.kg.python/tests/ingestion/fixtures/
-git commit -m "test: characterization snapshot of current ingest output (md/json/csv) — P0 guard"
+git commit -m "test: characterization snapshot of current chunk-path output (md/txt/pdf) — P0 guard"
 ```
 
 ---
@@ -247,14 +245,15 @@ git commit -m "feat(ingest): cross-path canonical text normalization (FR-002/NFR
 - Test: `ennam.kg.python/tests/ingestion/test_canonical.py`
 
 **Interfaces:**
-- Consumes: `normalize_canonical_text` (Task 1.1), `parse_markdown_sections` → `list[MarkdownSection]` (`title,level,line_start,line_end,text`), `chunk_section` → `list[Chunk]` (`chunk_key,ordinal,section_id,document_id,title,content,content_hash,line_start,line_end,char_start,char_end,token_estimate`).
+- Consumes: `normalize_canonical_text` (Task 1.1), `parse_markdown_sections` → `list[MarkdownSection]`, `build_document_tree_json(list[MarkdownSection]) -> list[dict]` (`document_tree.py:72`), `chunk_section(section_id, document_id, section_title, text, section_line_start) -> list[Chunk]`.
 - Produces:
   - `EmptyExtractionError(Exception)` with `.reason = "extraction_empty"`.
-  - `CanonicalSection` dataclass: `local_id: str, title: str, level: int, line_start: int, line_end: int, text: str, section_path: str`.
-  - `CanonicalChunk` dataclass: mirrors `Chunk` fields plus `section_local_id: str`.
-  - `CanonicalDocument` dataclass: `canonical_text: str, content_hash: str, extraction_method: str, sections: list[CanonicalSection], chunks: list[CanonicalChunk]`.
-  - `build_canonical_document(*, raw_text: str, content_format: str, is_pdf: bool, min_chars: int = 20) -> CanonicalDocument`.
-  - `MIN_USABLE_CHARS = 20` constant.
+  - `CHUNKABLE_FORMATS = frozenset({"markdown","md","plain_text","txt","text"})` (mirrors `decompose.py:20`).
+  - `MIN_USABLE_CHARS = 20`.
+  - `CanonicalSection` dataclass (frozen): `local_id: str, title: str, level: int, line_start: int, line_end: int, text: str, section_path: str`.
+  - `CanonicalChunk` dataclass (frozen): `section_local_id: str, ordinal: int, title: str, content: str, content_hash: str, line_start: int, line_end: int, char_start: int, char_end: int, token_estimate: int`. **No final `chunk_key`/`section_id`** — those embed the persisted section-node UUID and are stamped by `decompose` (Task 5.1) as `f"{section_node_id}:{ordinal}"`.
+  - `CanonicalDocument` dataclass (frozen): `canonical_text: str, content_hash: str, extraction_method: str, sections: list[CanonicalSection], chunks: list[CanonicalChunk], tree: list[dict]`.
+  - `build_canonical_document(*, raw_text: str, content_format: str, is_pdf: bool, min_chars: int = MIN_USABLE_CHARS) -> CanonicalDocument`. When `content_format` is not in `CHUNKABLE_FORMATS`, returns `sections=[]`, `chunks=[]`, `tree=[]` (hub-only) but still a valid `canonical_text`/`content_hash`/`extraction_method`.
 
 - [ ] **Step 1: Write failing tests (determinism, fail-loud, section_path, chunk identity)**
 
@@ -270,7 +269,7 @@ def test_deterministic_same_input_same_output():
     a = build_canonical_document(raw_text=MD, content_format="markdown", is_pdf=False)
     b = build_canonical_document(raw_text=MD, content_format="markdown", is_pdf=False)
     assert a.content_hash == b.content_hash
-    assert [c.chunk_key for c in a.chunks] == [c.chunk_key for c in b.chunks]
+    assert [(c.section_local_id, c.ordinal) for c in a.chunks] == [(c.section_local_id, c.ordinal) for c in b.chunks]
     assert [c.char_start for c in a.chunks] == [c.char_start for c in b.chunks]
 
 def test_fail_loud_on_empty():
@@ -296,10 +295,21 @@ def test_extraction_method_text_for_pdf():
     doc = build_canonical_document(raw_text=MD, content_format="markdown", is_pdf=True)
     assert doc.extraction_method == "text"
 
-def test_chunk_keys_follow_section_ordinal():
+def test_non_chunkable_format_is_hub_only():
+    # json/csv/xlsx: canonical text + hash, but NO sections/chunks (gate preserved)
+    doc = build_canonical_document(raw_text='{"a": 1, "deal": "value here long enough"}', content_format="json", is_pdf=False)
+    assert doc.content_hash and doc.canonical_text
+    assert doc.sections == [] and doc.chunks == [] and doc.tree == []
+
+def test_provisional_chunk_carries_section_local_id_and_ordinal():
     doc = build_canonical_document(raw_text=MD, content_format="markdown", is_pdf=False)
-    for ch in doc.chunks:
-        assert ch.chunk_key == f"{ch.section_id}:{ch.ordinal}"
+    assert all(c.section_local_id.startswith("sec") for c in doc.chunks)
+    # ordinals restart per section
+    by_sec = {}
+    for c in doc.chunks:
+        by_sec.setdefault(c.section_local_id, []).append(c.ordinal)
+    for ords in by_sec.values():
+        assert ords == list(range(len(ords)))
 ```
 
 - [ ] **Step 2: Run, verify fail**
@@ -312,9 +322,11 @@ Expected: FAIL — module not found.
 ```python
 """FR-002/FR-003: unified extraction entry point.
 
-Wraps the three pipeline stages (normalize -> sections -> chunks) behind one
-deterministic builder. Fails loud on empty/near-empty extraction instead of
-storing a near-empty document. No AI (AGENTS.md Rule 5).
+Wraps normalize -> sections -> chunks behind one deterministic builder. Fails
+loud on empty/near-empty extraction instead of storing a near-empty document.
+Chunk production is gated to text formats (CHUNKABLE_FORMATS), preserving the
+current decompose._TEXT_FORMATS behaviour; structured formats stay hub-only.
+No AI (AGENTS.md Rule 5).
 """
 from __future__ import annotations
 
@@ -322,10 +334,15 @@ import hashlib
 from dataclasses import dataclass
 
 from ennam_kg.ingestion.pipeline.chunker import chunk_section
-from ennam_kg.ingestion.pipeline.document_tree import parse_markdown_sections
+from ennam_kg.ingestion.pipeline.document_tree import (
+    build_document_tree_json,
+    parse_markdown_sections,
+)
 from ennam_kg.ingestion.pipeline.normalize import normalize_canonical_text
 
 MIN_USABLE_CHARS = 20  # below this, treat as no usable text (FR-003 BR-003.1)
+# Mirrors decompose._TEXT_FORMATS — only these formats are sectioned/chunked.
+CHUNKABLE_FORMATS = frozenset({"markdown", "md", "plain_text", "txt", "text"})
 
 
 class EmptyExtractionError(Exception):
@@ -347,11 +364,8 @@ class CanonicalSection:
 
 @dataclass(frozen=True)
 class CanonicalChunk:
-    chunk_key: str
+    section_local_id: str   # resolved to the persisted section node id by decompose
     ordinal: int
-    section_id: str        # the section local_id at build time
-    section_local_id: str
-    document_id: str
     title: str
     content: str
     content_hash: str
@@ -369,11 +383,11 @@ class CanonicalDocument:
     extraction_method: str
     sections: list[CanonicalSection]
     chunks: list[CanonicalChunk]
+    tree: list[dict]
 
 
 def _section_path(stack: list[tuple[int, str]], title: str) -> str:
-    parts = [t for _, t in stack] + [title]
-    return " / ".join(parts)
+    return " / ".join([t for _, t in stack] + [title])
 
 
 def build_canonical_document(
@@ -384,7 +398,15 @@ def build_canonical_document(
         raise EmptyExtractionError("extraction_empty")
 
     content_hash = hashlib.sha256(canonical_text.encode("utf-8")).hexdigest()
+    method = "text" if is_pdf else "native"
+    fmt = (content_format or "").strip().lower()
+
+    # Hub-only formats (json/csv/xlsx): canonical doc + hash, no chunks (gate preserved).
+    if fmt not in CHUNKABLE_FORMATS:
+        return CanonicalDocument(canonical_text, content_hash, method, [], [], [])
+
     raw_sections = parse_markdown_sections(canonical_text)
+    tree = build_document_tree_json(raw_sections)
 
     sections: list[CanonicalSection] = []
     chunks: list[CanonicalChunk] = []
@@ -400,23 +422,19 @@ def build_canonical_document(
             line_start=sec.line_start, line_end=sec.line_end,
             text=sec.text, section_path=path,
         ))
+        # chunk_section keys on its section_id arg; we pass the local_id so the
+        # boundary/ordinal logic is identical to today. decompose re-stamps the
+        # final key f"{section_node_id}:{ordinal}" (label only, not a re-chunk).
         for ch in chunk_section(local_id, "", sec.title, sec.text, sec.line_start):
             chunks.append(CanonicalChunk(
-                chunk_key=ch.chunk_key, ordinal=ch.ordinal,
-                section_id=ch.section_id, section_local_id=local_id,
-                document_id=ch.document_id, title=ch.title, content=ch.content,
-                content_hash=ch.content_hash, line_start=ch.line_start,
-                line_end=ch.line_end, char_start=ch.char_start, char_end=ch.char_end,
+                section_local_id=local_id, ordinal=ch.ordinal, title=ch.title,
+                content=ch.content, content_hash=ch.content_hash,
+                line_start=ch.line_start, line_end=ch.line_end,
+                char_start=ch.char_start, char_end=ch.char_end,
                 token_estimate=ch.token_estimate,
             ))
 
-    return CanonicalDocument(
-        canonical_text=canonical_text,
-        content_hash=content_hash,
-        extraction_method="text" if is_pdf else "native",
-        sections=sections,
-        chunks=chunks,
-    )
+    return CanonicalDocument(canonical_text, content_hash, method, sections, chunks, tree)
 ```
 
 - [ ] **Step 4: Run, verify pass**
@@ -572,14 +590,17 @@ git commit -m "feat(kgclient): canonical_document upsert + source-hash lookup me
 - Test: `ennam.kg.python/tests/ingestion/test_engine_canonical_persist.py`
 
 **Interfaces:**
-- Consumes: `build_canonical_document` (1.2), `KGClient.upsert_canonical_document` (1.5).
-- Produces: after hub `create_node`, exactly one `upsert_canonical_document` call per draft with `knowledge_node_id = node_id`, `content_hash`, `extraction_method`, and the BR-001.4 metadata envelope. **Existing flow unchanged** — `decompose_document` still runs as before.
+- Consumes: `build_canonical_document` (1.2), `KGClient.upsert_canonical_document` (1.5). Reads `draft["metadata"]` (JSONB) which carries `original_filename`, `mime_type`, `stored_path`, `upload_id` for uploads (`file_upload.go:250-255`); absent for satellite drafts.
+- Produces:
+  - Helper `_is_pdf(meta: dict) -> bool`: `True` if `meta.get("mime_type") == "application/pdf"` or `str(meta.get("original_filename","")).lower().endswith(".pdf")`. Satellite (no meta) → `False` → `native`.
+  - Helper `_canonical_metadata(draft, canonical) -> dict`: the BR-001.4 envelope — `source_type`, `source_id`, `original_filename` (meta or None), `mime_type` (meta or None), `extraction_method`, `extracted_at`, and `source_metadata` = the remaining draft.metadata (upload_id/stored_path, or satellite caller JSONB).
+  - After hub `create_node`, exactly one `upsert_canonical_document` per draft with `knowledge_node_id = node_id`. **Existing flow unchanged** — `decompose_document` still runs as before.
 
-- [ ] **Step 1: Write failing test** (mock `KGClient`) — running `run_batch` on one markdown draft calls `upsert_canonical_document` once with `knowledge_node_id == node_id` and `content_hash == sha256(normalized text)`. On `EmptyExtractionError`, the draft is completed `success=False` with reason `extraction_empty` and **no** `create_node`/`upsert_canonical_document` for it (FR-003).
+- [ ] **Step 1: Write failing test** (mock `KGClient`) — (a) markdown draft → `upsert_canonical_document` called once with `knowledge_node_id == node_id` and `content_hash == sha256(normalize(content_raw))`; (b) draft whose metadata has `mime_type="application/pdf"` → envelope `extraction_method == "text"`; (c) `EmptyExtractionError` → draft completed `success=False` reason `extraction_empty`, **no** `create_node`/`upsert_canonical_document` (FR-003).
 
 - [ ] **Step 2: Run, verify fail** — FAIL.
 
-- [ ] **Step 3: Implement** — in `run_batch`, before extraction call `build_canonical_document(raw_text=draft.content_raw, content_format=draft.content_format, is_pdf=<from content_format/mime>)` inside `try`; on `EmptyExtractionError` mark draft failed (`complete_draft_node(success=False, ...)` with reason) and `continue`. After `create_node`, call `upsert_canonical_document`. Build the metadata envelope per BR-001.4. Keep `decompose_document` untouched this task.
+- [ ] **Step 3: Implement** — in `run_batch`, after loading the draft, read `meta = draft.get("metadata") or {}`; call `build_canonical_document(raw_text=str(draft.get("content_raw") or ""), content_format=str(draft.get("content_format") or ""), is_pdf=_is_pdf(meta))` inside `try`; on `EmptyExtractionError` `complete_draft_node(success=False, ...)` with the reason and `continue`. After the existing `create_node`, call `upsert_canonical_document(project_id, payload)` with the `_canonical_metadata` envelope. Keep `decompose_document` untouched this task. (The deterministic canonical build runs alongside the existing AI `extract_draft` — they are independent; canonical text/hash/chunks carry no AI.)
 
 - [ ] **Step 4: Run, verify pass + full suite green** — `uv run pytest tests/ -q` → PASS (characterization test from 0.2 still green — no consumer reroute yet).
 
@@ -668,11 +689,11 @@ git commit -m "feat(go): cease synchronous text extraction; all uploads defer to
 
 **Interfaces:**
 - Consumes: the OQ-009 answer (authoritative field: `canonical_document` canonical text + chunk offsets, per the ratified contract).
-- Produces: a golden test asserting that, for the same fixtures as Task 0.2, the canonical path reproduces the AAA-authoritative text + char offsets the characterization snapshot captured (allowing for the **intended** JSON/CSV normalization delta — assert against the *normalized* expectation, not the raw pre-normalization golden).
+- Produces: a golden test asserting that, for the Task 0.2 fixtures (md/txt/pdf — the chunked formats AAA consumes), the canonical path reproduces the AAA-authoritative canonical text + chunk char offsets the characterization snapshot captured. (Hub-only formats json/csv/xlsx have no chunks/offsets and are out of this golden.)
 
-- [ ] **Step 1: Record the pinned field** in the spec (one line: "AAA reads canonical text + offsets via `doc_id` → `canonical_document`; `content_raw` direct reads forbidden").
+- [ ] **Step 1: Record the pinned field** in the spec (one line: "AAA reads canonical text + chunk offsets via `doc_id` → `canonical_document`; `content_raw` direct reads forbidden").
 
-- [ ] **Step 2: Write the golden test** comparing canonical-path output to the characterization golden for markdown (byte-identical) and to a normalized expectation for JSON/CSV (the normalization delta is intended, not a regression).
+- [ ] **Step 2: Write the golden test** asserting `build_canonical_document` output (canonical_text + each chunk's `content`/`char_start`/`char_end`/`ordinal`) for the md/txt/pdf fixtures matches the Task 0.2 golden content/offsets — i.e. the unified entry point returns the same text + offsets AAA received pre-change (BR-002.6 superset guarantee made concrete).
 
 - [ ] **Step 3: Run, verify pass** — `uv run pytest tests/ingestion/test_aaa_non_regression.py -v` → PASS.
 
@@ -752,16 +773,16 @@ git commit -m "feat(ingest): content-change regenerate path, no orphan chunks (F
 - Test: `ennam.kg.python/tests/ingestion/test_decompose_canonical.py`
 
 **Interfaces:**
-- Consumes: the `CanonicalDocument` (sections + chunks) built in `run_batch` (1.2/1.6).
-- Produces: `decompose_document` accepts the canonical sections+chunks and creates `document_section` + `document_chunk` nodes from them; it does **NOT** call `parse_markdown_sections` or `chunk_section` itself (NFR-248). `document_chunk` properties unchanged (no `context_header` — FR-005 is cut). Section `local_id` → created node id mapping resolves each chunk's `section_id` to the persisted section node id.
+- Consumes: the `CanonicalDocument` (sections + chunks + tree) built in `run_batch` (1.2/1.6), plus the existing `extraction: ExtractionResult` (still needed for the concept loop, `decompose.py:187-236`).
+- Produces: `decompose_document(kg, *, project_id, hub_node_id, draft, extraction, node_type, canonical)` creates `document_section` + `document_chunk` nodes from `canonical`; it does **NOT** call `parse_markdown_sections` or `chunk_section` (NFR-248). It maps each section's `local_id` → persisted section node id, then for each `CanonicalChunk` stamps the final `chunk_key = f"{section_node_id}:{chunk.ordinal}"`, `section_id = section_node_id`, `document_id = hub_node_id`. `document_chunk` property shape unchanged (no `context_header` — FR-005 cut). The `## Page N` markers in extracted-PDF text survive unchanged (`files.py:64`). Hub `document_tree`/`section_count` set from `canonical.tree`/`len(canonical.sections)`. Concept loop and **both** embedding streams preserved (section summary `f"{title}\\n{summary}"` and each chunk body — `decompose.py:131,184`).
 
-- [ ] **Step 1: Write failing tests** — (a) N canonical chunks → exactly N `document_chunk` nodes with identical keys/offsets (NFR-239 across the path); (b) code-path assertion: `decompose_document` makes no call to `parse_markdown_sections`/`chunk_section` (monkeypatch them to raise; decompose must still succeed) (NFR-248); (c) `document_chunk` property shape unchanged (no `context_header`).
+- [ ] **Step 1: Write failing tests** — (a) N canonical chunks → exactly N `document_chunk` nodes; each `chunk_key == f"{its_section_node_id}:{ordinal}"` and offsets equal the canonical chunk's; (b) NFR-248 code-path assertion: monkeypatch `parse_markdown_sections` and `chunk_section` in the decompose module to raise — `decompose_document` must still succeed (proving it re-parses nothing); (c) `document_chunk` properties have no `context_header`; (d) embeddings upserted for both section nodes and chunk nodes (count = sections + chunks).
 
 - [ ] **Step 2: Run, verify fail** — `uv run pytest tests/ingestion/test_decompose_canonical.py -v` → FAIL.
 
-- [ ] **Step 3: Implement** — change `decompose_document` signature to accept `canonical: CanonicalDocument` (or `sections`+`chunks`); remove the `parse_markdown_sections`/`build_document_tree_json` re-parse at :57-58 and the inline `chunk_section` loop at :135; build the section tree from `canonical.sections`; create section nodes, map `local_id → node_id`, then create chunk nodes from `canonical.chunks` resolving `section_id` via the map; keep the embedding loop (unchanged model, 384-dim) but embed the **raw chunk body** (FR-005 cut → no header). Update `run_batch` to pass `canonical` through.
+- [ ] **Step 3: Implement** — add `canonical: CanonicalDocument` to `decompose_document`'s signature (**keep** `extraction`); delete the `parse_markdown_sections`/`build_document_tree_json` calls at :57-58 and the inline `chunk_section` loop at :135 (its body that creates chunk nodes is retained but now iterates `canonical.chunks`). Persist hub tree from `canonical.tree`. Create section nodes by iterating `canonical.sections` (using `section_path`/`text`/`level`/line offsets), recording `local_id → node_id` in a dict and the parent-stack edges as today. Then iterate `canonical.chunks`: resolve `section_node_id = local_map[chunk.section_local_id]`, create the `document_chunk` node with `chunk_key=f"{section_node_id}:{chunk.ordinal}"`, `section_id=section_node_id`, `document_id=hub_node_id`, and the existing offset/content/hash properties. Keep the concept loop and the dual embedding loop (section + chunk, 384-dim, unchanged model) exactly as today. The early-return format gate at :47-55 is now redundant (canonical already gated chunking) — leave the hub-only short-circuit so non-text drafts with empty `canonical.sections` create no sections, matching today. Update `run_batch` (engine) to pass `canonical=` through to `decompose_document`.
 
-- [ ] **Step 4: Run, verify pass + FULL suite incl. characterization** — `uv run pytest tests/ -q`. The Task 0.2 characterization test for markdown must still pass (markdown path is byte-identical); JSON/CSV differences are covered by the normalized NFR-247 golden (3.1), not the raw characterization golden — if 0.2 now legitimately diverges for JSON/CSV due to normalization, update its golden in this commit with a note.
+- [ ] **Step 4: Run, verify pass + FULL suite incl. characterization** — `uv run pytest tests/ -q`. The Task 0.2 characterization golden (md/txt/pdf chunk content + offsets) must still pass: the canonical path runs the same `parse_markdown_sections`/`chunk_section` logic on the same text, so chunk content/offsets/ordinals are unchanged. (Normalization is a no-op for the LF, no-trailing-whitespace fixtures; if a fixture legitimately changes under normalization, that's a real divergence to investigate, not a golden to silently bump.)
 
 - [ ] **Step 5: Commit**
 
@@ -787,7 +808,8 @@ git commit -am "chore: lint + final verification for BA-030 canonical ingest cor
 
 - **Spec coverage:** FR-001 (1.3/1.4/1.6), FR-002 (1.1/1.2/2.1/2.2), FR-003 (1.2/1.6), FR-004 (4.1/4.2), FR-006 (5.1). Normalization (NFR-239) → 1.1. Approval gate → 2.1. Migration 000060 → 0.1. Characterization → 0.2. NFR-247 pin → 3.1. FR-005 + GET endpoints correctly **absent** (cut).
 - **Cross-service surface** (worker→Go for canonical_document) is fully covered: store (1.3), endpoints (1.4), client (1.5), use (1.6) — this was under-specified in the BA and is made explicit here.
-- **Type consistency:** `CanonicalDocument`/`CanonicalChunk`/`CanonicalSection` defined in 1.2 and consumed in 1.6/4.x/5.1; `upsert_canonical_document`/`get_canonical_document_by_source` defined in 1.5, used in 1.6/4.1; `UpsertByDraft`/`FindBySourceHash` defined in 1.3, used in 1.4.
+- **Verified against code (2026-06-17 review):** migrate target is `make db-migrate` (not `migrate-up`); `is_pdf` derives from `draft.metadata` (`original_filename`/`mime_type`, set at `file_upload.go:250-255`), **not** `content_format` (which is `plain_text` for PDFs); `chunk_key` embeds the persisted section-node UUID, so the builder emits provisional `(section_local_id, ordinal)` and `decompose` stamps the final key (label-only, preserves NFR-248); `decompose_document` keeps its `extraction` param (concept loop) and both embedding streams; json/csv/xlsx remain hub-only per the chunkable-format gate.
+- **Type consistency:** `CanonicalDocument`/`CanonicalChunk`/`CanonicalSection` defined in 1.2 (chunks carry `section_local_id`+`ordinal`, no final key) and consumed in 1.6/4.x/5.1; `upsert_canonical_document`/`get_canonical_document_by_source` defined in 1.5, used in 1.6/4.1; `UpsertByDraft`/`FindBySourceHash` defined in 1.3, used in 1.4.
 - **Sequencing guards:** P5 (FR-006) is last; P2 cutover gated on the PO confirm; P3 gated on OQ-009. Characterization guard (0.2) precedes every refactor.
 
 ## Known Preconditions (carry into execution)
