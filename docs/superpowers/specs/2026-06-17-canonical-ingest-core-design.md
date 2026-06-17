@@ -91,11 +91,13 @@ Normalization policy (named decisions, not accidents):
 
 **The governance regression found in debate:** flipping text formats to `deferExtract=true` makes `PublishExtractUpload` fire (`file_upload.go:285`) on a `Status: Pending` draft, and the worker's extract handler runs `run_batch` immediately — **indexing text uploads before approval**, bypassing the gate `draft_node.go:172` enforces for the `kg_generation` path.
 
+**Confirmed current behavior (2026-06-17 verification):** `handle_extract_upload` (`worker.py:45`) extracts text, updates draft content, **then immediately calls `run_batch`** (`worker.py:75`) — full decompose + index, **with no approval check**. Consequence: local **binary** uploads (`.pdf/.docx/.xlsx`, already `deferExtract=true`) already index-on-upload, bypassing the gate; local **text** uploads and **satellite** currently wait for approval (`ingest_public.go:55` returns `pending_indexing`). So approval-gating is a *deliberate, designed* feature (the satellite message tells the caller to enable `auto_queue` or call `kg_process_drafts`), and binary immediate-index is the inconsistency — not the norm.
+
 **Invariant:** extraction + canonicalization MAY run pre-approval; **decomposition, indexing, and any KG mutation MUST NOT run before approval.**
 
-**Implementation rule:** `extract_upload` extracts text + writes canonical content **only**. It must **not** trigger `run_batch` / decomposition. Processing to KG nodes stays behind the approval-driven path exactly as `kg_generation` does today.
+**Decision — Option A (gate everything), approved 2026-06-17:** `extract_upload` extracts text + writes canonical content **only**, for **both text and binary** formats. It must **not** trigger `run_batch` / decomposition. Processing to KG nodes stays behind the approval-driven path exactly as `kg_generation` does today. This *preserves* text uploads' current approval behavior (the path BA-030 migrates) and *fixes* binary's existing gate-skip — making all three paths consistent, which is the point of a canonical ingest core.
 
-> Implementation to-do (non-blocking): confirm whether the worker's `ExtractUpload` handler currently extracts-only or also fans out to decompose; wire the gate accordingly.
+> **P2 precondition (not a P0/P1 blocker):** Option A changes shipped **binary** upload behavior (binaries will now wait for approval instead of indexing immediately). Requires a one-line confirmation from the backend lead / PO before the P2 cutover lands. The fallback if rejected is Option B (local uploads index immediately; text joins binary), which would instead *downgrade* this invariant.
 
 ---
 
@@ -168,7 +170,7 @@ Verification (NFR-248): the producer never independently calls `parse_markdown_s
 ## 12. Open Items Before Spec Freeze
 
 - **OQ-009 owner**: AAA phase owner must commit the authoritative read field before P2→P3 cutover (does not block P0/P1 coding).
-- **Approval-gate handler check**: confirm worker `ExtractUpload` extract-only vs fan-out (P2 implementation to-do).
+- **Approval-gate handler check**: ✅ RESOLVED 2026-06-17 — `handle_extract_upload` confirmed to fan out to `run_batch` (`worker.py:75`); Option A (gate everything) approved. Remaining: one-line backend-lead/PO confirm that binaries-now-wait is acceptable, before P2 cutover lands.
 - Normalization specifics (LF + decode policy + accepted truncation limits) ratified as named decisions, not accidents.
 
 ---
