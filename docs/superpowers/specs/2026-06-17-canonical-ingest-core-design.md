@@ -93,11 +93,15 @@ Normalization policy (named decisions, not accidents):
 
 **Confirmed current behavior (2026-06-17 verification):** `handle_extract_upload` (`worker.py:45`) extracts text, updates draft content, **then immediately calls `run_batch`** (`worker.py:75`) — full decompose + index, **with no approval check**. Consequence: local **binary** uploads (`.pdf/.docx/.xlsx`, already `deferExtract=true`) already index-on-upload, bypassing the gate; local **text** uploads and **satellite** currently wait for approval (`ingest_public.go:55` returns `pending_indexing`). So approval-gating is a *deliberate, designed* feature (the satellite message tells the caller to enable `auto_queue` or call `kg_process_drafts`), and binary immediate-index is the inconsistency — not the norm.
 
-**Invariant:** extraction + canonicalization MAY run pre-approval; **decomposition, indexing, and any KG mutation MUST NOT run before approval.**
+**Invariant:** extraction + canonicalization MAY run pre-approval. Whether **decomposition/indexing** runs before approval is **configurable** (see decision below).
 
-**Decision — Option A (gate everything), approved 2026-06-17:** `extract_upload` extracts text + writes canonical content **only**, for **both text and binary** formats. It must **not** trigger `run_batch` / decomposition. Processing to KG nodes stays behind the approval-driven path exactly as `kg_generation` does today. This *preserves* text uploads' current approval behavior (the path BA-030 migrates) and *fixes* binary's existing gate-skip — making all three paths consistent, which is the point of a canonical ingest core.
+**Decision — config-driven gate, default OFF (updated 2026-06-17):** add a project setting `ingestion.require_upload_approval` (bool, **default `false`**) on the existing `IngestionSettings` struct.
+- **`false` (default) → index immediately:** the worker extracts text **and** runs the pipeline (`run_batch`) right away, for both text and binary uploads. This **preserves current behavior** (binary already indexes on upload; text now does too via the worker) — so no shipped behavior regresses and **no PO sign-off is needed**.
+- **`true` → gate:** the worker extracts text **only**; decomposition/indexing waits for the approval-driven `kg_generation` path. Opt-in stricter governance.
 
-> **P2 precondition (not a P0/P1 blocker):** Option A changes shipped **binary** upload behavior (binaries will now wait for approval instead of indexing immediately). Requires a one-line confirmation from the backend lead / PO before the P2 cutover lands. The fallback if rejected is Option B (local uploads index immediately; text joins binary), which would instead *downgrade* this invariant.
+**Mechanism:** Go owns `IngestionSettings`, so when it publishes the `extract_upload` message (`file_upload.go:285`) it stamps a `require_approval` flag from the setting. The worker reads that flag — it does **not** query settings itself (minimal coupling). This relates to but is distinct from `ingestion.auto_queue_processing` (which governs the satellite/draft-approval queue, not the upload extract path); the two do not conflict.
+
+> **No P2 precondition anymore.** Because the default is "index immediately" (= current behavior), the cutover changes nothing observable by default. The approval gate is now opt-in per project, not a forced behavior change.
 
 ---
 
@@ -159,7 +163,7 @@ Verification (NFR-248): the producer never independently calls `parse_markdown_s
 
 1. Phase-0 characterization test over current `content_raw` read path, written FIRST.
 2. Single cross-path normalization in `build_canonical_document`; `content_hash` over normalized text (CORE, non-negotiable).
-3. Approval-gate invariant: extraction/canonicalization may run pre-approval; decomposition/indexing/KG mutation MUST NOT run before approval.
+3. Approval gate is **config-driven** via `ingestion.require_upload_approval` (default `false` = index immediately = current behavior; `true` = extract-only, wait for approval). No forced behavior change, no PO sign-off needed.
 4. NFR-247 re-pinned to the canonical contract as a hard gate before the FR-002 read cutover; direct `content_raw` reads forbidden.
 5. FR-005 + 2 GET endpoints CUT from v1; re-introduction trigger = a real consumer ticket.
 6. Sequencing: P0 → P1 → P2 → P3 → P4 → FR-006 LAST. BA-031 unblocks after P3.
@@ -170,7 +174,7 @@ Verification (NFR-248): the producer never independently calls `parse_markdown_s
 ## 12. Open Items Before Spec Freeze
 
 - **OQ-009 owner**: AAA phase owner must commit the authoritative read field before P2→P3 cutover (does not block P0/P1 coding).
-- **Approval-gate handler check**: ✅ RESOLVED 2026-06-17 — `handle_extract_upload` confirmed to fan out to `run_batch` (`worker.py:75`); Option A (gate everything) approved. Remaining: one-line backend-lead/PO confirm that binaries-now-wait is acceptable, before P2 cutover lands.
+- **Approval-gate handler check**: ✅ RESOLVED 2026-06-17 — `handle_extract_upload` confirmed to fan out to `run_batch` (`worker.py:75`). Final decision: **config-driven gate** `ingestion.require_upload_approval`, default `false` (index immediately = current behavior). No PO sign-off blocker; the gate is opt-in.
 - Normalization specifics (LF + decode policy + accepted truncation limits) ratified as named decisions, not accidents.
 
 ---

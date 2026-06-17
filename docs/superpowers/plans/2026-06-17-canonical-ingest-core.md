@@ -16,7 +16,7 @@
 - **NFR-239 (reframed):** cross-path equivalence is asserted for **text-format** content — the same logical text via a text-format upload vs `satellite_api` yields identical `content_hash` and chunks (both flow through the canonical builder + normalization). Structured formats (json/csv/xlsx) are hub-only; cross-path *structural* hash parity for them is **not** guaranteed and is out of scope (they are never chunked).
 - **No new infra:** no new system binary, no new Python/Go dependency, no Docker image growth. OCR is out of scope.
 - **Determinism (NFR-240):** extraction/normalization/hashing/chunk-keys are pure deterministic transforms — **no AI/model call** in this path (AGENTS.md Rule 5).
-- **Approval gate (HARD, Option A):** extraction + canonicalization may run pre-approval; **decomposition / indexing / any KG mutation MUST NOT run before approval** — for **both** text and binary uploads.
+- **Approval gate (config-driven, default OFF):** new project setting `ingestion.require_upload_approval` (bool, default `false`). Default `false` → worker extracts **and** indexes immediately (preserves current behavior). `true` → worker extracts only; indexing waits for the approval `kg_generation` path. Go stamps the flag onto the `extract_upload` message; the worker reads it (no settings query in the worker).
 - **Managed Postgres (NFR-250):** only RDS-allowlisted extensions (`vector`, `pg_trgm`, `uuid-ossp`). No new extension.
 - **Embedding model invariance (NFR-251):** stays multilingual-e5-small, `vector(384)`. Do not change.
 - **`extraction_method` values v1:** only `text` (text-extractable PDF) and `native` (non-PDF). `ocr`/`mixed` are reserved in the CHECK, never written.
@@ -32,7 +32,9 @@
 - Create: `internal/store/canonical_document.go` — `CanonicalDocumentStore` (upsert-by-draft, get-by-source-hash).
 - Create: `internal/handler/canonical_document.go` — REST handlers (member+/worker auth, same as the node/draft routes the worker already calls) for upsert + lookup + subtree-delete.
 - Modify: `internal/store/node.go` — add `DeleteDocumentSubtree` (hard delete of a doc's section+chunk nodes; embeddings cascade).
-- Modify: `internal/service/file_upload.go` — `classifyUploadFile` (~:355), delete `extractTextSync` (~:372) + its branch (~:241), `ContentExtracted` (~:222).
+- Modify: `internal/service/file_upload.go` — `classifyUploadFile` (~:355), delete `extractTextSync` (~:372) + its branch (~:241), `ContentExtracted` (~:222), stamp `require_approval` on the extract message (~:285).
+- Modify: `internal/service/ingestion_settings.go` — add `RequireUploadApproval bool` (key `ingestion.require_upload_approval`, default false).
+- Modify: `internal/queue/` (`IngestionMessage`) — add `RequireApproval bool`.
 - Modify: `cmd/kg-server/main.go` — wire the new store + routes.
 - Test: `internal/store/canonical_document_test.go` (nil-DB unit + `setupTestDB`-gated), `internal/store/node_test.go` (subtree delete), `internal/handler/canonical_document_test.go`, `internal/service/file_upload_test.go`.
 
@@ -624,34 +626,64 @@ git commit -m "feat(ingest): persist canonical_document in run_batch + fail-loud
 
 ---
 
-## PHASE 2 — Go cutover + approval-gate (Option A)
+## PHASE 2 — Go cutover + config-driven approval gate
 
-> Goal: Go ceases synchronous text extraction; ALL local uploads defer to the worker; the worker extracts-only and does NOT index before approval. **P2 precondition:** backend-lead/PO one-line confirm that binary uploads now wait for approval (Option A). Do not land the cutover commit without it.
+> Goal: Go ceases synchronous text extraction; ALL uploads defer to the worker. The worker indexes immediately **by default** (`ingestion.require_upload_approval=false`), or extracts-only and waits for approval when the setting is `true`. No forced behavior change → **no precondition**.
 
-### Task 2.1: Worker `handle_extract_upload` becomes extract-only (approval-gate invariant)
+### Task 2.0: Add `require_upload_approval` setting + stamp it on the extract message
+
+**Files:**
+- Modify: `ennam.kg.go/internal/service/ingestion_settings.go` (~:21-99 — add field + loader)
+- Modify: `ennam.kg.go/internal/service/file_upload.go` (~:285-297 — stamp flag on `extract_upload` message)
+- Modify: `ennam.kg.go/internal/queue/` message struct (add `RequireApproval bool` to `IngestionMessage`)
+- Test: `ennam.kg.go/internal/service/ingestion_settings_test.go`
+
+**Interfaces:**
+- Produces: `IngestionSettings.RequireUploadApproval bool` loaded from `ingestion.require_upload_approval` (default `false`, via existing `readBoolSetting`); the published `extract_upload` `IngestionMessage` carries `require_approval` = that value.
+
+- [ ] **Step 1: Write failing test** — loader returns `false` when the setting is unset (default); returns `true` when set; assert the published extract message carries the flag. Mirror the existing `AutoQueueProcessing` test.
+
+- [ ] **Step 2: Run, verify fail** — `cd ennam.kg.go && go test ./internal/service/ -run Ingestion -v` → FAIL.
+
+- [ ] **Step 3: Implement** — add the field + `readBoolSetting(ctx, reader, "ingestion.require_upload_approval", false)` next to `auto_queue_processing` (`ingestion_settings.go:78`); add `RequireApproval bool` to `IngestionMessage`; in `PublishExtractUpload` call site (`file_upload.go:285`) set it from the loaded settings.
+
+- [ ] **Step 4: Run, verify pass + build** — PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ennam.kg.go/internal/service/ingestion_settings.go ennam.kg.go/internal/service/ingestion_settings_test.go ennam.kg.go/internal/service/file_upload.go ennam.kg.go/internal/queue/
+git commit -m "feat(go): ingestion.require_upload_approval setting (default false) + stamp on extract msg"
+```
+
+### Task 2.1: Worker honors `require_approval` flag (gate vs immediate)
 
 **Files:**
 - Modify: `ennam.kg.python/src/ennam_kg/worker.py` (~:45-89)
 - Test: `ennam.kg.python/tests/test_worker_extract_gate.py`
 
 **Interfaces:**
-- Produces: `handle_extract_upload` extracts text + `update_draft_content` **only**; it does **not** call `ingestion_engine.run_batch`. Indexing happens via the existing approval-driven `kg_generation` path.
+- Produces: `handle_extract_upload` always extracts + `update_draft_content`; then if `msg.get("require_approval")` is **falsy (default)** it calls `ingestion_engine.run_batch` immediately (current behavior); if **truthy** it stops (indexing waits for the `kg_generation` approval path).
 
-- [ ] **Step 1: Write failing test** (mock `kg_client` + `ingestion_engine`) — invoking `handle_extract_upload` calls `update_draft_content` once and `run_batch` **zero** times.
+- [ ] **Step 1: Write failing tests** (mock `kg_client` + `ingestion_engine`):
 
 ```python
-async def test_extract_upload_does_not_index_before_approval(monkeypatch):
+async def test_default_indexes_immediately():
     calls = {"update": 0, "run_batch": 0}
-    # wire mocks so kg_client.update_draft_content increments update,
-    # ingestion_engine.run_batch increments run_batch
+    # require_approval absent → default behavior
     await handle_extract_upload({"project_id": "p", "draft_node_id": "d", "stored_path": "p/u/f.pdf"})
-    assert calls["update"] == 1
-    assert calls["run_batch"] == 0  # Option A: gate preserved
+    assert calls["update"] == 1 and calls["run_batch"] == 1  # immediate (default OFF)
+
+async def test_gate_when_require_approval_true():
+    calls = {"update": 0, "run_batch": 0}
+    await handle_extract_upload({"project_id": "p", "draft_node_id": "d",
+                                 "stored_path": "p/u/f.pdf", "require_approval": True})
+    assert calls["update"] == 1 and calls["run_batch"] == 0  # gated
 ```
 
-- [ ] **Step 2: Run, verify fail** — `uv run pytest tests/test_worker_extract_gate.py -v` → FAIL (currently calls run_batch at :75).
+- [ ] **Step 2: Run, verify fail** — `uv run pytest tests/test_worker_extract_gate.py -v` → FAIL (currently always calls run_batch, ignores the flag).
 
-- [ ] **Step 3: Implement** — delete the `run_batch` block (`worker.py:70-89`); leave extract + `update_draft_content`. Add a log line: extraction complete, awaiting approval.
+- [ ] **Step 3: Implement** — keep extract + `update_draft_content`; wrap the existing `run_batch` block (`worker.py:70-89`) in `if not msg.get("require_approval"):`. In the gated branch, log "extraction complete, awaiting approval".
 
 - [ ] **Step 4: Run, verify pass** — PASS.
 
@@ -659,7 +691,7 @@ async def test_extract_upload_does_not_index_before_approval(monkeypatch):
 
 ```bash
 git add ennam.kg.python/src/ennam_kg/worker.py ennam.kg.python/tests/test_worker_extract_gate.py
-git commit -m "feat(worker): extract-only handler, no index before approval (Option A, FR-002 gate)"
+git commit -m "feat(worker): honor require_approval flag — default index immediately, opt-in gate"
 ```
 
 ### Task 2.2: Go stops synchronous text extraction (delete `extractTextSync`)
@@ -849,15 +881,15 @@ git commit -am "chore: lint + final verification for BA-030 canonical ingest cor
 
 ## Plan Self-Review
 
-- **Spec coverage:** FR-001 (1.3/1.4/1.6), FR-002 (1.1/1.2/2.1/2.2), FR-003 (1.2/1.6), FR-004 (4.1/4.2), FR-006 (5.1). Normalization (NFR-239) → 1.1. Approval gate → 2.1. Migration 000060 → 0.1. Characterization → 0.2. NFR-247 pin → 3.1. FR-005 + GET endpoints correctly **absent** (cut).
+- **Spec coverage:** FR-001 (1.3/1.4/1.6), FR-002 (1.1/1.2/2.0/2.1/2.2), FR-003 (1.2/1.6), FR-004 (4.1/4.2a/4.2b), FR-006 (5.1). Normalization (NFR-239) → 1.1. Config-driven approval gate → 2.0/2.1. Migration 000060 → 0.1. Characterization → 0.2. NFR-247 pin → 3.1. FR-005 + GET endpoints correctly **absent** (cut).
 - **Cross-service surface** (worker→Go for canonical_document) is fully covered: store (1.3), endpoints (1.4), client (1.5), use (1.6) — this was under-specified in the BA and is made explicit here.
 - **Verified against code (2026-06-17, 3 review passes):** migrate target is `make db-migrate` (not `migrate-up`); `is_pdf` derives from `draft.metadata` (`original_filename`/`mime_type`, set at `file_upload.go:250-255`), **not** `content_format` (which is `plain_text` for PDFs); `chunk_key` embeds the persisted section-node UUID, so the builder emits provisional `(section_local_id, ordinal)` and `decompose` stamps the final key (label-only, preserves NFR-248); `decompose_document` keeps its `extraction` param (concept loop) and both embedding streams; json/csv/xlsx remain hub-only per the chunkable-format gate; draft node types are only `document`/`external`/`dataset` (all valid canonical-doc hubs).
 - **Test conventions matched:** Go simple stores → nil-DB unit tests; SQL behavior → `setupTestDB(t)`-gated real-DB tests that skip without `KG_TEST_DATABASE_URL` (per `node_embedding_test.go`). Python → pytest with mocked `KGClient`.
 - **FR-004 regenerate gap closed:** there was no node-delete API (no `KGClient` method, no Go route). Task 4.2a adds `DeleteDocumentSubtree` + route + client method; hard delete cascades `knowledge_node_embeddings` (FK `ON DELETE CASCADE`) → no orphan embeddings. This was the riskiest half the CTO flagged.
 - **Type consistency:** `CanonicalDocument`/`CanonicalChunk`/`CanonicalSection` defined in 1.2 (chunks carry `section_local_id`+`ordinal`, no final key) and consumed in 1.6/4.x/5.1; `upsert_canonical_document`/`get_canonical_document_by_source` defined in 1.5, used in 1.6/4.1; `UpsertByDraft`/`FindBySourceHash` defined in 1.3, used in 1.4.
-- **Sequencing guards:** P5 (FR-006) is last; P2 cutover gated on the PO confirm; P3 gated on OQ-009. Characterization guard (0.2) precedes every refactor.
+- **Sequencing guards:** P5 (FR-006) is last; P3 (NFR-247 golden) gated on OQ-009. Characterization guard (0.2) precedes every refactor. P2 no longer has a sign-off gate (config default = current behavior).
 
 ## Known Preconditions (carry into execution)
-1. **P2:** backend-lead/PO confirm binaries-now-wait (Option A). 
-2. **P3:** AAA phase owner answers OQ-009 (authoritative read field); CTO ratifies.
-3. Both are cheap conversations, not engineering blockers — P0/P1 proceed without them.
+1. **P2:** ✅ No sign-off needed — gate is config-driven (`ingestion.require_upload_approval`, default `false` = index immediately = current behavior). Opt-in only.
+2. **P3:** AAA phase owner confirms AAA binds to `doc_id` (canonical contract), not `draft_nodes.content_raw`. The physical access path (`canonical_document` row vs `document` hub node) is **swappable later** since both resolve via `doc_id`; only the contract (`doc_id` → text + offsets) must stay stable. Cheap confirmation, not an engineering blocker.
+3. P0/P1 proceed without either.
