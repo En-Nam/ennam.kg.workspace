@@ -90,7 +90,16 @@ recovery sweep → periodically re-enqueue chunk_extraction_state rows with dead
 | **OQ-006** | **No semantic relation dedup in v1** (YAGNI). On exact `(source,target,edge_type)` collision: **supersede-with-provenance, do not delete** (see §6 BR-005.11 rewrite). | Hard-delete compaction of confirmed-old superseded edges is a later, separately-gated BA. |
 | **OQ-007** | **Resolved into BR-001.8.** Add `master_record` to the `node_type` CHECK (graph vocabulary = 9) but **exclude it from the extractable set (8)** — two distinct lists. Pass 1 never emits `MasterRecord`. | Schema-reserved for AAA Phase C write-back. No BA-031 behaviour depends on the AAA owner's answer. |
 
-> **OQ-NEW-1 (surfaced during the final code review — needs an explicit decision before 8a).** BA-031 writes the closed vocabulary capitalised (`Person`, `Organization`, `Concept`, `Event`, `Document`, `Location`, `Artifact`, `Project`, `MasterRecord`), but the live platform convention is lowercase snake_case (`decision`, `document_chunk`, `master_record` — note this spec already drifted to lowercase). **Decision A (recommended): use lowercase** — `person, organization, concept, event, document, location, artifact, project, master_record`. This collides with **three already-existing `node_types`**: `concept` (config.yaml:71), `document` (208), `project` (771). Sub-decision: **reuse** the existing `concept`/`document`/`project` types for extracted entities, or introduce **distinct** types (e.g. `kg_document` vs the existing ingested-container `document`). *Recommendation:* reuse `concept`/`project`; for `document` consider a distinct type because the existing `document` is the ingested container (BA-025), which is semantically different from an extracted "document mentioned in text" — conflating them would let same-type blocking try to merge container docs with entity-references. **This must be settled before the OQ-001 migration/config work**, because it determines which `node_types` are net-new vs reused. |
+> **OQ-NEW-1 — RESOLVED (user decision, 2026-06-18).** BA-031 writes the closed vocabulary capitalised (`Person`…`MasterRecord`), but the live platform convention is lowercase snake_case. **Decision: use lowercase, reuse existing types where they already model the concept, and introduce a distinct `document_ref` type.** Final closed graph vocabulary (9 lowercase types):
+>
+> `person`, `organization`, `concept`, `event`, `document_ref`, `location`, `artifact`, `project`, `master_record`
+>
+> - **Reused (already in config.yaml `node_types`):** `concept` (config.yaml:71), `project` (771). No new `node_types` block — but their schemas may need entity-resolution fields (`canonical_name`, `aliases`, `subtype`, `provenance`) added without breaking existing producers; reconcile required-field changes with Gate-2.
+> - **New types (net-new `node_types` blocks + DB CHECK + `ValidNodeTypes`):** `person`, `organization`, `event`, `document_ref`, `location`, `artifact`, `master_record` (7 new).
+> - **`document_ref` is deliberately distinct** from the existing `document` (the ingested container, BA-025) — extracted "a document mentioned in text" must not share a type with container docs, or same-type blocking would try to merge them.
+> - **Extractable set = 8** (all except `master_record`): `person, organization, concept, event, document_ref, location, artifact, project`. `master_record` is schema-reserved (BR-001.8).
+>
+> All BA-031 references to capitalised type names map to these lowercase names throughout implementation. |
 
 ---
 
