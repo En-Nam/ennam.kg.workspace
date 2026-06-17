@@ -134,7 +134,7 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `dataset.py`**
 
-Implement the dataclasses, `EXTRACTABLE_TYPES` (import from `ennam_kg.extraction.schema` to stay DRY with 8a), `load_benchmark` (JSON parse → validate → construct), `BenchmarkError`, and `true_pairs` (group by `(gold_entity_id, type)`, emit all unordered intra-group pairs).
+Implement the dataclasses, import `EXTRACTABLE_NODE_TYPES` from `ennam_kg.extraction.schema` (the actual 8a export name — stay DRY, do not redefine the set), `load_benchmark` (JSON parse → validate `type in EXTRACTABLE_NODE_TYPES` → construct), `BenchmarkError`, and `true_pairs` (group by `(gold_entity_id, type)`, emit all unordered intra-group pairs).
 
 - [ ] **Step 4: Run to confirm pass**
 
@@ -230,7 +230,9 @@ Orchestrates the measurement. Inserts entities into the benchmark project, embed
 - Consumes: `ennam_kg.extraction.embed.embed_entity(model, canonical_name, description)`; a `Retriever` protocol `retrieve(project_id, node_type, embedding, top_k, min_similarity) -> list[tuple[str,float]]` (real impl wraps the Go `/internal/resolution/candidates` via `httpx`; test impl is a fake); a `NodeWriter` protocol `insert_entity(project_id, entity, embedding) -> str` returning the created `node_id`.
 - Produces:
   - `@dataclass SweepInputs{benchmark, project_id, thresholds, ks}`
-  - `run_sweep(inputs, model, writer:NodeWriter, retriever:Retriever) -> tuple[dict[str,list[tuple[str,float]]], dict[str,set[str]]]` — returns `(per_query, expected)` ready for `evaluate_grid`. It (1) inserts + embeds every entity, mapping `benchmark.id → node_id`; (2) for each entity, retrieves at `top_k=max(ks)`, `min_similarity=min(thresholds)`; (3) translates returned `node_id`s back to benchmark ids; (4) builds `expected` from `true_pairs` (as benchmark ids).
+  - `run_sweep(inputs, model, writer:NodeWriter, retriever:Retriever) -> tuple[dict[str,list[tuple[str,float]]], dict[str,set[str]]]` — returns `(per_query, expected)` ready for `evaluate_grid`. It (1) inserts + embeds every entity, mapping `benchmark.id → node_id`; (2) for each entity, retrieves at `top_k = max(ks) + 1`, `min_similarity = min(thresholds)`; (3) translates returned `node_id`s back to benchmark ids **and drops the query's own benchmark id** (self-match); (4) builds `expected` from `true_pairs` (as benchmark ids).
+
+> **Self-match correction (important).** Because the benchmark inserts every entity *before* querying, the query entity Q is in the project and the endpoint returns Q itself at rank ≈ 1.0. The server truncates to `top_k` **before** returning, so Q's self-hit would consume one top-K slot and deflate recall@K. Fix: request `top_k = max(ks) + 1` and strip Q's own benchmark id from `per_query[Q]` before metrics. (`recall_at_k` also excludes self defensively, but stripping in `run_sweep` keeps `avg_candidates` honest too.)
 
 - [ ] **Step 1: Write the failing test with fakes**
 
@@ -273,7 +275,7 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `sweep.py`**
 
-Define the `Retriever`/`NodeWriter` `Protocol`s, `SweepInputs`, and `run_sweep` per the interface. Insert+embed each entity (capture `benchmark_id → node_id`); build reverse map `node_id → benchmark_id`; retrieve once per entity at the loosest `(min(thresholds), max(ks))`; map candidate `node_id`s back to benchmark ids (drop any not in the map — e.g. pre-existing nodes, though the isolated project should have none); build `expected` from `dataset.true_pairs` translated to benchmark ids. Return `(per_query, expected)`.
+Define the `Retriever`/`NodeWriter` `Protocol`s, `SweepInputs`, and `run_sweep` per the interface. Insert+embed each entity (capture `benchmark_id → node_id`; **insert the node first, then upsert its embedding** — the embedding FK requires the node to exist); build reverse map `node_id → benchmark_id`; retrieve once per entity at the loosest `(min_similarity=min(thresholds), top_k=max(ks)+1)`; map candidate `node_id`s back to benchmark ids, **dropping the query's own id** and any not in the map (e.g. pre-existing nodes, though the isolated project should have none); build `expected` from `dataset.true_pairs` translated to benchmark ids. Return `(per_query, expected)`.
 
 - [ ] **Step 4: Run to confirm pass**
 
@@ -362,7 +364,7 @@ Wires the real `embed_entity` model, the real `httpx` retriever against the 8a e
 - Test: `tests/benchmark/test_cli.py` (smoke test on `sample.json` with the live model but a **local in-process** retriever/writer if the server isn't up; mark a live-server variant with the project's integration marker)
 
 **Interfaces:**
-- Consumes all of Tasks 2–5 + the real `model` (load the e5 model as `decompose.py` does), a `HttpxRetriever` (POSTs to `/api/v1/internal/resolution/candidates`), a `KGClientWriter` (wraps `ennam_kg_indexer.kg_client.client.KGClient` node-create + embedding upsert — reuse, don't hand-roll).
+- Consumes all of Tasks 2–5 + the real `model` (load the e5 model as `decompose.py` does), a `HttpxRetriever` (POSTs to `/api/v1/internal/resolution/candidates` — **required**: `KGClient.search_semantic` exists but hits the public search with no `min_similarity` floor, so it is NOT a substitute for the new endpoint), a `KGClientWriter` (wraps `ennam_kg_indexer.kg_client.client.KGClient` — confirmed methods: `store_node`/`create_node` for nodes and `upsert_node_embeddings` for embeddings; verify which of `store_node` vs `create_node` maps to `POST /api/v1/nodes` with the Gate/validation path and use that — reuse, don't hand-roll).
 - Produces: `python -m ennam_kg.benchmark.cli --dataset benchmarks/ba031/vi_blocking_v1.json --project <uuid> --out report.md` → writes the report, prints the gate verdict, exits non-zero if the gate fails.
 
 - [ ] **Step 1: Write the failing CLI smoke test**
@@ -427,4 +429,5 @@ git commit -m "feat(ba031-8b): benchmark CLI + live end-to-end wiring (e5 + cand
 - **Spec coverage (8b slice):** NFR-255/256/257 benchmark inputs → Tasks 1, 6 (dataset) + 3 (metrics); blocking-recall gate (spec §9 8b, "recall ≥90% @K=10") → Tasks 3, 5; threshold×K sweep (OQ-004) → Tasks 3, 4, 6; same-type/project isolation (FR-004/NFR-266) → Tasks 1, 4 (isolated project, type-scoped query); symmetric embedding (OQ-003) → reuse 8a `embed_entity` (Tasks 4, 6); OQ-002 revisit-if-fail → Task-6 DoD gate decision. Merge precision/recall (NFR-256/257 *merge*) is **8c**, correctly out of 8b scope — 8b measures blocking recall only.
 - **Placeholder scan:** no TBD/TODO in harness code; the only intentional "TODO-ASSIGN" is the dataset owner field (a human deliverable, by design). All code steps carry real code + assertions.
 - **Type consistency:** `BenchmarkEntity`/`Benchmark`/`true_pairs`, `recall_at_k`/`GridCell`/`evaluate_grid`, `run_sweep`/`SweepInputs`/`Retriever`/`NodeWriter`, `format_report`/`meets_gate` are referenced identically across tasks. `recall_at_k` returns `(found,total)` everywhere; `evaluate_grid` consumes `per_query`+`expected` exactly as `run_sweep` produces them.
-- **Soft spots flagged (read before writing):** (a) exact `KGClient` node-create + embedding-upsert method names for the live writer (Task 6) — reuse, confirm signatures; (b) how the e5 model is loaded/shared in the worker process (mirror `decompose.py`) (Task 6); (c) the project's integration-test marker for the live-server CLI variant (Task 6 Step 5).
+- **Corrections applied after a code-verified plan review (2026-06-18):** (1) the 8a export is **`EXTRACTABLE_NODE_TYPES`** (not `EXTRACTABLE_TYPES`) — `schema.py:3`; Task 2 fixed. (2) **Self-match bug**: the benchmark inserts all entities then queries each, so the endpoint returns the query itself at rank≈1.0 and consumes a top-K slot; `run_sweep` now requests `top_k = max(ks)+1` and strips self before metrics (Task 4). (3) `KGClient` confirmed to expose `store_node`/`create_node` + `upsert_node_embeddings` (`packages/ennam-kg-indexer/.../kg_client/client.py`); `search_semantic` exists but lacks the `min_similarity` floor so the new endpoint via `HttpxRetriever` is required (Task 6). Verified correct: `embed_entity(model, canonical_name, description) -> (vector, hash)` and the candidates request/response shape (`project_id,node_type,embedding,top_k,min_similarity` → `candidates[{node_id,title,rank}]`).
+- **Soft spots flagged (read before writing):** (a) which of `store_node` vs `create_node` is the validated `POST /api/v1/nodes` path for the live writer (Task 6); (b) how the e5 model is loaded/shared in the worker process (mirror `decompose.py`) (Task 6); (c) the project's integration-test marker for the live-server CLI variant (Task 6 Step 5).
