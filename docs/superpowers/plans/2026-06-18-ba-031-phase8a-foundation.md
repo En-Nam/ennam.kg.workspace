@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Closed graph vocabulary (9 lowercase types, OQ-NEW-1):** `person, organization, concept, event, document_ref, location, artifact, project, master_record`. Reuse existing `concept` + `project`; net-new: `person, organization, event, document_ref, location, artifact, master_record`. `document_ref` is distinct from the existing `document` (BA-025 container).
+- **Closed graph vocabulary (9 lowercase types, OQ-NEW-1):** `person, organization, concept, event, document_ref, location, artifact, project, master_record`. **Reuse `concept` only** (the sole one that already exists as a real `node_types` entry + `ValidNodeTypes` + DB CHECK). **Net-new (8):** `person, organization, event, document_ref, location, artifact, master_record, project`. Note: `project` is NOT pre-existing — config.yaml:771 `project:` is a `completeness_profiles` entry, not a node type. `document_ref` is distinct from the existing `document` (BA-025 container).
 - **Extractable set = 8** (all except `master_record`, which is schema-reserved, BR-001.8).
 - **Closed relation vocabulary (7):** `works_for, part_of, mentions, causes, related_to, derived_from, evidence`.
 - **Drop, don't coerce** (BR-001.3): out-of-vocabulary entities/relations are discarded and counted, never remapped.
@@ -30,7 +30,7 @@
 - `db/migrations/000061_ba031_closed_vocab.up.sql` / `.down.sql` — extend `node_type` CHECK with the 7 net-new types; new `edge_whitelist`-backing data is config, not migration.
 - `db/migrations/000062_chunk_extraction_state.up.sql` / `.down.sql` — new durable state table.
 - `config/config.yaml` — add 7 `node_types` blocks + entity-resolution fields on `concept`/`project`; add 7 `edge_whitelist` rules.
-- `internal/config/types.go` — add the 7 new `NodeTypeName` consts + register in `ValidNodeTypes`; add the 7 `EdgeTypeName` consts if not present.
+- `internal/config/types.go` — add the **8** net-new `NodeTypeName` consts (incl. `project`) + register in `ValidNodeTypes`; add the 7 `EdgeTypeName` consts if not present.
 - `internal/store/chunk_extraction_state.go` (+ `_test.go`) — CRUD/claim/skip-guard/recovery queries.
 - `internal/handler/resolution_candidates.go` (+ `_test.go`) — `POST /api/v1/internal/resolution/candidates`.
 - `internal/queue/messages.go` — add `extract_document` / `resolve_document` message types.
@@ -95,9 +95,12 @@ In `internal/config/types.go`, add to the `NodeTypeName` const block:
 	NodeTypeLocation     NodeTypeName = "location"
 	NodeTypeArtifact     NodeTypeName = "artifact"
 	NodeTypeMasterRecord NodeTypeName = "master_record"
+	NodeTypeProject      NodeTypeName = "project"
 ```
 
-And add each to the `ValidNodeTypes` map literal (`concept`/`project` are already present):
+> `project` is genuinely new here — there is no existing `NodeTypeProject` const, and `project` is absent from both `ValidNodeTypes` and the DB CHECK (it's only a `completeness_profiles` key). Only `NodeTypeConcept` pre-exists from BA-031's vocab.
+
+And add each to the `ValidNodeTypes` map literal (only `NodeTypeConcept` is already present):
 
 ```go
 	NodeTypePerson:       true,
@@ -107,6 +110,7 @@ And add each to the `ValidNodeTypes` map literal (`concept`/`project` are alread
 	NodeTypeLocation:     true,
 	NodeTypeArtifact:     true,
 	NodeTypeMasterRecord: true,
+	NodeTypeProject:      true,
 ```
 
 - [ ] **Step 4: Run the test to confirm it passes**
@@ -116,7 +120,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the DB migration**
 
-`db/migrations/000061_ba031_closed_vocab.up.sql` — copy the current CHECK from `000059` and add the 7 net-new types (concept/document/project already present from earlier migrations; document_ref/person/etc are new):
+`db/migrations/000061_ba031_closed_vocab.up.sql` — copy the current CHECK from the latest `*_node_type*` migration (000059) and add the **8 net-new** types. Only `concept` and `document` pre-exist in the CHECK; `person, organization, event, document_ref, location, artifact, master_record, project` are all new (`project` included — it is NOT currently a permitted node type):
 
 ```sql
 ALTER TABLE knowledge_nodes DROP CONSTRAINT IF EXISTS knowledge_nodes_node_type_check;
@@ -130,9 +134,9 @@ ALTER TABLE knowledge_nodes ADD CONSTRAINT knowledge_nodes_node_type_check
     ));
 ```
 
-> Note: `project` may already be a permitted type via an earlier migration; including it in the `IN (...)` list is idempotent. Verify against the most recent `*_node_type*.up.sql` before finalizing and keep the union of all currently-allowed values plus the 7 new ones.
+> Verify against the most recent `*_node_type*.up.sql` (000059) before finalizing and keep the union of all currently-allowed values plus the 8 new ones. `project` is among the new ones — do not assume it pre-exists.
 
-`db/migrations/000061_ba031_closed_vocab.down.sql` — restore the exact `000059` CHECK list (without the 7 new types), and `DELETE FROM knowledge_nodes WHERE node_type IN ('person','organization','event','document_ref','location','artifact','master_record');` before re-adding the constraint.
+`db/migrations/000061_ba031_closed_vocab.down.sql` — restore the exact `000059` CHECK list (without the 8 new types), and `DELETE FROM knowledge_nodes WHERE node_type IN ('person','organization','event','document_ref','location','artifact','master_record','project');` before re-adding the constraint.
 
 - [ ] **Step 6: Add the 7 `node_types` schema blocks + 2 field extensions in `config.yaml`**
 
@@ -172,7 +176,7 @@ Under `node_types:` in `ennam.kg.go/config/config.yaml`, add one block per net-n
         description: "Source references {source_doc_id, chunk_id, sentence_span}"
 ```
 
-Repeat for `organization, event, document_ref, location, artifact, master_record` (same field set; adjust `display_name`/`description`). For `concept` and `project` (already defined), **add** `canonical_name`, `aliases`, `subtype`, `provenance` to their `fields` **without** adding them to `required` (so existing producers don't break) — only `canonical_name` may be required if no existing producer omits it; default to NOT requiring to stay backward-compatible.
+Repeat for `organization, event, document_ref, location, artifact, master_record, project` (same field set; adjust `display_name`/`description`) — **`project` gets a full net-new block** (it is not pre-defined as a node type). For `concept` (the only pre-existing BA-031 type), **add** `canonical_name`, `aliases`, `subtype`, `provenance` to its `fields` **without** adding them to `required` (so existing `concept` producers don't break); default to NOT requiring to stay backward-compatible.
 
 - [ ] **Step 7: Add the 7 edge-whitelist rules in `config.yaml`**
 
@@ -426,12 +430,14 @@ git commit -m "feat(ba031): internal resolution-candidates endpoint (min_similar
 Implements the Redis dispatch leg (Go publisher side + Python consumer dispatch). Durability/recovery come from Task 2; this is transport only.
 
 **Files:**
-- Modify: `ennam.kg.go/internal/queue/messages.go` (add message structs + type constants)
+- Create: `ennam.kg.go/internal/queue/extraction_messages.go` (new file in the existing `queue` pkg — **note `messages.go` does not exist**; the current message/envelope pattern lives in `internal/queue/ingestion.go`, mirror its struct/field-tag shape)
 - Modify: `ennam.kg.python/src/ennam_kg/queue/messages.py` (mirror) and `consumer.py` (dispatch on type)
-- Test: `ennam.kg.go/internal/queue/messages_test.go`, `ennam.kg.python/tests/queue/test_messages.py`
+- Test: `ennam.kg.go/internal/queue/extraction_messages_test.go`, `ennam.kg.python/tests/queue/test_messages.py`
 
 **Interfaces:**
 - Produces: Go `QueueMessage{Type:"extract_document", DocID, RunID, ProjectID}` and `{Type:"resolve_document", ...}`, JSON-serialised identically on both sides; Python `parse_message(raw) -> Message` dispatching by `type`.
+
+> **Scope note — trigger + skip-guard placement (decide at execution, recommended resolution given).** This task only defines the message types. Two adjacent pieces are needed for an end-to-end 8a and are **explicitly in scope of this task** (add steps for them): (1) a Go trigger `POST /api/v1/ingestion/documents/{docId}/extract` (`internal/handler/extraction.go`) that creates a run, enumerates the doc's `document_chunk` nodes, and for each calls `ChunkExtractionStateStore.ShouldSkip` — enqueuing `extract_document` (per-chunk) **only** for non-skipped chunks via the existing `publisher.go` (this puts the skip-guard **Go-side**, so Python stays stateless and needs no new state-read endpoint); (2) a Go state-report path so `chunk_extraction_state` is marked `extracted`/`extract_failed` with `gleaning_rounds_used`/`dropped_count` after Python finishes a chunk — simplest is to have Python's result-POST (node/edge create batch) carry the chunk outcome and Go upsert the state in the same handler. **Recommended:** skip-check at the trigger (Go), state-mark on result-POST (Go); Python never touches `chunk_extraction_state` directly. This removes the `should_skip`/`mark_state` Python client methods hinted in Task 7 — reconcile Task 7 to this decision.
 
 - [ ] **Step 1: Write the Go failing test for round-trip serialization**
 
@@ -454,7 +460,7 @@ Expected: FAIL — undefined types.
 
 - [ ] **Step 3: Implement the message types in Go**
 
-Add `extract_document` / `resolve_document` constants + structs + an `Envelope()` method to `messages.go`, matching the existing message-envelope convention already in that file (read the existing indexing message for the exact shape and field names — mirror it; do not invent a new envelope format).
+Add `extract_document` / `resolve_document` constants + structs + an `Envelope()` method in the new `extraction_messages.go`, matching the existing message-envelope convention in `internal/queue/ingestion.go` (read the existing indexing message for the exact struct shape, JSON field tags, and how `publisher.go` serialises it — mirror it; do not invent a new envelope format).
 
 - [ ] **Step 4: Run to confirm pass**
 
@@ -481,7 +487,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ennam.kg.go/internal/queue/messages.go ennam.kg.go/internal/queue/messages_test.go \
+git add ennam.kg.go/internal/queue/extraction_messages.go ennam.kg.go/internal/queue/extraction_messages_test.go \
         ennam.kg.python/src/ennam_kg/queue/messages.py ennam.kg.python/src/ennam_kg/queue/consumer.py \
         ennam.kg.python/tests/queue/test_messages.py
 git commit -m "feat(ba031): extract/resolve queue message types (Go + Python dispatch)"
@@ -636,26 +642,27 @@ Ties Tasks 2/4/5/6 together: skip-guard → LLM extract (via BA-009 client) → 
 - Test: `tests/extraction/test_pass1.py`
 
 **Interfaces:**
-- Consumes: `parse_extraction`, `run_gleaning`, the BA-009 `ai_client`, the existing KG HTTP client (node create + `upsert_node_embeddings`), `embeddings/local_model.py` (`encode_query`), and the Go `chunk_extraction_state` (via an HTTP/RPC method `should_skip`/`mark_state` — add a thin client method if not present).
+- Consumes: `parse_extraction`, `run_gleaning`, the BA-009 `ai_client` (`ennam_kg/ai_client/client.py` `AIClient`), the existing **`KGClient`** from `ennam_kg_indexer.kg_client.client` (it already exposes `upsert_node_embeddings`, used in `decompose.py:260`; confirm/add a node-create method — check `KGClient` for the existing node POST helper and reuse it, do not hand-roll an HTTP call), `embeddings/local_model.py` (`encode_query`). **Per the Task 4 decision, the skip-guard and state-marking are Go-side** — the Go trigger only enqueues non-skipped chunks, and Go marks `chunk_extraction_state` on the result-POST — so Pass 1 (Python) does **not** call `should_skip`/`mark_state`. Python's job per chunk: extract → parse → glean → attach provenance → POST nodes/edges (Go enforces Gate 1 + marks state) → embed + upsert. The `skipped` count in `Pass1Summary` therefore reflects chunks the Go trigger never enqueued (surfaced via the run record), not a Python decision.
 - Produces: `async def run_pass1(doc_id, run_id, project_id, deps) -> Pass1Summary{extracted, dropped, gleaning_rounds, skipped}` where `deps` bundles the injected clients (for testability).
 
 - [ ] **Step 1: Write the failing orchestrator test (all deps mocked)**
 
-`tests/extraction/test_pass1.py` — provide a fake chunk source (2 chunks), a fake LLM returning a fixed JSON per chunk, fake KG client recording created nodes, and a fake state client. Assert:
+`tests/extraction/test_pass1.py` — provide a fake chunk source (the chunks the Go trigger delivered), a fake LLM returning a fixed JSON per chunk, and a fake KG client recording created nodes + their provenance. Assert:
 
 ```python
-async def test_run_pass1_persists_and_skips(monkeypatch):
+async def test_run_pass1_persists_with_provenance(monkeypatch):
+    # Go-side skip means the trigger only delivered c1 to Pass 1 (c2 was filtered upstream).
     deps = make_fake_deps(
-        chunks=[("c1","h1","Ennam hired Nguyễn Văn A"), ("c2","h2","...")],
-        llm_json={"c1": {...person+org...}, "c2": {...}},
-        already_extracted={"c2": "h2"},   # skip-guard hits c2
+        chunks=[("c1","h1","Ennam hired Nguyễn Văn A")],
+        llm_json={"c1": {...person+org...}},
     )
     summary = await run_pass1("d1","r1","p1", deps)
-    assert summary.skipped == 1                      # c2 skipped (BR-007.5)
     assert summary.extracted >= 2                    # person + org from c1
-    assert deps.kg.created_nodes_have_provenance()   # NFR-254
-    assert deps.llm.call_count == 1                  # only c1 hit the model (cost-idempotency)
+    assert deps.kg.created_nodes_have_provenance()   # NFR-254 (every node non-empty provenance)
+    assert deps.llm.call_count == 1                  # one chunk delivered -> one model call
 ```
+
+> The skip-guard / cost-idempotency assertion (unchanged chunk → zero model calls) is a **Go-trigger** behavior and is covered by the integration test in Task 9, not this Python unit test.
 
 - [ ] **Step 2: Run to confirm failure**
 
@@ -797,4 +804,5 @@ git commit -m "test(ba031): phase 8a exit gates — closed-schema, provenance, i
 - **Spec coverage (8a slice):** OQ-001 + OQ-NEW-1 → Task 1; FR-NEW-3 / BR-007.5/.6 / NFR-263 → Tasks 2, 7, 9; FR-NEW-4 / FR-004 → Task 3; durable dispatch + R6 → Tasks 4, 8; FR-001 / BR-001.* → Task 5; FR-002 → Task 6; FR-003 / NFR-254 → Tasks 7, 9; NFR-253 → Tasks 1, 9; OQ-003 symmetric prefix → Task 7. FR-005/006 (merge/re-summary), FR-NEW-1/2/6/7, BR-005.11 → deferred to 8c/8d plans (correct — out of 8a scope). FR-008 routing is used via the BA-009 client in Task 7; budget *ceiling* (FR-NEW-2) is 8d.
 - **Placeholder scan:** no TBD/TODO; each code step shows code; mocked-LLM tests carry real assertions.
 - **Type consistency:** `ChunkExtractionState`, `ShouldSkip`, `FindStale`, `SemanticSearch` signature, `parse_extraction`, `merge_gleaned`/`run_gleaning`, `run_pass1`, `RunRecoverySweep` are named identically wherever cross-referenced. Where a signature is illustrative (Python gleaning return), the step says to keep the test asserting the behavior, not the exact shape.
-- **Known soft spots to confirm during execution (flagged, not hidden):** (a) exact current `node_type` CHECK list to union against in Task 1 Step 5; (b) whether `edge_whitelist` supports `"*"` wildcards (Task 1 Step 7); (c) the existing queue-envelope field names to mirror (Task 4 Step 3); (d) the integration-test harness/build-tag + where periodic sweeps are scheduled (Tasks 8–9). Each step says to read the existing pattern before writing.
+- **Corrections applied after a code-verified plan review (2026-06-18):** (1) **`project` is net-new, not reused** — it is a `completeness_profiles` key, absent from `node_types`/`ValidNodeTypes`/DB CHECK; net-new count is **8** (incl. `project`), reused is **1** (`concept`). Task 1 + global constraints updated. (2) `internal/queue/messages.go` does not exist → new `extraction_messages.go`, pattern from `ingestion.go` (Task 4). (3) Python client is `ennam_kg_indexer.kg_client.client.KGClient` (Task 7). (4) Skip-guard + state-marking placed **Go-side** (trigger checks `ShouldSkip` + enqueues non-skipped chunks; Go marks state on result-POST), so Python stays stateless (Tasks 4, 7). Verified correct: `SearchResult.Rank float64` (Task 3); `StoreNodeRequest.Properties map[string]interface{}` (Task 1).
+- **Known soft spots to confirm during execution (flagged, not hidden):** (a) exact current `node_type` CHECK list to union against in Task 1 Step 5; (b) whether `edge_whitelist` supports `"*"` wildcards else enumerate pairs (Task 1 Step 7); (c) the exact `ingestion.go` envelope field names/tags to mirror (Task 4 Step 3); (d) the integration-test harness/build-tag + where periodic sweeps are scheduled (Tasks 8–9); (e) whether `KGClient` already has a node-create helper or one must be added (Task 7). Each step says to read the existing pattern before writing.

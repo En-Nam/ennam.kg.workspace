@@ -94,8 +94,8 @@ recovery sweep → periodically re-enqueue chunk_extraction_state rows with dead
 >
 > `person`, `organization`, `concept`, `event`, `document_ref`, `location`, `artifact`, `project`, `master_record`
 >
-> - **Reused (already in config.yaml `node_types`):** `concept` (config.yaml:71), `project` (771). No new `node_types` block — but their schemas may need entity-resolution fields (`canonical_name`, `aliases`, `subtype`, `provenance`) added without breaking existing producers; reconcile required-field changes with Gate-2.
-> - **New types (net-new `node_types` blocks + DB CHECK + `ValidNodeTypes`):** `person`, `organization`, `event`, `document_ref`, `location`, `artifact`, `master_record` (7 new).
+> - **Reused (already a real `node_types` entry + in `ValidNodeTypes` + DB CHECK):** `concept` only (config.yaml:71). No new `node_types` block for it — but its schema may need entity-resolution fields (`canonical_name`, `aliases`, `subtype`, `provenance`) added without breaking existing producers; reconcile required-field changes with Gate-2. *Correction (final review): `project` is NOT an existing node type — config.yaml:771 `project:` is under `completeness_profiles:` (754), and `ValidNodeTypes` (`config/types.go:57`) has no `project`. So `project` is net-new, not reused.*
+> - **New types (net-new `node_types` blocks + DB CHECK + `ValidNodeTypes` consts):** `person`, `organization`, `event`, `document_ref`, `location`, `artifact`, `master_record`, **`project`** (8 new).
 > - **`document_ref` is deliberately distinct** from the existing `document` (the ingested container, BA-025) — extracted "a document mentioned in text" must not share a type with container docs, or same-type blocking would try to merge them.
 > - **Extractable set = 8** (all except `master_record`): `person, organization, concept, event, document_ref, location, artifact, project`. `master_record` is schema-reserved (BR-001.8).
 >
