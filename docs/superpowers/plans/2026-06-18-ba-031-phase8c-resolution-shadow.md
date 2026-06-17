@@ -8,6 +8,13 @@
 
 **Tech Stack:** Go (`database/sql`, `store.Tx`, optimistic lock `store/version.go`), PostgreSQL, Python 3.12 (`AIClient.complete`, pytest), `multilingual-e5-small`.
 
+> ## Sequential execution note (8b → 8c → 8d in one run)
+> - **Build all engineering regardless of the benchmark gate.** Tasks 1–8 (sidecar, lossless edge re-point, merge tx, un-merge, handlers, verifier, re-summary, shadow orchestrator) are unit/integration-testable with synthetic fixtures + a test DB and run in the mạch. The shadow verifier writes suggestions and **applies nothing** — so building 8c never mutates the real graph.
+> - **The precision/recall gate (Tasks 9–10) is PENDING-DATA without `vi_blocking_v1.json`.** If the owner dataset is a skeleton, record the gate `PENDING-DATA` (not PASS) and continue. **Do not fake a pass.** Thresholds fall back to defaults: `resolution_sim_threshold` = the value 8b's passing cell produced, else `0.74`; `resolution_top_k` = 8b's, else `10`; `merge_confidence_threshold` = `0.75`.
+> - **Consequence for 8d:** because the 8c gate is PENDING-DATA in an automated run, **8d must keep `apply_mode="shadow"` and must NOT declare GA** — the apply path is built but stays disabled (see 8d note).
+> - **Un-merge drill (Task 10) still runs** — it uses synthetic seed data + a test DB, not the VI dataset, so it is a real PASS/FAIL in the mạch.
+> - Migration: 8c uses **000064**; environment-dependent integration steps that need the live stack/model → mark DEFERRED if unavailable (Rule 12), never skip silently.
+
 ## Global Constraints
 
 - **Shadow only:** the production verifier writes `merge_suggestions`, never mutates the graph. Apply is 8d.
@@ -122,7 +129,7 @@ func TestRepoint_CollisionUnionsProvenanceAndSupersedes(t *testing.T) {
   1. Resolve the **live** canonical by following `properties.merged_into` from `CanonicalID` to a `status=active` node; reject a cyclic/visited chain (fail loud, BR-005.10).
   2. Read both nodes + the canonical's `version`.
   3. Compute merged `aliases` (union member.canonical_name + both aliases, case-insensitive de-dup), select surviving `canonical_name` (the model's pick in `req`, else longer string), union `provenance`.
-  4. If `MergedDescription != nil`, set it (FR-006); recompute embedding `content_hash` and re-embed **only if** the embedded text changed (BR-006.4).
+  4. If `MergedDescription != nil`, **first stamp the pre-merge `description` + embedding `content_hash` into a reversal record under `mergeOpID`** (e.g. `properties.merge_undo[mergeOpID] = {prev_description, prev_content_hash}`), then set the new description (FR-006); recompute `content_hash` and re-embed **only if** the embedded text changed (BR-006.4). Without this stamp, re-summarisation is irreversible and the Task 4 byte-equivalence assertion cannot hold.
   5. `RepointEdgesTx(member → canonical, mergeOpID)`.
   6. Supersede member: `UpdateNode(member, status="superseded", properties+={merged_into: canonical, superseded_by_merge: mergeOpID}, change_reason="pass2_merge")`.
   7. Append a `resolution_audit` entry on the canonical (`{decision:"confirmed", confidence, resolution_model, peer_node_id: member, reason}`) and `UpdateNode(canonical, expected_version, properties+={aliases, provenance, canonical_name, resolution_audit})`. On `ErrVersionConflict` → re-read canonical + retry the canonical write (bounded retries).
@@ -144,7 +151,7 @@ The inverse of Task 3. Required, built, and drilled before 8d.
 - Create: `internal/service/unmerge.go`, `unmerge_test.go`
 
 **Interfaces:**
-- Produces: `func (s *UnmergeService) Unmerge(ctx, mergeOpID string) (*UnmergeResult, error)` — in one tx: (1) find the member node with `properties.superseded_by_merge == mergeOpID`; (2) restore it to `status=active`, remove `merged_into`/`superseded_by_merge`; (3) un-repoint: edges re-pointed by this op (tagged in the canonical's edge provenance with `from_edge_id` for absorbed entries; and member-side edges flagged `superseded_by_merge==mergeOpID`) are restored — re-point the moved edges back to the member, and for collision-superseded edges remove the `superseded_by_merge` flag and **subtract** the absorbed provenance entries (those tagged `from_edge_id` of the restored edge) from the survivor; (4) remove the matching `resolution_audit` entry + the aliases/provenance the merge added to the canonical (identifiable because provenance/aliases carry the member origin). Returns what was restored.
+- Produces: `func (s *UnmergeService) Unmerge(ctx, mergeOpID string) (*UnmergeResult, error)` — in one tx: (1) find the member node with `properties.superseded_by_merge == mergeOpID`; (2) restore it to `status=active`, remove `merged_into`/`superseded_by_merge`; (3) un-repoint: edges re-pointed by this op (tagged in the canonical's edge provenance with `from_edge_id` for absorbed entries; and member-side edges flagged `superseded_by_merge==mergeOpID`) are restored — re-point the moved edges back to the member, and for collision-superseded edges remove the `superseded_by_merge` flag and **subtract** the absorbed provenance entries (those tagged `from_edge_id` of the restored edge) from the survivor; (4) remove the matching `resolution_audit` entry + the aliases/provenance the merge added to the canonical (identifiable because provenance/aliases carry the member origin); (5) **restore the canonical's pre-merge `description` + embedding from the `merge_undo[mergeOpID]` stamp** (Task 3 step 4) and re-embed if `content_hash` changed back. Returns what was restored.
 
 - [ ] **Step 1: Failing drill test (test DB)** — perform a merge (Task 3) that includes BOTH a re-pointed edge and a collision-superseded edge, then `Unmerge(mergeOpID)`; assert the graph is **byte-equivalent** to the pre-merge state: member `active`, no `merged_into`; edges back on the member; canonical's aliases/provenance/audit reverted; the previously-superseded duplicate edge active again.
 - [ ] **Step 2: Run → FAIL.**
@@ -175,7 +182,7 @@ The inverse of Task 3. Required, built, and drilled before 8d.
 - Test: `tests/resolution/test_verify.py`
 
 **Interfaces:**
-- Consumes: `AIClient.complete(AIRequest) -> AIResponse` (single-turn JSON), the 8a candidates endpoint (via `HttpxRetriever`).
+- Consumes: `AIClient.complete(AIRequest) -> AIResponse` (single-turn JSON), the 8a candidates endpoint via the **shared `HttpxRetriever` from `ennam_kg.resolution.candidates_client`** (created in 8b — import, do not re-implement).
 - Produces:
   - `VERIFY_PROMPT` + `build_verify_request(a:dict, b:dict) -> AIRequest` — JSON in `{a:{name,aliases,description,type}, b:{...}}`, expects JSON out `{same_entity:bool, confidence:float, canonical_name:str, reason:str}`.
   - `parse_verify_response(text:str) -> VerifyVerdict` — strict parse; on non-JSON after retry, raise (caller records a `rejected` suggestion with reason `verify_parse_failed`, fail loud).
@@ -203,7 +210,7 @@ The inverse of Task 3. Required, built, and drilled before 8d.
 - Create: `src/ennam_kg/resolution/pass2.py`; Test: `tests/resolution/test_pass2.py`
 
 **Interfaces:**
-- Consumes: `verify_pair`, `build_resummarise_request`, `HttpxRetriever` (8a candidates), the `KGClient` (read node detail; **write `merge_suggestions` via a new `KGClient.create_merge_suggestion` hitting a Go endpoint** — add a thin POST `/api/v1/internal/resolution/suggestions` in Go store/handler, or reuse an existing suggestion-write path; decide and note), `embed_entity` (8a).
+- Consumes: `verify_pair`, `build_resummarise_request`, the shared `HttpxRetriever` from `ennam_kg.resolution.candidates_client` (8b), the `KGClient` (read node detail; **write `merge_suggestions` via a new `KGClient.create_merge_suggestion` hitting a Go endpoint** — add a thin POST `/api/v1/internal/resolution/suggestions` in Go store/handler, or reuse an existing suggestion-write path; decide and note), `embed_entity` (8a).
 - Produces: `async def run_pass2_shadow(doc_id, run_id, project_id, deps) -> Pass2Summary{entities, candidates, suggestions, rejected}` — for each new entity: embed → candidates (same-type, ≥ threshold, top-K) → for each candidate `verify_pair` → if `confidence >= merge_confidence_threshold` compute proposed canonical + (optional) re-summary → **write a `merge_suggestions` row with `decision='suggested'`** (degree_max recorded for 8d). **Applies nothing to the graph.**
 
 - [ ] **Step 1: Failing test (all deps mocked)** — new entity with one true-duplicate candidate (verdict confidence 0.9) produces exactly one `suggested` row with `proposed_canonical_id` set; a low-confidence candidate produces no suggestion; **no node/edge mutation** (assert the fake KG client recorded zero node/edge writes). **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS. **Step 5:** commit `feat(ba031-8c): Pass2 shadow orchestrator (suggestions only, no apply)`.

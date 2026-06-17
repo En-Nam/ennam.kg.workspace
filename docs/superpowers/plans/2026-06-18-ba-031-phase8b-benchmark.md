@@ -8,6 +8,12 @@
 
 **Tech Stack:** Python 3.12 (pytest, httpx), `multilingual-e5-small` (384-dim, `encode_query` both sides — symmetric, per 8a `embed.py`), Go resolution-candidates endpoint (8a), PostgreSQL + pgvector.
 
+> ## Sequential execution note (8b → 8c → 8d in one run)
+> This plan is the first of a 3-plan sequence intended to run back-to-back. Two rules keep the run safe:
+> 1. **Human-deliverable gate is PENDING-DATA, not a blocker.** The real recall gate needs `vi_blocking_v1.json` (owner-populated, ≥30 gold groups / ≥50 pairs). In an automated run that file is a skeleton. **Build all engineering (Tasks 1–6) against `sample.json`; run the live CLI (Task 6) against whatever data exists; if `vi_blocking_v1.json` has no entities, record the gate as `PENDING-DATA` (not PASS, not FAIL) and continue.** Never fabricate a pass. This does **not** block proceeding to the 8c *engineering* — but it does mean the 8c→8d *auto-merge gates* stay closed (see 8c/8d notes).
+> 2. **Environment preconditions for live steps** (Task 6 Step 5): the stack must be up (`docker compose up -d` → postgres + redis + kg-server) and the e5 model loadable. If unavailable in the run, mark the live step **DEFERRED** and surface it (Rule 12) — do not skip silently and do not claim the gate passed.
+> - **Migration order across the sequence:** 8b adds **no** Go migration; 8c adds `000064`; 8d adds `000065`. Apply in order.
+
 ## Global Constraints
 
 - **Measures blocking only** — no LLM verifier, no merges. Merge precision/recall is Phase 8c.
@@ -33,6 +39,7 @@
 - `src/ennam_kg/benchmark/sweep.py` — `run_sweep` (inserts + embeds + queries via injected deps) and the `Retriever` protocol.
 - `src/ennam_kg/benchmark/report.py` — `format_report`, `meets_gate`.
 - `src/ennam_kg/benchmark/cli.py` — `python -m ennam_kg.benchmark.cli --dataset … --out …`.
+- `src/ennam_kg/resolution/candidates_client.py` — **shared** `HttpxRetriever` (POSTs to `/api/v1/internal/resolution/candidates`). Created here in 8b and **reused by 8c's Pass 2** — do not duplicate it. (Creating it under `resolution/` not `benchmark/` avoids a resolution→benchmark import in 8c.)
 - `tests/benchmark/` — mirrors the above.
 
 ---
@@ -364,7 +371,7 @@ Wires the real `embed_entity` model, the real `httpx` retriever against the 8a e
 - Test: `tests/benchmark/test_cli.py` (smoke test on `sample.json` with the live model but a **local in-process** retriever/writer if the server isn't up; mark a live-server variant with the project's integration marker)
 
 **Interfaces:**
-- Consumes all of Tasks 2–5 + the real `model` (load the e5 model as `decompose.py` does), a `HttpxRetriever` (POSTs to `/api/v1/internal/resolution/candidates` — **required**: `KGClient.search_semantic` exists but hits the public search with no `min_similarity` floor, so it is NOT a substitute for the new endpoint), a `KGClientWriter` (wraps `ennam_kg_indexer.kg_client.client.KGClient` — confirmed methods: `store_node`/`create_node` for nodes and `upsert_node_embeddings` for embeddings; verify which of `store_node` vs `create_node` maps to `POST /api/v1/nodes` with the Gate/validation path and use that — reuse, don't hand-roll).
+- Consumes all of Tasks 2–5 + the real `model` (load the e5 model as `decompose.py` does), the shared **`HttpxRetriever`** from `src/ennam_kg/resolution/candidates_client.py` (create it in this task as its own module — POSTs to `/api/v1/internal/resolution/candidates`; **required**: `KGClient.search_semantic` exists but hits the public search with no `min_similarity` floor, so it is NOT a substitute for the new endpoint; 8c's Pass 2 imports this same module), a `KGClientWriter` (wraps `ennam_kg_indexer.kg_client.client.KGClient` — confirmed methods: `store_node`/`create_node` for nodes and `upsert_node_embeddings` for embeddings; verify which of `store_node` vs `create_node` maps to `POST /api/v1/nodes` with the Gate/validation path and use that — reuse, don't hand-roll).
 - Produces: `python -m ennam_kg.benchmark.cli --dataset benchmarks/ba031/vi_blocking_v1.json --project <uuid> --out report.md` → writes the report, prints the gate verdict, exits non-zero if the gate fails.
 
 - [ ] **Step 1: Write the failing CLI smoke test**

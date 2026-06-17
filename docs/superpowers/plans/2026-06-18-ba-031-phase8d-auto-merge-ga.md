@@ -8,6 +8,11 @@
 
 **Tech Stack:** Go (`store.AIUsageStore`/`models.AIUsageLog.CostCalculated`, `internal/ai`), PostgreSQL, Python (gleaning breaker in `extraction/gleaning.py` from 8a).
 
+> ## Sequential execution note (8b → 8c → 8d in one run) — CRITICAL SAFETY
+> - **Build the full apply path but LEAVE IT OFF.** Tasks 1–6 (degree count, cost ceiling, telemetry + runs endpoint, gleaning breaker, apply service, apply endpoint) are built and tested. **The config default ships `resolution.apply_mode="shadow"`.** In an automated 8b→8c→8d run the 8c precision/recall gate is `PENDING-DATA` (no VI dataset), so **the agent MUST NOT flip `apply_mode` to `apply` and MUST NOT declare GA.** Auto-merge stays disabled until a human runs the 8c gate to a real PASS on `vi_blocking_v1.json`.
+> - **GA gate (Task 7) outcome in the mạch = `PENDING-DATA`/`NOT-DECLARED`.** Tasks 7 Steps 1–4 (cost-ceiling enforced, degree-gating on synthetic seeds, telemetry, reversibility re-confirm) are real PASS/FAIL — run them. Step 5 (declare GA + flip `apply_mode`) is **blocked** on the 8c data gate; record it as not-declared, surface why (Rule 12). Do not enable apply to "complete" the plan.
+> - **Migration:** 8d uses **000065** (after 8c's 000064). Integration steps needing the live stack/model → mark DEFERRED if unavailable, never skip silently.
+
 ## Global Constraints
 
 - **Degree-gated (OQ-005, FR-NEW-7):** `degree_max < degree_threshold` → auto-apply; `>= degree_threshold` → `needs_review` (human confirm), never auto-applied. NFR-256's 10% wrong-merge tolerance applies to **leaf nodes only — never hubs.**
@@ -87,7 +92,7 @@
 
 **Files:** Modify `src/ennam_kg/extraction/gleaning.py`; Test: extend `tests/extraction/test_gleaning.py`.
 
-**Interfaces:** extend `run_gleaning` (8a) with `min_new_per_round:int` — if a completed round yields fewer than `min_new_per_round` new in-vocab items, **disable further rounds** for the remainder of the batch (return a flag the caller records). This is the per-corpus marginal-yield breaker (don't pay 3× for ~1pp).
+**Interfaces:** extend `run_gleaning` (8a) with a **keyword arg `min_new_per_round:int = 0`** (default 0 = breaker off, so 8a's existing caller + tests keep passing) — if a completed round yields fewer than `min_new_per_round` new in-vocab items, **disable further rounds** for the remainder of the batch (return a flag the caller records). This is the per-corpus marginal-yield breaker (don't pay 3× for ~1pp).
 
 - [ ] **Step 1: Failing test** — a round yielding 0–1 new items with `min_new_per_round=2` stops further rounds and reports `breaker_tripped=True`; a productive round continues. **Step 2:** FAIL. **Step 3:** implement (additive to 8a's early-stop). **Step 4:** PASS. **Step 5:** commit `feat(ba031-8d): gleaning marginal-yield breaker`.
 
