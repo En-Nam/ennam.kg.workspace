@@ -24,7 +24,9 @@
 - `ennam.kg.go/internal/service/apply_suggestions.go` (+ test) — consume `merge_suggestions` → apply or needs_review.
 - `ennam.kg.go/internal/handler/apply_suggestions.go` (+ test) — `POST /api/v1/internal/resolution/apply`.
 - `ennam.kg.go/internal/ai/cost_ceiling.go` (+ test) — pre-batch estimate + enforce.
-- `ennam.kg.go/internal/store/run_cost.go` (+ test) — per-run token/$ summary from `AIUsageStore`.
+- `ennam.kg.go/db/migrations/000065_ai_usage_log_run_id.up.sql`/`.down.sql` — add `run_id` to `ai_usage_log` (no run correlation exists today).
+- `ennam.kg.go/internal/store/run_cost.go` (+ test) — per-run token/$ summary from `ai_usage_log` by `run_id`.
+- `ennam.kg.go/internal/handler/extraction.go` (modify) — add `GET /api/v1/ingestion/runs/{runId}` (net-new; 8a only built the `POST .../extract` trigger).
 - `ennam.kg.python/src/ennam_kg/extraction/gleaning.py` (modify) — marginal-yield breaker.
 - `ennam.kg.go/config/config.yaml` (modify) — `resolution.degree_threshold`, `resolution.apply_mode`, `cost.per_run_ceiling_usd`, `cost.per_doc_ceiling_usd`, `gleaning.min_yield_per_100`.
 
@@ -51,19 +53,33 @@
 
 - [ ] **Step 1: Failing tests** — an estimate above `perRunCeilingUSD` returns `ErrCostCeilingExceeded`; below both ceilings returns nil; gleaning rounds multiply the call count. **Step 2:** FAIL. **Step 3:** implement (reuse the cost formula from `selector.go:153-155`). **Step 4:** PASS. **Step 5:** commit `feat(ba031-8d): pre-batch cost ceiling estimator + enforcement (BA-009-independent)`.
 
-> Wire `EnforceCeiling` into the Go `/extract` trigger (8a Task 4) so a run that would exceed the ceiling is rejected before any LLM call. Add a step to call it there + a handler test asserting a 4xx/refusal when over-ceiling.
+> Wire `EnforceCeiling` into the existing 8a trigger **`POST /api/v1/ingestion/documents/{docId}/extract`** (`ExtractionHandler.TriggerExtract`, `handler/extraction.go:86`) so a run that would exceed the ceiling is rejected before any chunk is enqueued/extracted. Add a step to call it there (after enumerating chunks, before dispatch) + a handler test asserting a 4xx/refusal with zero dispatch when over-ceiling.
 
 ---
 
-## Task 3: Per-run cost telemetry (Go)
+## Task 3: Per-run cost telemetry + runs status endpoint (Go) — heaviest 8d task
 
-**Files:** Create `internal/store/run_cost.go`, `run_cost_test.go`.
+**Verified gaps this task must close (not optional):**
+- `ai_usage_log` has **no run/session correlation column** (`models.AIUsageLog` = ProviderID, RequestType, InputTokens, OutputTokens, CostCalculated, LatencyMs, … — no run_id/session_id). Cost cannot be attributed to a BA-031 run today.
+- There is **no `GET /api/v1/ingestion/runs/{runId}` endpoint and no run persistence** — `TriggerExtract` (8a) generates an ephemeral `run_id` and returns it but stores no run record. (`chunk_extraction_state` does carry `run_id`, so per-run extraction counts are recoverable from it.)
 
-**Interfaces:** `func (s *RunCostStore) SummariseRun(ctx, runID string) (RunCost, error)` where `RunCost{RunID string; InputTokens, OutputTokens int64; CostUSD float64; Calls int}` — aggregates `AIUsageLog` rows for the run (`SUM(input_tokens), SUM(output_tokens), SUM(cost_calculated), COUNT(*)`). Surface it on the existing `GET /api/v1/ingestion/runs/{runId}` response (extend, don't add a new route).
+**Files:**
+- Create: `db/migrations/000065_ai_usage_log_run_id.up.sql`/`.down.sql` — `ALTER TABLE ai_usage_log ADD COLUMN run_id TEXT;` + index `(run_id)`.
+- Create: `internal/store/run_cost.go`, `run_cost_test.go`.
+- Create/extend: `internal/handler/extraction.go` — add `GET /api/v1/ingestion/runs/{runId}`.
 
-- [ ] **Step 1: Failing test** — two usage-log rows for a run sum correctly. **Step 2:** FAIL. **Step 3:** implement (read `AIUsageLog` table the selector writes via `AIUsageStore.LogUsage`; confirm the run/session linkage column). **Step 4:** PASS. **Step 5:** commit `feat(ba031-8d): per-run cost telemetry (tokens + $ from AIUsageStore)`.
+**Interfaces:**
+- `func (s *RunCostStore) SummariseRun(ctx, runID string) (RunCost, error)` where `RunCost{RunID string; InputTokens, OutputTokens int64; CostUSD float64; Calls int}` — `SELECT SUM(input_tokens), SUM(output_tokens), SUM(cost_calculated), COUNT(*) FROM ai_usage_log WHERE run_id=$1`.
+- Run-counts come from `chunk_extraction_state` (extracted/dropped/gleaning per `run_id`) — aggregate there for the counts half of the response.
 
-> Soft spot: confirm how `AIUsageLog` rows are correlated to a BA-031 run (a `session_id`/`run_id` column or a join). If no correlation exists, add the run id to the usage log write at the extraction/resolution call sites.
+- [ ] **Step 1: Migration + thread `run_id` through the usage-log write.** Add the column. Then thread the BA-031 `run_id` to `AIUsageStore.LogUsage` at the extraction/resolution AI call sites — `AIRequest` already carries `request_type` (IMP-006); add a `run_id` passthrough (Python `AIRequest` → Go AI proxy → `AIUsageLog.RunID`). Write a store test that a logged row carries `run_id`.
+- [ ] **Step 2: Failing `SummariseRun` test** — two `ai_usage_log` rows with the same `run_id` sum correctly; rows with other run_ids are excluded.
+- [ ] **Step 3:** FAIL → implement `RunCostStore`.
+- [ ] **Step 4:** PASS.
+- [ ] **Step 5: Build `GET /api/v1/ingestion/runs/{runId}`** returning `{run_id, extraction_model, resolution_model, counts:{extracted,dropped,gleaning_rounds,merged}, cost:{input_tokens,output_tokens,cost_usd,calls}}` — counts from `chunk_extraction_state`, cost from `RunCostStore`. Handler test asserts the shape. (This is the runs endpoint the spec §8 proposed but 8a did not build.)
+- [ ] **Step 6: Commit** `feat(ba031-8d): run_id on ai_usage_log + per-run cost telemetry + runs status endpoint`.
+
+> This task is larger than a single metric: it adds a column + threads run_id through the AI call path + builds a net-new status endpoint. Right-size it as its own reviewable unit; do not fold into Task 2.
 
 ---
 
@@ -122,8 +138,14 @@
 - [ ] GA gate decision logged; `apply_mode` flips to `apply` only when all conditions + the 8c precision/recall gate are green (Task 7).
 - [ ] `make -C ennam.kg.go test lint build` clean; `cd ennam.kg.python && uv run pytest` green.
 
+## Verified at plan-review time (2026-06-18)
+- `models.AIProvider.CostPerInputToken`/`CostPerOutputToken` are `int64` microdollars (`ai_provider.go:65-66`, used at `selector.go:153`) — Task 2 formula confirmed.
+- `models.AIUsageLog` has **no** run/session column (`ai_provider.go:76-86`) → Task 3 adds `run_id` (migration **000065**) + threads it through the AI call path.
+- 8a's trigger is `POST /api/v1/ingestion/documents/{docId}/extract` (`extraction.go:86`); there is **no** `GET .../runs/{runId}` yet → Task 3 builds it. `run_id` is ephemeral in `TriggerExtract`; `chunk_extraction_state` carries `run_id` for the counts half.
+- Migration numbering: 8c uses 000064, 8d uses 000065 (8a shipped 000061/062/063).
+
 ## Soft spots (read before writing)
-(a) the `AIUsageLog` schema + how to correlate rows to a BA-031 run (Task 3); (b) the exact `models.AIProvider` cost field names (`CostPerInputToken`/`CostPerOutputToken`) used at `selector.go:153` (Task 2); (c) the `/extract` trigger from 8a Task 4 to wire `EnforceCeiling` into (Task 2); (d) how config is hot-reloaded for `apply_mode`/thresholds (`extraction-config` PUT vs restart) (Task 6).
+(a) how to thread `run_id` from the Python `AIRequest` through the Go AI proxy to `AIUsageStore.LogUsage` (Task 3 — `request_type` already flows; add a parallel `run_id`); (b) how config is hot-reloaded for `apply_mode`/thresholds (`extraction-config` PUT vs restart) (Task 6); (c) confirm `chunk_extraction_state` has the fields needed for the runs-endpoint counts, else extend it (Task 3).
 
 ## Self-Review
 - **Spec coverage (8d):** OQ-005 / FR-NEW-7 degree-gating → Tasks 1, 5, 6, 7; FR-NEW-2 cost ceiling + gleaning breaker + telemetry → Tasks 2, 3, 4, 7; FR-008 routing reused (8a); auto-merge GA gate (spec §9 8d) → Task 7; reuses FR-005 merge + FR-NEW-1 un-merge from 8c (not re-implemented). NFR-256 10%-tolerance-leaf-only enforced by degree gating.

@@ -16,14 +16,14 @@
 - **No cross-type / cross-project merge** (FR-004/BR-004.6, NFR-266): the verifier only ever sees same-type, same-project candidate pairs (guaranteed by the 8a candidates endpoint).
 - **Qwen-portable prompts (NFR-265):** verify and re-summarise are **separate** single-turn JSON-in/JSON-out calls; no chat thread.
 - **Thresholds:** start from the values 8b's passing grid cell produced (`resolution_sim_threshold`, `resolution_top_k`); `merge_confidence_threshold` default 0.75, tuned here.
-- **Go:** `make -C ennam.kg.go test lint build`. Next free migration after 8a/8b: confirm and use the next number (≥ **000063**). **Read before write:** `version.go` `UpdateNode` **replaces** `properties` wholesale — always read current `properties`, merge fields in, write the full object back (see memory: partial update replaces properties).
+- **Go:** `make -C ennam.kg.go test lint build`. **Next free migration is `000064`** (8a shipped 000061/000062/000063 — verified). Use **`uuid_generate_v4()`** for PKs (repo convention, e.g. 000006/000060 — `gen_random_uuid()` is NOT used here). Unique-violation detection uses **lib/pq**: `if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505"` (pattern at `store/apikey.go:327`). **Read before write:** `version.go` `UpdateNode` **replaces** `properties` wholesale — always read current `properties`, merge fields in, write the full object back (see memory: partial update replaces properties).
 - **Python:** `cd ennam.kg.python && uv run pytest`. Verifier under `src/ennam_kg/resolution/`.
 
 ---
 
 ## File Structure
 
-- `ennam.kg.go/db/migrations/000063_merge_suggestions.up.sql` / `.down.sql` — sidecar table.
+- `ennam.kg.go/db/migrations/000064_merge_suggestions.up.sql` / `.down.sql` — sidecar table.
 - `ennam.kg.go/internal/store/merge_suggestion.go` (+ test) — sidecar CRUD.
 - `ennam.kg.go/internal/store/edge_repoint.go` (+ test) — re-point + lossless collision supersede.
 - `ennam.kg.go/internal/service/merge.go` (+ test) — merge transaction (orchestrates store ops).
@@ -37,7 +37,7 @@
 ## Task 1: `merge_suggestions` sidecar table + store
 
 **Files:**
-- Create: `db/migrations/000063_merge_suggestions.up.sql`, `.down.sql`
+- Create: `db/migrations/000064_merge_suggestions.up.sql`, `.down.sql`
 - Create: `internal/store/merge_suggestion.go`, `merge_suggestion_test.go`
 
 **Interfaces:**
@@ -47,7 +47,7 @@
 
 ```sql
 CREATE TABLE IF NOT EXISTS merge_suggestions (
-    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     project_id            UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     node_a_id             UUID NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
     node_b_id             UUID NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
@@ -105,7 +105,7 @@ func TestRepoint_CollisionUnionsProvenanceAndSupersedes(t *testing.T) {
 ```
 
 - [ ] **Step 2: Run → FAIL** (`go test ./internal/store/ -run TestRepoint_`).
-- [ ] **Step 3: Implement `RepointEdgesTx`.** Use a savepoint per edge: `SAVEPOINT rp; UPDATE ... ; ` — on `pq`/`pgx` unique-violation error code `23505`, `ROLLBACK TO rp` and run the union-and-supersede path; else `RELEASE rp`. Read/modify/write `properties` JSON in Go (don't try to do JSON surgery in SQL). Handle both `source_id=memberID` and `target_id=memberID` edges.
+- [ ] **Step 3: Implement `RepointEdgesTx`.** Use a savepoint per edge: `SAVEPOINT rp; UPDATE ... ;` — on a **lib/pq** unique violation (`if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505"`, pattern at `store/apikey.go:327`), `ROLLBACK TO SAVEPOINT rp` and run the union-and-supersede path; else `RELEASE SAVEPOINT rp`. Read/modify/write `properties` JSON in Go (don't try to do JSON surgery in SQL). Handle both `source_id=memberID` and `target_id=memberID` edges.
 - [ ] **Step 4: Run → PASS.**
 - [ ] **Step 5: Commit** `feat(ba031-8c): lossless edge re-point (collision union + supersede, never delete)`.
 
@@ -246,8 +246,11 @@ The inverse of Task 3. Required, built, and drilled before 8d.
 - [ ] Merge **precision ≥ 0.90 / recall ≥ 0.80** measured on `vi_blocking_v1.json`; `merge_confidence_threshold` chosen (Tasks 9, 10).
 - [ ] `make -C ennam.kg.go test lint build` clean; `cd ennam.kg.python && uv run pytest` green.
 
+## Verified at plan-review time (2026-06-18)
+- Next migration is **000064** (8a shipped 000061/062/063). uuid PK uses **`uuid_generate_v4()`**. Driver is **lib/pq** → `pq.Error.Code == "23505"`. `knowledge_edges` has **no status column** (only `properties` JSONB) → edge supersession via `properties.superseded_by_merge` is the right mechanism. `version.go UpdateNode` replaces `properties` wholesale (read-merge-write). `AIClient.complete(AIRequest)->AIResponse` with `AIRequest{prompt, system_prompt, response_format="json", request_type}` and `AIResponse.content:str` — verify/re-summary use `response_format="json"`. `store.Tx`/`BeginTx`, `CreateEdgeTx`, optimistic `UpdateNode` + `ErrVersionConflict` all present. A supersede pattern exists at `handler/deprecate.go`.
+
 ## Soft spots (read before writing)
-(a) the exact unique-violation error code/handling for the DB driver in use (Task 2 — `23505`); (b) whether read paths (traversal/neighbors) already filter to `active` nodes so superseded-member colliding edges are naturally excluded (Task 2/3 — confirm, else add a filter); (c) the `KGClient` method to read full node detail incl. `properties` for the verifier (Task 8); (d) where to register the new internal routes (Tasks 5, 8).
+(a) whether read paths (traversal/neighbors) already filter to `active` nodes so superseded-member colliding edges are naturally excluded (Task 2/3 — confirm, else add a filter); (b) the `KGClient` method to read full node detail incl. `properties` for the verifier (Task 8); (c) where to register the new internal routes (Tasks 5, 8 — follow the `RegisterRoutes` pattern used by `resolution_candidates.go`/`extraction.go`).
 
 ## Self-Review
 - **Spec coverage (8c):** FR-005 → Tasks 3, 6; FR-006 → Task 7; BR-005.11 lossless → Task 2; BR-005.10 chain/cycle/optimistic → Task 3; FR-NEW-1 un-merge → Tasks 4, 5, 10; FR-NEW-6 shadow/`merge_suggestions` → Tasks 1, 8; OQ-004 tuning + NFR-256/257 gate → Tasks 9, 10; NFR-262 re-summary-not-concat → Task 7; NFR-264 auditability → Task 3. Degree-gating apply + cost ceiling are **8d** (out of 8c scope; `degree_max` is *recorded* here for 8d).
