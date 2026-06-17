@@ -30,15 +30,16 @@
 - Create: `db/migrations/000060_create_canonical_document.up.sql` / `.down.sql` — new table.
 - Create: `internal/models/canonical_document.go` — `CanonicalDocument` struct.
 - Create: `internal/store/canonical_document.go` — `CanonicalDocumentStore` (upsert-by-draft, get-by-source-hash).
-- Create: `internal/handler/canonical_document.go` — REST handlers (internal, member+/worker auth) for upsert + lookup.
+- Create: `internal/handler/canonical_document.go` — REST handlers (member+/worker auth, same as the node/draft routes the worker already calls) for upsert + lookup + subtree-delete.
+- Modify: `internal/store/node.go` — add `DeleteDocumentSubtree` (hard delete of a doc's section+chunk nodes; embeddings cascade).
 - Modify: `internal/service/file_upload.go` — `classifyUploadFile` (~:355), delete `extractTextSync` (~:372) + its branch (~:241), `ContentExtracted` (~:222).
 - Modify: `cmd/kg-server/main.go` — wire the new store + routes.
-- Test: `internal/store/canonical_document_test.go`, `internal/handler/canonical_document_test.go`, `internal/service/file_upload_test.go`.
+- Test: `internal/store/canonical_document_test.go` (nil-DB unit + `setupTestDB`-gated), `internal/store/node_test.go` (subtree delete), `internal/handler/canonical_document_test.go`, `internal/service/file_upload_test.go`.
 
 **Python (`ennam.kg.python/`)**
 - Create: `src/ennam_kg/ingestion/pipeline/normalize.py` — `normalize_canonical_text(raw_text, content_format) -> str`.
 - Create: `src/ennam_kg/ingestion/pipeline/canonical.py` — `build_canonical_document(...)` + `CanonicalDocument`/`CanonicalChunk` dataclasses + `EmptyExtractionError`.
-- Modify: `packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py` — add `get_canonical_document_by_source`, `upsert_canonical_document`.
+- Modify: `packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py` — add `get_canonical_document_by_source`, `upsert_canonical_document`, `delete_document_subtree` (Bearer auth via existing `_request`; the worker already authenticates with this client).
 - Modify: `src/ennam_kg/ingestion/pipeline/engine.py` — `run_batch` dedup check + canonical persistence (~:52-120).
 - Modify: `src/ennam_kg/ingestion/pipeline/decompose.py` — consume canonical chunk list, stop re-chunking (~:57, ~:135).
 - Modify: `src/ennam_kg/worker.py` — `handle_extract_upload` extract-only, no `run_batch` (~:45-89).
@@ -486,40 +487,50 @@ type CanonicalDocument struct {
 }
 ```
 
-- [ ] **Step 2: Write the failing store test** (follow the existing `internal/store/*_test.go` DB-fixture pattern — sqlmock or testdb as the repo uses).
+- [ ] **Step 2: Write the failing tests — match repo convention exactly.** Simple stores use **nil-DB unit tests**; SQL behavior uses a `setupTestDB(t)`-gated real-DB test that **skips when `KG_TEST_DATABASE_URL` is unset** (see `internal/store/node_embedding_test.go`). Write both:
 
 ```go
-func TestUpsertByDraft_InsertThenUpdateSameRow(t *testing.T) {
-    s, cleanup := newTestCanonicalStore(t)
-    defer cleanup()
+// internal/store/canonical_document_test.go — unit (always runs)
+func TestNewCanonicalDocumentStore_NotNil(t *testing.T) {
+    if NewCanonicalDocumentStore(nil) == nil {
+        t.Fatal("NewCanonicalDocumentStore returned nil")
+    }
+}
+func TestCanonicalDocumentStore_FindBySourceHash_NilDB(t *testing.T) {
+    s := NewCanonicalDocumentStore(nil)
+    if _, err := s.FindBySourceHash(context.Background(), "p", "local_upload", "s", "h"); err == nil {
+        t.Fatal("expected error on nil DB")
+    }
+}
+
+// real-DB behavior (skips without KG_TEST_DATABASE_URL), in package store_test
+func TestCanonicalDocumentStore_UpsertByDraft_SameRowOnReprocess(t *testing.T) {
+    db := setupTestDB(t) // skips if KG_TEST_DATABASE_URL unset
+    // seed project + draft + knowledge_node rows, then:
+    s := store.NewCanonicalDocumentStore(db)
     doc := models.CanonicalDocument{ProjectID: projID, DraftNodeID: draftID,
         KnowledgeNodeID: nodeID, SourceType: "local_upload", SourceID: "upload:1",
         ContentHash: "h1", ExtractionMethod: "native", Metadata: map[string]any{}}
-    got, err := s.UpsertByDraft(ctx, doc)
-    require.NoError(t, err)
+    got, err := s.UpsertByDraft(ctx, doc); require.NoError(t, err)
     doc.ContentHash = "h2"
-    got2, err := s.UpsertByDraft(ctx, doc)
-    require.NoError(t, err)
-    require.Equal(t, got.ID, got2.ID) // same row (BR-001.1)
+    got2, err := s.UpsertByDraft(ctx, doc); require.NoError(t, err)
+    require.Equal(t, got.ID, got2.ID)        // same row (BR-001.1, ON CONFLICT draft_node_id)
     require.Equal(t, "h2", got2.ContentHash)
 }
-
-func TestFindBySourceHash_RespectsSoftDelete(t *testing.T) {
-    // insert, find returns row; soft-delete, find returns nil
-}
+// + TestCanonicalDocumentStore_FindBySourceHash_RespectsSoftDelete (insert→find hit; set deleted_at→find nil)
 ```
 
 - [ ] **Step 3: Run, verify fail**
 
 Run: `cd ennam.kg.go && go test ./internal/store/ -run Canonical -v`
-Expected: FAIL — store not defined.
+Expected: unit tests FAIL (store not defined); real-DB test SKIPs without `KG_TEST_DATABASE_URL`.
 
-- [ ] **Step 4: Implement the store** — `UpsertByDraft` uses `INSERT ... ON CONFLICT (draft_node_id) DO UPDATE SET content_hash=EXCLUDED.content_hash, knowledge_node_id=EXCLUDED.knowledge_node_id, extraction_method=EXCLUDED.extraction_method, metadata=EXCLUDED.metadata, extracted_at=EXCLUDED.extracted_at, updated_at=NOW() RETURNING *`. `FindBySourceHash` selects `WHERE project_id=$1 AND source_type=$2 AND source_id=$3 AND content_hash=$4 AND deleted_at IS NULL LIMIT 1`. Match the repo's `database/sql` + JSONB scanning idiom in a sibling store file.
+- [ ] **Step 4: Implement the store** (`NewCanonicalDocumentStore(db *sql.DB)`). `UpsertByDraft`: `INSERT ... ON CONFLICT (draft_node_id) DO UPDATE SET content_hash=EXCLUDED.content_hash, knowledge_node_id=EXCLUDED.knowledge_node_id, extraction_method=EXCLUDED.extraction_method, metadata=EXCLUDED.metadata, extracted_at=EXCLUDED.extracted_at, updated_at=NOW() RETURNING *`. `FindBySourceHash`: `WHERE project_id=$1 AND source_type=$2 AND source_id=$3 AND content_hash=$4 AND deleted_at IS NULL LIMIT 1` (returns `(nil, nil)` on no rows). Mirror the `database/sql` + JSONB marshal/scan idiom in a sibling store (e.g. `draft_node.go`).
 
 - [ ] **Step 5: Run, verify pass**
 
-Run: `go test ./internal/store/ -run Canonical -v`
-Expected: PASS.
+Run: `go test ./internal/store/ -run Canonical -v` (unit green; real-DB green locally with `KG_TEST_DATABASE_URL` set, else skipped — note which in the commit).
+Expected: PASS/SKIP.
 
 - [ ] **Step 6: Commit**
 
@@ -735,20 +746,52 @@ git add ennam.kg.python/src/ennam_kg/ingestion/pipeline/engine.py ennam.kg.pytho
 git commit -m "feat(ingest): content-hash dedup reuse path (FR-004 BR-004.2, NFR-243)"
 ```
 
-### Task 4.2: Content-change regenerate path (replace stale chunks)
+### Task 4.2a: Document-subtree delete capability (Go store + endpoint + client)
+
+> **New capability — verified missing.** There is no node-delete method in `KGClient` and no node DELETE route in Go. The regenerate path needs to remove a document's stale section+chunk nodes. We hard-delete them so `knowledge_node_embeddings` (FK `ON DELETE CASCADE`, migration 000055) cleans up automatically — no orphan embeddings.
+
+**Files:**
+- Modify: `ennam.kg.go/internal/store/node.go` (add `DeleteDocumentSubtree`)
+- Modify: `ennam.kg.go/internal/handler/canonical_document.go` (add route) + `cmd/kg-server/main.go`
+- Modify: `ennam.kg.python/packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py`
+- Test: `ennam.kg.go/internal/store/node_test.go` (nil-DB + `setupTestDB`-gated), `ennam.kg.python/tests/ingestion/test_kgclient_canonical.py` (add case)
+
+**Interfaces:**
+- Produces:
+  - Go `store.NodeStore.DeleteDocumentSubtree(ctx, projectID, hubNodeID string) (int, error)` — `DELETE FROM knowledge_nodes WHERE project_id=$1 AND node_type IN ('document_section','document_chunk') AND properties->>'document_id' = $2` (cascades embeddings). Returns rows deleted.
+  - Route `DELETE /api/v1/projects/{projectId}/documents/{docId}/subtree` (member+/worker auth, same as the other worker-called routes).
+  - `KGClient.delete_document_subtree(self, project_id, document_id) -> int`.
+
+- [ ] **Step 1: Write failing tests** — Go: nil-DB error test + `setupTestDB`-gated test asserting that after seeding a hub + 2 chunks + their embeddings, `DeleteDocumentSubtree` removes the chunks AND their embedding rows (cascade), leaving the hub. Python: mock the DELETE call, assert URL shape + returned count.
+
+- [ ] **Step 2: Run, verify fail** — `go test ./internal/store/ -run Subtree -v` and `uv run pytest tests/ingestion/test_kgclient_canonical.py -v` → FAIL.
+
+- [ ] **Step 3: Implement** the store method, the route/handler, the wiring, and the client method.
+
+- [ ] **Step 4: Run, verify pass + build** — `go build ./... && go test ./internal/store/ -run Subtree -v` and pytest → PASS/SKIP.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ennam.kg.go/internal/store/node.go ennam.kg.go/internal/store/node_test.go ennam.kg.go/internal/handler/canonical_document.go ennam.kg.go/cmd/kg-server/main.go ennam.kg.python/packages/ennam-kg-indexer/src/ennam_kg_indexer/kg_client/client.py ennam.kg.python/tests/ingestion/test_kgclient_canonical.py
+git commit -m "feat(go): delete-document-subtree (hard delete, cascades embeddings) for regenerate"
+```
+
+### Task 4.2b: Content-change regenerate path (replace stale chunks)
 
 **Files:**
 - Modify: `ennam.kg.python/src/ennam_kg/ingestion/pipeline/engine.py`
 - Test: `ennam.kg.python/tests/ingestion/test_dedup.py` (add cases)
 
 **Interfaces:**
-- Produces: when `(project_id, source_type, source_id)` matches but `content_hash` differs, the canonical_document is updated (`upsert_canonical_document`), the document's prior `document_chunk`/`document_section` nodes are replaced (no orphaned duplicate set), and chunks regenerate (NFR-244).
+- Consumes: `KGClient.delete_document_subtree` (4.2a), `KGClient.get_canonical_document_by_source` (1.5).
+- Produces: when `(project_id, source_type, source_id)` matches an existing canonical_document but `content_hash` **differs**, `run_batch` calls `delete_document_subtree(project_id, existing_knowledge_node_id)` to remove stale sections+chunks (+cascaded embeddings) **before** re-decomposing, updates the canonical_document (`upsert_canonical_document`), and regenerates chunks against the existing hub node (NFR-244).
 
-- [ ] **Step 1: Write failing tests** — (a) changed content updates `content_hash` and regenerates chunks; (b) no orphaned stale chunk set remains for that `doc_id` (assert old chunk nodes archived/removed before new ones created).
+- [ ] **Step 1: Write failing tests** (mock `KGClient`) — (a) changed content → `delete_document_subtree` called once with the existing hub id, then decompose produces the new chunk set, and `content_hash` updates; (b) the reused-hub path keeps the same `knowledge_node_id` (hub not recreated); (c) no second canonical_document row (upsert, not insert).
 
 - [ ] **Step 2: Run, verify fail** — FAIL.
 
-- [ ] **Step 3: Implement** — on hash-mismatch reprocess, archive/delete prior section+chunk nodes for the hub (use the existing node-archival path the differ/decompose uses), then proceed to decompose with the new canonical chunks.
+- [ ] **Step 3: Implement** — extend the dedup branch from 4.1: on `get_canonical_document_by_source` hit with **differing** hash, take the existing `knowledge_node_id`, call `delete_document_subtree`, `upsert_canonical_document` (new hash/metadata), then run the FR-006 decompose against that hub id. (On hash **match** → reuse, Task 4.1. On **no** existing row → normal create path.)
 
 - [ ] **Step 4: Run, verify pass** — PASS.
 
@@ -756,7 +799,7 @@ git commit -m "feat(ingest): content-hash dedup reuse path (FR-004 BR-004.2, NFR
 
 ```bash
 git add ennam.kg.python/src/ennam_kg/ingestion/pipeline/engine.py ennam.kg.python/tests/ingestion/test_dedup.py
-git commit -m "feat(ingest): content-change regenerate path, no orphan chunks (FR-004 BR-004.3, NFR-244)"
+git commit -m "feat(ingest): content-change regenerate path, no orphan chunks/embeddings (FR-004 BR-004.3, NFR-244)"
 ```
 
 ---
@@ -808,7 +851,9 @@ git commit -am "chore: lint + final verification for BA-030 canonical ingest cor
 
 - **Spec coverage:** FR-001 (1.3/1.4/1.6), FR-002 (1.1/1.2/2.1/2.2), FR-003 (1.2/1.6), FR-004 (4.1/4.2), FR-006 (5.1). Normalization (NFR-239) → 1.1. Approval gate → 2.1. Migration 000060 → 0.1. Characterization → 0.2. NFR-247 pin → 3.1. FR-005 + GET endpoints correctly **absent** (cut).
 - **Cross-service surface** (worker→Go for canonical_document) is fully covered: store (1.3), endpoints (1.4), client (1.5), use (1.6) — this was under-specified in the BA and is made explicit here.
-- **Verified against code (2026-06-17 review):** migrate target is `make db-migrate` (not `migrate-up`); `is_pdf` derives from `draft.metadata` (`original_filename`/`mime_type`, set at `file_upload.go:250-255`), **not** `content_format` (which is `plain_text` for PDFs); `chunk_key` embeds the persisted section-node UUID, so the builder emits provisional `(section_local_id, ordinal)` and `decompose` stamps the final key (label-only, preserves NFR-248); `decompose_document` keeps its `extraction` param (concept loop) and both embedding streams; json/csv/xlsx remain hub-only per the chunkable-format gate.
+- **Verified against code (2026-06-17, 3 review passes):** migrate target is `make db-migrate` (not `migrate-up`); `is_pdf` derives from `draft.metadata` (`original_filename`/`mime_type`, set at `file_upload.go:250-255`), **not** `content_format` (which is `plain_text` for PDFs); `chunk_key` embeds the persisted section-node UUID, so the builder emits provisional `(section_local_id, ordinal)` and `decompose` stamps the final key (label-only, preserves NFR-248); `decompose_document` keeps its `extraction` param (concept loop) and both embedding streams; json/csv/xlsx remain hub-only per the chunkable-format gate; draft node types are only `document`/`external`/`dataset` (all valid canonical-doc hubs).
+- **Test conventions matched:** Go simple stores → nil-DB unit tests; SQL behavior → `setupTestDB(t)`-gated real-DB tests that skip without `KG_TEST_DATABASE_URL` (per `node_embedding_test.go`). Python → pytest with mocked `KGClient`.
+- **FR-004 regenerate gap closed:** there was no node-delete API (no `KGClient` method, no Go route). Task 4.2a adds `DeleteDocumentSubtree` + route + client method; hard delete cascades `knowledge_node_embeddings` (FK `ON DELETE CASCADE`) → no orphan embeddings. This was the riskiest half the CTO flagged.
 - **Type consistency:** `CanonicalDocument`/`CanonicalChunk`/`CanonicalSection` defined in 1.2 (chunks carry `section_local_id`+`ordinal`, no final key) and consumed in 1.6/4.x/5.1; `upsert_canonical_document`/`get_canonical_document_by_source` defined in 1.5, used in 1.6/4.1; `UpsertByDraft`/`FindBySourceHash` defined in 1.3, used in 1.4.
 - **Sequencing guards:** P5 (FR-006) is last; P2 cutover gated on the PO confirm; P3 gated on OQ-009. Characterization guard (0.2) precedes every refactor.
 
