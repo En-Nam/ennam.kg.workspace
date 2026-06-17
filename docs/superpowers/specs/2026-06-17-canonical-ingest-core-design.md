@@ -128,6 +128,8 @@ Finding: `canonical_document` does **not exist yet**, so AAA cannot be reading i
 
 This unblocks coding immediately (artifact 1) while guaranteeing the boundary before cutover (artifact 2).
 
+**Pinned canonical read contract (Task 3.1, 2026-06-17):** AAA reads at chunk-level — `document_chunk` content + `char_start`/`char_end`/`ordinal` via `doc_id`; full-text = derived `concat(ordered chunks)`, no `canonical_text` column; direct `content_raw` reads from AAA/DAAB are **forbidden**.
+
 ---
 
 ## 8. FR-006 — Single Chunk Producer (the heavy, non-additive change)
