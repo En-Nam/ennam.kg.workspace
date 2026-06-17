@@ -722,7 +722,7 @@ git commit -m "feat(go): cease synchronous text extraction; all uploads defer to
 
 ## PHASE 3 — Contract pin + NFR-247 golden test
 
-> Goal: pin AAA's authoritative read path to the canonical contract and re-point the golden test before any read cutover. **Hard gate:** OQ-009 must be answered by the AAA phase owner before this phase; CTO ratifies. Forbid direct `draft_nodes.content_raw` reads from AAA/DAAB.
+> Goal: pin AAA's authoritative read path to the canonical contract and re-point the golden test before any read cutover. **OQ-009 RESOLVED (2026-06-17): chunk-level.** AAA reads `document_chunk` (content + char offsets) via `doc_id`; full linear text, if ever needed, is **reconstructed by concatenating ordered chunks** — there is **no stored `canonical_text` column** (it would duplicate data derivable from chunks; YAGNI). Direct `draft_nodes.content_raw` reads from AAA/DAAB are forbidden. The AAA phase owner confirms field-extraction works at chunk granularity; the access path stays swappable since everything resolves via `doc_id`.
 
 ### Task 3.1: Pin canonical read field + NFR-247 golden regression
 
@@ -731,12 +731,12 @@ git commit -m "feat(go): cease synchronous text extraction; all uploads defer to
 - Modify: `docs/superpowers/specs/2026-06-17-canonical-ingest-core-design.md` (record the pinned field in §7/§12)
 
 **Interfaces:**
-- Consumes: the OQ-009 answer (authoritative field: `canonical_document` canonical text + chunk offsets, per the ratified contract).
-- Produces: a golden test asserting that, for the Task 0.2 fixtures (md/txt/pdf — the chunked formats AAA consumes), the canonical path reproduces the AAA-authoritative canonical text + chunk char offsets the characterization snapshot captured. (Hub-only formats json/csv/xlsx have no chunks/offsets and are out of this golden.)
+- Consumes: the OQ-009 resolution — **chunk-level**: AAA's authoritative read unit is `document_chunk` (content + `char_start`/`char_end`/`ordinal`) resolved via `doc_id`. No `canonical_text` column; full-text is a derived `concat(ordered chunks)` view if needed.
+- Produces: a golden test asserting that, for the Task 0.2 fixtures (md/txt/pdf — the chunked formats AAA consumes), the canonical path reproduces the **chunk content + char offsets + ordinals** the characterization snapshot captured (the AAA-authoritative unit). (Hub-only formats json/csv/xlsx have no chunks/offsets and are out of this golden.)
 
-- [ ] **Step 1: Record the pinned field** in the spec (one line: "AAA reads canonical text + chunk offsets via `doc_id` → `canonical_document`; `content_raw` direct reads forbidden").
+- [ ] **Step 1: Record the pinned contract** in the spec (one line: "AAA reads at **chunk-level** — `document_chunk` content + char offsets via `doc_id`; full-text = derived `concat(ordered chunks)`, no `canonical_text` column; `content_raw` direct reads forbidden").
 
-- [ ] **Step 2: Write the golden test** asserting `build_canonical_document` output (canonical_text + each chunk's `content`/`char_start`/`char_end`/`ordinal`) for the md/txt/pdf fixtures matches the Task 0.2 golden content/offsets — i.e. the unified entry point returns the same text + offsets AAA received pre-change (BR-002.6 superset guarantee made concrete).
+- [ ] **Step 2: Write the golden test** asserting `build_canonical_document` output (each chunk's `content`/`char_start`/`char_end`/`ordinal`) for the md/txt/pdf fixtures matches the Task 0.2 golden — i.e. the unified entry point returns the same chunk units AAA consumes pre-change (BR-002.6 superset guarantee made concrete at chunk granularity).
 
 - [ ] **Step 3: Run, verify pass** — `uv run pytest tests/ingestion/test_aaa_non_regression.py -v` → PASS.
 
@@ -887,9 +887,9 @@ git commit -am "chore: lint + final verification for BA-030 canonical ingest cor
 - **Test conventions matched:** Go simple stores → nil-DB unit tests; SQL behavior → `setupTestDB(t)`-gated real-DB tests that skip without `KG_TEST_DATABASE_URL` (per `node_embedding_test.go`). Python → pytest with mocked `KGClient`.
 - **FR-004 regenerate gap closed:** there was no node-delete API (no `KGClient` method, no Go route). Task 4.2a adds `DeleteDocumentSubtree` + route + client method; hard delete cascades `knowledge_node_embeddings` (FK `ON DELETE CASCADE`) → no orphan embeddings. This was the riskiest half the CTO flagged.
 - **Type consistency:** `CanonicalDocument`/`CanonicalChunk`/`CanonicalSection` defined in 1.2 (chunks carry `section_local_id`+`ordinal`, no final key) and consumed in 1.6/4.x/5.1; `upsert_canonical_document`/`get_canonical_document_by_source` defined in 1.5, used in 1.6/4.1; `UpsertByDraft`/`FindBySourceHash` defined in 1.3, used in 1.4.
-- **Sequencing guards:** P5 (FR-006) is last; P3 (NFR-247 golden) gated on OQ-009. Characterization guard (0.2) precedes every refactor. P2 no longer has a sign-off gate (config default = current behavior).
+- **Sequencing guards:** P5 (FR-006) is last; P3 implements the **resolved** chunk-level contract (OQ-009 closed) and re-points the golden before the read cutover. Characterization guard (0.2) precedes every refactor. P2 has no sign-off gate (config default = current behavior).
 
 ## Known Preconditions (carry into execution)
 1. **P2:** ✅ No sign-off needed — gate is config-driven (`ingestion.require_upload_approval`, default `false` = index immediately = current behavior). Opt-in only.
-2. **P3:** AAA phase owner confirms AAA binds to `doc_id` (canonical contract), not `draft_nodes.content_raw`. The physical access path (`canonical_document` row vs `document` hub node) is **swappable later** since both resolve via `doc_id`; only the contract (`doc_id` → text + offsets) must stay stable. Cheap confirmation, not an engineering blocker.
+2. **P3:** OQ-009 **resolved → chunk-level** (2026-06-17). AAA binds to `doc_id` → `document_chunk` (content + offsets), not `draft_nodes.content_raw`; full-text, if needed, is `concat(ordered chunks)` (no `canonical_text` column). The physical access path stays **swappable later** since everything resolves via `doc_id`. The AAA phase owner only confirms field-extraction works at chunk granularity — a cheap tick, not an engineering blocker.
 3. P0/P1 proceed without either.

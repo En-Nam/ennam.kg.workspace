@@ -64,7 +64,7 @@ content_hash    = SHA-256(normalized canonical text)
 chunk identity  = {section_id}:{ordinal} + char_start/char_end offsets
 ```
 
-Direct reads of `draft_nodes.content_raw` from AAA/DAAB are **forbidden** once the contract is pinned (§5, gate 4).
+Direct reads of `draft_nodes.content_raw` from AAA/DAAB are **forbidden** once the contract is pinned (see §7; §11 condition 4). AAA's resolved read unit is the `document_chunk` (content + char offsets) via `doc_id` — chunk-level, OQ-009 resolved.
 
 ### New entity — `canonical_document` (migration 000060)
 
@@ -83,7 +83,7 @@ Normalization policy (named decisions, not accidents):
 - No JSON pretty-print as a hashing input (decode policy applied identically across paths).
 - Truncation limits **named and accepted**: `parse_markdown_sections` caps at `text[:50000]`/section and `max_sections=200` (`document_tree.py:49,66`). v1 documents these as accepted policy; revisit only if a real doc exceeds them.
 
-`content_hash` is computed over the **normalized** canonical text. NFR-239's cross-path equivalence test must cover **JSON and CSV**, not only markdown.
+`content_hash` is computed over the **normalized** canonical text. **NFR-239 (reframed):** cross-path equivalence is asserted for **text-format** content — the same logical text via a text-format upload vs `satellite_api` yields identical `content_hash` and chunks. JSON/CSV/XLSX are hub-only (never chunked, per the chunkable-format gate); cross-path *structural* hash parity for those is **not** guaranteed and is out of scope. (The JSON pretty-print / CSV `\r\n` reformatting in `files.py` is therefore moot for chunk divergence — those formats produce no chunks.)
 
 ---
 
@@ -119,10 +119,12 @@ Normalization policy (named decisions, not accidents):
 
 ## 7. AAA Non-Regression — OQ-009 as two artifacts (NFR-247)
 
+**OQ-009 RESOLVED (2026-06-17): chunk-level.** The AAA read contract is **`doc_id` → `document_chunk`** (chunk content + `char_start`/`char_end`/`ordinal`). Rationale: (a) it matches the ecosystem target (§4.4 Phase B — AAA consumes entities/relations/**chunks** and cites chunks; provenance is `doc_id`/`chunk_id`/sentence); (b) chunk-level is the more general primitive — full linear text is `concat(ordered chunks)` (derivable), whereas full-text → chunks needs re-chunking; (c) **no `canonical_text` column** — storing full text would duplicate data already in `document_chunk`/hub (YAGNI, Rule 2). If AAA ever needs full linear text, it is a derived `concat(ordered chunks)` view, not stored. Hub-only formats (json/csv/xlsx) have no chunks and are out of the AAA non-regression golden.
+
 Finding: `canonical_document` does **not exist yet**, so AAA cannot be reading it today — everything reads `draft_nodes.content_raw` (`engine.py:76`) or hub/section node content. OQ-009 is therefore two artifacts, not one blocker:
 
-1. **Phase-0 characterization test (interim guard, write FIRST):** snapshot current `content_raw` + section/chunk content + char offsets for representative docs (**markdown + JSON + CSV**) through today's pipeline. Detects regressions during the refactor.
-2. **Contract-pin (HARD gate before the FR-002 read cutover):** the **AAA phase owner** declares which field is authoritative for sign-off, the read path is pinned to the canonical contract, direct `content_raw` reads become forbidden, and the golden test is re-pointed at the pinned field. **CTO ratifies** the pinned path as a contract boundary.
+1. **Phase-0 characterization test (interim guard, write FIRST):** snapshot current section/chunk content + char offsets for the **chunked** formats (**markdown + plain-text + extracted-PDF text**) through today's pipeline. JSON/CSV/XLSX are hub-only (no chunks) per the chunkable-format gate, so they are out of this chunk-level guard. Detects regressions during the refactor.
+2. **Contract-pin (HARD gate before the FR-002 read cutover):** the read path is pinned to the resolved **chunk-level** contract (`doc_id` → `document_chunk` content + offsets), direct `content_raw` reads become forbidden, and the golden test is re-pointed at the chunk units. The **AAA phase owner** confirms field-extraction works at chunk granularity; **CTO ratifies** the pinned path as a contract boundary.
 
 This unblocks coding immediately (artifact 1) while guaranteeing the boundary before cutover (artifact 2).
 
@@ -173,7 +175,7 @@ Verification (NFR-248): the producer never independently calls `parse_markdown_s
 
 ## 12. Open Items Before Spec Freeze
 
-- **OQ-009 owner**: AAA phase owner must commit the authoritative read field before P2→P3 cutover (does not block P0/P1 coding).
+- **OQ-009**: ✅ RESOLVED 2026-06-17 — **chunk-level** (`doc_id` → `document_chunk` content + offsets; full-text = derived `concat(ordered chunks)`, no `canonical_text` column — §7). AAA phase owner confirms field-extraction at chunk granularity before P2→P3 cutover (a tick, not a blocker); does not block P0/P1 coding.
 - **Approval-gate handler check**: ✅ RESOLVED 2026-06-17 — `handle_extract_upload` confirmed to fan out to `run_batch` (`worker.py:75`). Final decision: **config-driven gate** `ingestion.require_upload_approval`, default `false` (index immediately = current behavior). No PO sign-off blocker; the gate is opt-in.
 - Normalization specifics (LF + decode policy + accepted truncation limits) ratified as named decisions, not accidents.
 
