@@ -35,8 +35,9 @@ merge operation must be identical to its pre-merge snapshot:
 ### Requirements
 
 - Go 1.22+
-- PostgreSQL at `localhost:5433` with migrations applied through `000061`
-  (adds `person` node type)
+- PostgreSQL at `localhost:5433` with migrations applied through `000064`
+  (`000061` adds the `person` node type; `000064` adds the `merge_suggestions`
+  sidecar used by Phase 8c)
 
 ### One-liner
 
@@ -77,47 +78,76 @@ reversal path in addition to the alias and provenance paths.
 |----------|--------|---------|
 | Un-merge drill (HTTP level) | **PASS** | `TestBA031_UnmergeDrillByteEquivalent` against real DB |
 | Shadow no-mutation | Covered by Task 8 | `ennam.kg.python/tests/resolution/test_pass2.py` |
-| Precision gate (≥0.74) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
-| FP-rate gate (≤10 FP/100) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
-| F1 gate (≥0.75) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
+| Merge precision gate (≥0.90) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
+| Merge recall gate (≥0.80) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
 | **Overall Phase 8c** | **PENDING-DATA** | Data gate not cleared |
+
+> The 8c exit gate is **merge precision ≥ 0.90 AND recall ≥ 0.80** (plan §"Exit gate").
+> The blocking-recall gate (recall@K=10 ≥ 0.90 in [0.72, 0.75]) is the **8b** gate
+> and must pass first, since it feeds the `resolution_sim_threshold` / `resolution_top_k`
+> that 8c uses.
 
 ---
 
 ## Clearing PENDING-DATA (precision / recall gate)
 
-The precision/recall gate (Task 9) requires real blocking candidate pairs in
-`ennam.kg.python/data/benchmarks/vi_blocking_v1.json`.
+The gate requires the labelled Vietnamese benchmark
+`ennam.kg.python/benchmarks/ba031/vi_blocking_v1.json`, populated per
+`ennam.kg.python/benchmarks/ba031/schema.md` (≥ 30 gold groups / ≥ 50 labelled
+pairs covering honorifics, diacritics↔romanised, abbreviations, org variants).
 
 ### Steps
 
-1. Populate `vi_blocking_v1.json` with real candidate pairs:
+1. **Populate `vi_blocking_v1.json`** following `benchmarks/ba031/schema.md`. The
+   shape is an `entities` array (NOT `pairs`); two entities form a true-duplicate
+   pair iff they share `gold_entity_id` AND `type`. Assign `_meta.owner`:
 
    ```json
    {
-     "pairs": [
-       {"id_a": "node-uuid-1", "id_b": "node-uuid-2", "label": 1},
-       {"id_a": "node-uuid-3", "id_b": "node-uuid-4", "label": 0}
+     "_meta": {"name": "vi_blocking_v1", "owner": "<NAME>", "language": "vi", "notes": "..."},
+     "entities": [
+       {"id": "e1", "gold_entity_id": "g_nguyen_van_a", "type": "person",
+        "canonical_name": "Nguyễn Văn A", "aliases": ["ông A"], "description": "..."},
+       {"id": "e2", "gold_entity_id": "g_nguyen_van_a", "type": "person",
+        "canonical_name": "ông Nguyễn Văn A", "aliases": [], "description": "..."}
      ]
    }
    ```
 
-   Label `1` = true match, `0` = non-match.
-
-2. Re-run Task 9 precision/recall script:
+2. **Run the 8b blocking-recall gate first** (it feeds 8c's thresholds). This CLI
+   exists (`src/ennam_kg/benchmark/cli.py`) and requires the live stack + e5 model:
 
    ```bash
    cd ennam.kg.python
-   uv run python -m ennam_kg.benchmarks.blocking_eval \
-     --candidates data/benchmarks/vi_blocking_v1.json \
-     --thresholds precision=0.74 fp_per_100=10 f1=0.75
+   uv run python -m ennam_kg.benchmark.cli \
+     --dataset benchmarks/ba031/vi_blocking_v1.json \
+     --project <bench-project-uuid> \
+     --out /tmp/blocking-report.md
    ```
 
-3. If all three thresholds pass, update the gate decision in:
+   8b gate: recall@K=10 ≥ 0.90 with `resolution_sim_threshold` in [0.72, 0.75].
+   Record the chosen `resolution_sim_threshold` / `resolution_top_k` for 8c.
+
+3. **Run the 8c merge precision/recall evaluation** with the real verifier model and
+   the chosen `merge_confidence_threshold`, over the same labelled set.
+   The scoring functions exist — `ennam_kg.benchmark.merge_eval.evaluate_merge`
+   (single threshold) and `sweep_confidence` (tune) → `MergeScore{precision, recall,
+   tp, fp, fn}` — but they consume **pre-computed** `blocked_pairs` + per-pair
+   `verdicts`. ⚠️ **The end-to-end harness that produces those verdicts (load dataset
+   → embed/insert → block via `/internal/resolution/candidates` → run `verify_pair`
+   with the real model → `evaluate_merge`) is NOT yet built.** Today `merge_eval` is
+   exercised only by `tests/benchmark/test_merge_eval.py` with synthetic verdicts.
+   **This harness must be written when the dataset lands** (model it on
+   `benchmark/cli.py` + `benchmark/sweep.py`, adding the `verify_pair` step). Until
+   then the 8c precision/recall gate cannot be run.
+   8c gate: **precision ≥ 0.90 AND recall ≥ 0.80**.
+
+4. If the 8b gate passes, the 8c precision/recall gate passes, AND the un-merge
+   drill above is PASS, update the gate decision in:
    - `.serena/memories/decisions/mcp-api-spec.md` (section: Phase 8c gate)
    - This runbook (table above)
 
-4. Create commit: `docs(ba031-8c): precision/recall gate PASS — Phase 8c complete`
+5. Create commit: `docs(ba031-8c): precision/recall gate PASS — Phase 8c complete`
 
 ---
 
