@@ -36,7 +36,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${KG_DB_USER:-ennam_kg} -d ${KG_DB_NAME:-ennam_kg}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${KG_DB_USER:-ennam_kg} -d ${KG_DB_NAME:-ennam_kg}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -88,13 +92,15 @@ services:
       KG_AUTH_NOOP: ${KG_AUTH_NOOP:-false}
       # Phase 2: Encryption key for data source credentials + AI provider API keys
       KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
-      # Python worker
-      KG_PYTHON_URL: http://indexer:8081
       # Queue
       KG_QUEUE_PROVIDER: redis
       KG_REDIS_URL: redis://redis:6379/0
+      # Python indexer URL (for SSE proxy /api/v1/ai-query/stream → agentic loop)
+      KG_PYTHON_URL: http://indexer:8081
+      KG_UPLOAD_DIR: /app/data/uploads
     volumes:
       - ./ennam.kg.go:/app
+      - ennam_uploads:/app/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,21 +134,31 @@ services:
       REDIS_QUEUE_NAME: ennam-kg:indexing
       REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
       LOG_LEVEL: ${KG_LOG_LEVEL:-DEBUG}
       NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
       BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+      # Shared with Go API — Python decrypts X-DB-DSN header for direct DB access.
+      # Python Settings expects "ENCRYPTION_KEY" (no prefix), Go expects "KG_ENCRYPTION_KEY".
+      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
+      HF_HOME: /tmp/huggingface
+      TRANSFORMERS_CACHE: /tmp/huggingface
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
       - ./ennam.kg.python:/repos/ennam-kg-python:ro
+      - ./ennam.kg.requirements:/repos/ennam-kg-requirements:ro
     depends_on:
       kg-server:
         condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')\" || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8081/healthz'')" || exit 1',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -168,14 +184,20 @@ services:
       REDIS_QUEUE_NAME: ennam-kg:indexing
       REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
       LOG_LEVEL: ${KG_LOG_LEVEL:-DEBUG}
       NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
       BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+      REDIS_KG_GENERATION_QUEUE: ennam:kg_generation
+      KG_UPLOAD_DIR: /app/data/uploads
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
+      HF_HOME: /tmp/huggingface
+      TRANSFORMERS_CACHE: /tmp/huggingface
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
       - ./ennam.kg.python:/repos/ennam-kg-python:ro
+      - ./ennam.kg.requirements:/repos/ennam-kg-requirements:ro
+      - ennam_uploads:/app/data/uploads
     depends_on:
       kg-server:
         condition: service_healthy
@@ -200,12 +222,15 @@ services:
       GO_API_URL: http://kg-server:8080
       KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
       SESSION_SECRET: ${SESSION_SECRET:-ennam-kg-dev-session-secret-32chars!!}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     depends_on:
       kg-server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3500').then(r=>{process.exit(r.ok||r.status===307?0:1)}).catch(()=>process.exit(1))\""]
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://localhost:3500'').then(r=>{process.exit(r.ok||r.status===307?0:1)}).catch(()=>process.exit(1))"',
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -215,6 +240,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  ennam_uploads:
     driver: local
 
 networks:

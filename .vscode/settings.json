@@ -1,3 +1,5 @@
 {
-    "claudeCode.allowDangerouslySkipPermissions": true
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "typescript.tsdk": "ennam.kg.next/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
 }
