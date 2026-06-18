@@ -76,9 +76,9 @@ reversal path in addition to the alias and provenance paths.
 | Sub-gate | Status | Evidence |
 |----------|--------|---------|
 | Un-merge drill (HTTP level) | **PASS** | `TestBA031_UnmergeDrillByteEquivalent` against real DB |
-| Shadow no-mutation | Covered by Task 8 | `ennam.kg.python/tests/test_shadow_noop.py` |
+| Shadow no-mutation | Covered by Task 8 | `ennam.kg.python/tests/resolution/test_pass2.py` |
 | Precision gate (≥0.74) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
-| Recall gate (≤10 FP/100) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
+| FP-rate gate (≤10 FP/100) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
 | F1 gate (≥0.75) | **PENDING-DATA** | `vi_blocking_v1.json` is an empty skeleton |
 | **Overall Phase 8c** | **PENDING-DATA** | Data gate not cleared |
 
@@ -132,8 +132,8 @@ cd ennam.kg.go
 make db-migrate
 ```
 
-The test automatically falls back to `discovery` if `person` is rejected, so it
-will still run but note the fallback in test output.
+The test requires `'person'` and will fail loudly if the DB predates migration `000061`.
+There is no silent fallback — the error message will tell you to run `make db-migrate`.
 
 ### `KG_TEST_DB_URL not set` — test is skipped
 
