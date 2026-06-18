@@ -5,7 +5,16 @@
 > - `ennam.kg.requirements/documents/phase1/BA-002-mcp-bridge.md` §3 (all 25 MCP tool schemas with parameters)
 > This file is a quick-reference summary.
 
-## MCP Tools (25 total — all implemented in Go bridge)
+## MCP Tools (30 total — all implemented in Go bridge)
+
+### Phase 6 ingest (5)
+```
+kg_ingest_document(project_id, title, content_raw, source_id, auto_approve?, ...)
+kg_ingest_process_draft(project_id, draft_id, mode?, force?)
+kg_ingest_list_drafts(project_id, status?, limit?, offset?)
+kg_ingest_get_draft(project_id, draft_id)
+kg_ingest_approve_draft(project_id, draft_id)
+```
 
 ### Store Tools (6)
 ```

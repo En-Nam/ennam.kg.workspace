@@ -25,9 +25,10 @@
 | Modify | `$IDX/pyproject.toml` | `[project.scripts] ennam-kg-index` |
 | Create | `$IDX/Dockerfile` | lightweight image, ENTRYPOINT ennam-kg-index |
 | Modify | `$IDX/README.md` | usage docs |
-| Modify | `$IDX/tests/test_extractor.py` | update for new `symbol_to_node` signature |
+| Modify | `$IDX/tests/test_extractor.py` | update **all 4** `symbol_to_node` calls for the new signature |
 | Create | `$IDX/tests/test_engine_relative_paths.py` | edge regression + path stability + full replace integration |
-| Modify | `$IDX/tests/test_differ.py` | repo-scope + file-scope + human-node safety |
+| Modify | `$IDX/tests/test_differ.py` | repo-scope + file-scope + human-node safety; **fix existing `_make_existing_node` fixture (add `created_by`)** |
+| Modify | `$IDX/tests/test_engine.py` | **add `created_by` to the reconstructed existing nodes in `test_incremental_with_existing_nodes`** |
 | Create | `$IDX/tests/test_cli.py` | arg parsing, exit codes, env precedence |
 
 Existing service callers (`src/ennam_kg/worker.py`, `src/ennam_kg/api/indexing.py`) need **no change** — `repo_key` is optional and defaults to `repo_path`, preserving today's behavior.
@@ -46,7 +47,7 @@ Normalize each symbol's `file_path` to repo-relative early in `_process_files` (
 
 - [ ] **Step 1: Update the extractor signature + tests (write test first)**
 
-Edit `$IDX/tests/test_extractor.py` — find the call(s) to `symbol_to_node(...)` and change them to the new keyword form, and assert `repo_path` holds the key. The new expectation:
+Edit `$IDX/tests/test_extractor.py` — there are **4** positional calls `symbol_to_node(symbol, "proj-1", "/repo")` (currently at lines ~78, ~97, ~108, ~116). Change **every one** to the new keyword form `symbol_to_node(symbol, "proj-1", repo_key="...")`, and assert `repo_path` holds the key. The new expectation:
 
 ```python
 # A symbol whose file_path is already repo-relative (engine normalizes before calling)
@@ -298,7 +299,32 @@ Implement the repo-scoped archive (full scan replaces the whole repo) vs file-sc
 
 - [ ] **Step 1: Write the differ tests (repo-scope, file-scope, human-node safety)**
 
-Add to `$IDX/tests/test_differ.py`:
+> **REQUIRED first — fix the existing fixture, or Step 4 will leave old tests RED.** The new filter in Step 3 requires `created_by == "python-indexer"`. The existing helper `_make_existing_node` does NOT set it, so once Step 3 lands, every current differ test (`test_changed_hash_triggers_update`, `test_missing_symbol_triggers_archive`, `test_create_update_archive_together`) would archive/update nothing and fail. Edit `_make_existing_node` to add `created_by` at the top level (and a `repo_path` so it also satisfies repo-scope):
+>
+> ```python
+> def _make_existing_node(
+>     node_id: str = "existing-1",
+>     name: str = "my_func",
+>     kind: str = "function",
+>     file_path: str = "src/app.py",
+>     body_hash: str = "hash-aaa",
+> ) -> dict[str, object]:
+>     return {
+>         "id": node_id,
+>         "title": name,
+>         "name": name,
+>         "created_by": "python-indexer",   # NEW: required by the code-only filter
+>         "properties": {
+>             "file_path": file_path,
+>             "kind": kind,
+>             "body_hash": body_hash,
+>             "repo_path": "/repo",          # NEW: default file-scope tests pass repo_key="/repo" (see Step 1 note below)
+>         },
+>     }
+> ```
+> The existing `differ.diff(...)` calls in those tests omit `repo_key`, so they run in default file-scope (`archive_scope="file"`), where `repo_path` is not consulted — adding it is harmless and future-proofs the fixture.
+
+Add the new scope tests to `$IDX/tests/test_differ.py`:
 
 ```python
 import pytest
@@ -459,17 +485,36 @@ async def test_full_rescan_replaces_not_accumulates(tmp_path):
 Run: `cd $PY && uv run pytest packages/ennam-kg-indexer/tests/test_engine_relative_paths.py -v`
 Expected: PASS.
 
-- [ ] **Step 7: Full indexer suite green**
+- [ ] **Step 7: Fix `test_engine.py::test_incremental_with_existing_nodes` (same `created_by` gap)**
+
+This existing test rebuilds "existing" nodes from the captured `create_node` payloads but drops `created_by`, so after Step 3's code-only filter it would treat every symbol as new and fail `nodes_created == 0`. In `$IDX/tests/test_engine.py`, add `created_by` to the reconstruction loop:
+
+```python
+        for call in mock_kg_client.create_node.call_args_list:
+            payload = call[0][0]
+            existing_nodes.append(
+                {
+                    "id": f"existing-{len(existing_nodes)}",
+                    "title": payload["title"],
+                    "created_by": payload.get("created_by"),  # NEW: code-only filter needs this
+                    "properties": payload.get("properties", {}),
+                }
+            )
+```
+(The payload already carries `created_by="python-indexer"` and a repo-relative `file_path`, so the rebuilt node matches the incremental scan's natural key.)
+
+- [ ] **Step 8: Full indexer suite green**
 
 Run: `cd $PY && uv run pytest packages/ennam-kg-indexer/tests -q`
-Expected: all pass.
+Expected: all pass — including the previously-existing differ and engine tests now that their fixtures carry `created_by`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd $PY
 git add packages/ennam-kg-indexer/src/ennam_kg_indexer/indexer/differ.py \
         packages/ennam-kg-indexer/tests/test_differ.py \
+        packages/ennam-kg-indexer/tests/test_engine.py \
         packages/ennam-kg-indexer/tests/test_engine_relative_paths.py
 git commit -m "feat(indexer): mode-aware archive scope (repo full-replace / file incremental), code-only"
 ```
@@ -559,6 +604,8 @@ import os
 import sys
 from dataclasses import dataclass
 
+import httpx
+
 from ennam_kg_indexer.indexer.engine import IndexingEngine
 from ennam_kg_indexer.kg_client.client import KGClient, KGClientError
 
@@ -615,35 +662,39 @@ async def _run(cfg: Config) -> int:
     if not os.path.isdir(cfg.path):
         print(f"error: --path does not exist or is not a directory: {cfg.path}", file=sys.stderr)
         return 1
-    client = KGClient(cfg.api_url, cfg.api_key)
-    # Pre-flight: a cheap authenticated request. Connection/auth failure => exit 1.
-    try:
-        await client.get_nodes(cfg.project_id)
-    except Exception as exc:  # connection refused, 401, etc.
-        print(f"error: cannot reach KG API ({exc})", file=sys.stderr)
-        return 1
+    # Own the httpx client via `async with` so it is always closed cleanly
+    # (no ResourceWarning on exit). KGClient uses the passed client's base_url
+    # for its relative request paths.
+    async with httpx.AsyncClient(base_url=cfg.api_url, timeout=30.0) as http:
+        client = KGClient(cfg.api_url, cfg.api_key, http_client=http)
+        # Pre-flight: a cheap authenticated request. Connection/auth failure => exit 1.
+        try:
+            await client.get_nodes(cfg.project_id)
+        except Exception as exc:  # connection refused, 401, etc.
+            print(f"error: cannot reach KG API ({exc})", file=sys.stderr)
+            return 1
 
-    engine = IndexingEngine(client)
-    try:
-        if cfg.mode == "full":
-            result = await engine.full_scan(cfg.project_id, cfg.path, repo_key=cfg.repo_key)
-        else:
-            result = await engine.incremental_scan(
-                cfg.project_id, cfg.path, cfg.changed_files, repo_key=cfg.repo_key
-            )
-    except KGClientError as exc:
-        print(f"error: indexing failed ({exc})", file=sys.stderr)
-        return 1
+        engine = IndexingEngine(client)
+        try:
+            if cfg.mode == "full":
+                result = await engine.full_scan(cfg.project_id, cfg.path, repo_key=cfg.repo_key)
+            else:
+                result = await engine.incremental_scan(
+                    cfg.project_id, cfg.path, cfg.changed_files, repo_key=cfg.repo_key
+                )
+        except KGClientError as exc:
+            print(f"error: indexing failed ({exc})", file=sys.stderr)
+            return 1
 
-    summary = {
-        "mode": cfg.mode, "repo_key": cfg.repo_key,
-        "files_scanned": result.files_scanned, "symbols_found": result.symbols_found,
-        "nodes_created": result.nodes_created, "nodes_updated": result.nodes_updated,
-        "nodes_archived": result.nodes_archived, "edges_created": result.edges_created,
-        "errors": result.errors,
-    }
-    print(json.dumps(summary))
-    return 0
+        summary = {
+            "mode": cfg.mode, "repo_key": cfg.repo_key,
+            "files_scanned": result.files_scanned, "symbols_found": result.symbols_found,
+            "nodes_created": result.nodes_created, "nodes_updated": result.nodes_updated,
+            "nodes_archived": result.nodes_archived, "edges_created": result.edges_created,
+            "errors": result.errors,
+        }
+        print(json.dumps(summary))
+        return 0
 
 
 def main() -> None:
@@ -781,6 +832,12 @@ This version stores `file_path` as **repo-relative** (was absolute). Existing
 mount-indexed projects must be **fully re-indexed once** after upgrade (via the
 dashboard "Index Now" or `POST /api/v1/projects/{id}/index`); the re-index
 archives old absolute-path nodes and creates fresh relative-path ones.
+
+> **Run the full re-index BEFORE any incremental scan.** An incremental scan that
+> lands first cannot match the old absolute-path nodes (their natural keys differ),
+> so it would **create duplicate** relative-path nodes instead of updating in place.
+> Until the one-time full re-index has run, treat incremental scans as unsafe for
+> an upgraded project.
 ```
 
 - [ ] **Step 2: Clean-room install check (lightweight, no heavy deps)**

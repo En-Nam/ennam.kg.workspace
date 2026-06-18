@@ -31,25 +31,25 @@ No new tables needed. Reuses existing Phase 5/6 infrastructure.
 
 Add GitHub as a new provider:
 
-| Field | Value |
-|-------|-------|
-| `provider` | `'github'` |
+| Field          | Value                                                 |
+| -------------- | ----------------------------------------------------- |
+| `provider`     | `'github'`                                            |
 | `access_token` | Encrypted GitHub personal access token or OAuth token |
-| `scope` | `'repo,admin:repo_hook'` |
-| `user_id` | FK to `users.id` |
+| `scope`        | `'repo,admin:repo_hook'`                              |
+| `user_id`      | FK to `users.id`                                      |
 
 ### `source_connections` (existing — BA-022)
 
 One row per selected repo per project:
 
-| Field | Value |
-|-------|-------|
-| `project_id` | FK to `projects.id` |
-| `source_type` | `'github_repo'` |
-| `config` | JSONB: `{"owner": "exnodes", "repo": "ennam-kg-go", "full_name": "exnodes/ennam-kg-go", "default_branch": "main", "private": true, "webhook_id": 12345678}` |
-| `webhook_secret` | Random secret for HMAC verification of push events |
-| `oauth_token_id` | FK to `oauth_tokens.id` |
-| `status` | `'active'` \| `'error'` \| `'syncing'` |
+| Field            | Value                                                                                                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `project_id`     | FK to `projects.id`                                                                                                                                         |
+| `source_type`    | `'github_repo'`                                                                                                                                             |
+| `config`         | JSONB: `{"owner": "exnodes", "repo": "ennam-kg-go", "full_name": "exnodes/ennam-kg-go", "default_branch": "main", "private": true, "webhook_id": 12345678}` |
+| `webhook_secret` | Random secret for HMAC verification of push events                                                                                                          |
+| `oauth_token_id` | FK to `oauth_tokens.id`                                                                                                                                     |
+| `status`         | `'active'` \| `'error'` \| `'syncing'`                                                                                                                      |
 
 ### `projects.repo_paths` (existing)
 
@@ -61,32 +61,32 @@ Not used for GitHub-connected repos. Path is ephemeral (temp clone dir passed vi
 
 ### GitHub OAuth
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/auth/github` | Redirect to GitHub OAuth authorization URL |
-| `GET` | `/api/v1/auth/github/callback` | Exchange code for token, encrypt and store in `oauth_tokens` |
-| `DELETE` | `/api/v1/auth/github` | Disconnect: delete token, delete all webhooks from GitHub |
+| Method   | Path                           | Description                                                  |
+| -------- | ------------------------------ | ------------------------------------------------------------ |
+| `GET`    | `/api/v1/auth/github`          | Redirect to GitHub OAuth authorization URL                   |
+| `GET`    | `/api/v1/auth/github/callback` | Exchange code for token, encrypt and store in `oauth_tokens` |
+| `DELETE` | `/api/v1/auth/github`          | Disconnect: delete token, delete all webhooks from GitHub    |
 
 OAuth app scopes required: `repo` (read private repos, clone), `admin:repo_hook` (create/delete webhooks).
 
 ### Repo Listing
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/github/repos` | List all repos accessible via user's GitHub token (calls GitHub API). Returns: `name`, `full_name`, `private`, `description`, `default_branch`. |
+| Method | Path                   | Description                                                                                                                                     |
+| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/github/repos` | List all repos accessible via user's GitHub token (calls GitHub API). Returns: `name`, `full_name`, `private`, `description`, `default_branch`. |
 
 ### Repo Selection per Project
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/projects/{id}/github-sources` | Add a repo: create `source_connections` row, register webhook on GitHub, publish `index_project` to queue for immediate first index. |
-| `DELETE` | `/api/v1/projects/{id}/github-sources/{conn_id}` | Remove a repo: delete `source_connections` row, delete webhook from GitHub. |
-| `GET` | `/api/v1/projects/{id}/github-sources` | List all GitHub-connected repos for a project with status and last_synced_at. |
+| Method   | Path                                             | Description                                                                                                                          |
+| -------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST`   | `/api/v1/projects/{id}/github-sources`           | Add a repo: create `source_connections` row, register webhook on GitHub, publish `index_project` to queue for immediate first index. |
+| `DELETE` | `/api/v1/projects/{id}/github-sources/{conn_id}` | Remove a repo: delete `source_connections` row, delete webhook from GitHub.                                                          |
+| `GET`    | `/api/v1/projects/{id}/github-sources`           | List all GitHub-connected repos for a project with status and last_synced_at.                                                        |
 
 ### Webhook Receiver
 
-| Method | Path | Description |
-|--------|------|-------------|
+| Method | Path               | Description                                                                                                                                                            |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST` | `/webhooks/github` | Receive GitHub push events. Verify HMAC-SHA256 signature using `webhook_secret`. Lookup `source_connections` by repo full_name. Publish `index_project` queue message. |
 
 Webhook endpoint is unauthenticated (no API key) but secured by HMAC signature verification.
@@ -94,6 +94,7 @@ Webhook endpoint is unauthenticated (no API key) but secured by HMAC signature v
 ### Manual Sync
 
 Reuses existing endpoint — no changes needed:
+
 ```
 POST /api/v1/projects/{id}/index
 Body: {} (empty — falls back to project's stored repo_paths, or triggers all github-sources)
@@ -167,6 +168,8 @@ Token is NOT logged anywhere. `capture_output=True` prevents clone URL (which co
 
 - **Not connected state**: "Connect GitHub Account" button → triggers OAuth redirect
 - **Connected state**: shows GitHub username, repo count, "Disconnect" button
+
+> **PAT fallback (Phase 1 / self-hosted):** When connecting via a manually-pasted Personal Access Token instead of OAuth, the input caption MUST instruct the user to create the token with scope `repo, admin:repo_hook` — not `repo` alone. The `admin:repo_hook` scope is required for automatic push-webhook registration; without it, repos can be cloned and indexed but auto-sync on push will fail.
 
 ### Project Settings — Code Sources (updated)
 
