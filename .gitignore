@@ -15,3 +15,6 @@
 
 # --- Scratch screenshots at root (real images go in docs/) ---
 /*.png
+
+# stray secrets archive — never commit
+env.zip
