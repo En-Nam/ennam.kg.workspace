@@ -192,12 +192,20 @@ services:
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
       HF_HOME: /tmp/huggingface
       TRANSFORMERS_CACHE: /tmp/huggingface
+      # Models live in the hf_cache named volume (survives rebuilds — the real fix).
+      # Online HEAD lookups stay enabled: sentence-transformers resolves the repo
+      # online then reads the cached snapshot (+ .no_exist markers). Full offline
+      # (HF_HUB_OFFLINE=1) breaks bare-name resolution, so it is NOT set.
+      EXTRACTION_LLM_URL: ${EXTRACTION_LLM_URL:-}
+      EXTRACTION_LLM_KEY: ${EXTRACTION_LLM_KEY:-}
+      EXTRACTION_LLM_MODEL: ${EXTRACTION_LLM_MODEL:-deepseek-v4-pro}
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
       - ./ennam.kg.python:/repos/ennam-kg-python:ro
       - ./ennam.kg.requirements:/repos/ennam-kg-requirements:ro
       - ennam_uploads:/app/data/uploads
+      - hf_cache:/tmp/huggingface
     depends_on:
       kg-server:
         condition: service_healthy
@@ -242,6 +250,8 @@ volumes:
   postgres_data:
     driver: local
   ennam_uploads:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:
