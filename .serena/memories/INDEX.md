@@ -3,6 +3,8 @@
 Agents: read this file FIRST at session start.
 See CLAUDE.md "Serena Memory Protocol" for read/write rules.
 
+> 🌐 **Ecosystem (global, cross-platform):** DAAB's shared-memory plan (DAAB is the keystone OWNER) + the ecosystem contract live in Serena **global** memory — read `global/ecosystem/daab-plan` and `global/ecosystem/shared-memory-contract` (Serena auto-lists globals at session start). Managed by the NewEcoSystem orchestrator.
+
 ## Quick Reference
 
 | Directory | Purpose | When to use |

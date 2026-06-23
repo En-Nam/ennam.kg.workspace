@@ -56,6 +56,22 @@ Endpoints: Go API `http://localhost:8080` · Python indexer `http://localhost:80
 
 @AGENTS.md
 
+### Serena MCP Protocol (canonical — defines *how*; overrides file-path wording below)
+
+**All `.serena/memories/` I/O goes through Serena MCP tools (`mcp__serena__*`). NEVER hand-edit memory files** with Read/Edit/Write — Serena indexes memories and resolves `` `mem:` `` links; hand-editing bypasses both. (Recorded global preference: `global/preferences/memory-system`.)
+
+**Session start (before reading source):** keep the **Ennam KG MCP** query (step 1 of the Session Boot Protocol below) for project knowledge — AND load Serena memories via MCP:
+1. `mcp__serena__activate_project` for this repo **by path** (it is not in the Serena registry) → `mcp__serena__initial_instructions` (loads the manual + lists available `global/*` memories).
+2. `mcp__serena__read_memory`: `INDEX` → relevant `decisions/` / `services/` → **`global/ecosystem/shared-memory-contract`** + **`global/ecosystem/daab-plan`** (ecosystem context for DAAB) → `comms/active/` → `backlog/` → latest `checkpoint/`.
+
+**Writing:** `mcp__serena__write_memory(name, content)` — names use `/` topics (`decisions/…`, `services/…`, `backlog/…`, `comms/active/…`, `qa/…`, `checkpoint/…`); link memories as `` `mem:<name>` ``. Use `mcp__serena__edit_memory` for targeted edits and `mcp__serena__delete_memory` when an item is done.
+
+**Checkpoint (end of EVERY session):** `mcp__serena__write_memory("checkpoint/<agent-name>-<YYYY-MM-DD>", …)`.
+
+**Ecosystem (cross-platform):** shared knowledge lives in Serena **`global/ecosystem/*`** — the only channel readable across platforms. **READ** it for context (`global/ecosystem/daab-plan` is DAAB's keystone-owner slice). The **NewEcoSystem orchestrator owns/writes** it. ⚠️ This Serena *global* store is DISTINCT from DAAB's own `kg_*` memory **product** (`kg_remember`/`kg_recall`, the shared-memory substrate DAAB builds for AAAA/LAAM): as a platform, DAAB **reads** `global/ecosystem/*` and does not write there.
+
+> The subsections below (Session Boot / Knowledge Source / Serena Memory Protocol / checkpoint) remain the reference for *what* to read/write and *where things go*; **this block is authoritative for *how*** — always via Serena MCP, checkpoints under `memories/checkpoint/`, ecosystem context via `global/ecosystem/*`. DAAB's KG-first step 1 stays.
+
 ### Session Boot Protocol
 
 **Every agent MUST follow this exact sequence at session start.**
@@ -211,9 +227,9 @@ If KG MCP is unreachable:
 
 ### Mandatory Session Checkpoint
 
-**All AI agents MUST write a checkpoint file at the end of every session** to `.serena/checkpoint/`.
+**All AI agents MUST write a checkpoint at the end of every session — via Serena MCP** (`mcp__serena__write_memory`).
 
-**Format**: `.serena/checkpoint/<agent-name>-<YYYY-MM-DD>.md`
+**Format**: `mcp__serena__write_memory("checkpoint/<agent-name>-<YYYY-MM-DD>", …)` → stored at `.serena/memories/checkpoint/<agent-name>-<YYYY-MM-DD>.md`. Write through Serena MCP, **never** by hand-editing the file. (Supersedes the old `.serena/checkpoint/` path.)
 
 **Required content**:
 ```markdown
