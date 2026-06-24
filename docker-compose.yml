@@ -90,6 +90,9 @@ services:
       # Auth
       KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
       KG_AUTH_NOOP: ${KG_AUTH_NOOP:-false}
+      # Supabase login integration
+      KG_SUPABASE_URL: ${KG_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
+      KG_SUPABASE_ADMIN_EMAILS: ${KG_SUPABASE_ADMIN_EMAILS:-admin@ennam.vn}
       # Phase 2: Encryption key for data source credentials + AI provider API keys
       KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
       # Queue
@@ -233,6 +236,8 @@ services:
       GO_API_URL: http://kg-server:8080
       KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
       SESSION_SECRET: ${SESSION_SECRET:-ennam-kg-dev-session-secret-32chars!!}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-sb_publishable_TT5H3qIx5dC8UPBTsbvn-A_JCs5zucU}
     depends_on:
       kg-server:
         condition: service_healthy
