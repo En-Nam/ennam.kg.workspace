@@ -1093,22 +1093,39 @@ Expected: PASS.
 
 - [ ] **Step 5: Wire the handler into the server**
 
-In `ennam.kg.go/cmd/kg-server/main.go`, find the `buildRouter` block where `docHandler` is constructed (the `nodeEmbStore := store.NewNodeEmbeddingStore(db)` / `handler.NewDocumentHandler(...)` lines) and where `embedClient` is built (`embed.NewClient(embPythonURL, ...)`). Add immediately after the document handler wiring:
+`buildRouter` does NOT return an `error` — it returns `http.Handler` and receives the publishers as parameters; publishers are constructed in the caller (where `extractionPub` is built, `main.go:176-192`) with a Warn-and-nil pattern and a long-lived `defer Close()`. Do NOT construct the publisher inside `buildRouter` (its `defer Close()` would fire immediately on return). Make these three edits in `ennam.kg.go/cmd/kg-server/main.go`:
+
+(a) In the caller, immediately after the `extractionPub` block (`main.go:185-192`), add:
+
+```go
+	agentCtxPub, err := queue.NewAgentContextPublisher(serverCfg.Queue.Redis, logger)
+	if err != nil {
+		logger.Warn("agent context publisher init failed, kg_remember embeds will not be enqueued", "error", err)
+		agentCtxPub = nil
+	}
+	if agentCtxPub != nil {
+		defer agentCtxPub.Close()
+	}
+```
+
+(b) Add a parameter to the `buildRouter` signature (after `extractionPub queue.ExtractionPublisher`):
+
+```go
+	agentCtxPub queue.AgentContextPublisher,
+```
+
+and pass `agentCtxPub` at the single `buildRouter(...)` call site (same arg order).
+
+(c) Inside `buildRouter`, immediately after the document-handler wiring (`nodeEmbStore := store.NewNodeEmbeddingStore(db)` / `handler.NewDocumentHandler(...)`), reusing the `embedClient` already built there:
 
 ```go
 	// Agent-context memory-of-record (kg_remember / kg_recall).
 	acStore := store.NewAgentContextStore(db)
-	acPublisher, err := queue.NewAgentContextPublisher(<QUEUE_REDIS_CFG>, logger)
-	if err != nil {
-		return nil, fmt.Errorf("agent_context publisher: %w", err)
-	}
-	acHandler := handler.NewAgentContextHandler(acStore, embedClient, acPublisher, logger)
+	acHandler := handler.NewAgentContextHandler(acStore, embedClient, agentCtxPub, logger)
 	acHandler.RegisterRoutes(apiMux)
 ```
 
-Resolve `<QUEUE_REDIS_CFG>` by mirroring the existing extraction publisher wiring:
-Run: `grep -n "NewExtractionPublisher\|NewIngestionPublisher" ennam.kg.go/cmd/kg-server/main.go`
-Use the SAME config argument (e.g. `serverCfg.Queue.Redis` or `appCfg.Queue.Redis`) and the same `Close()`-registration pattern those publishers use. If `buildRouter` does not return an `error`, construct the publisher where the other publishers are constructed (likely `run`/`main`) and pass it into the router builder, matching the extraction publisher's lifecycle.
+Note: `NewAgentContextHandler` takes `agentContextEmbedPublisher` (an interface). Passing a nil `queue.AgentContextPublisher` interface value is fine — `Remember` already guards `if h.publisher != nil`. Verify the exact config expression with `grep -n "NewExtractionPublisher" ennam.kg.go/cmd/kg-server/main.go` (it is `serverCfg.Queue.Redis`, type `config.RedisQueueConfig`).
 
 - [ ] **Step 6: Verify the build and route registration**
 
@@ -1458,12 +1475,22 @@ git -C ennam.kg.go commit -m "feat(agent_context): kg_remember + kg_recall handl
 
 - [ ] **Step 1: Bump the invariant test counts first (RED)**
 
-Make these exact edits (verify the current literal by `grep -n "!= 42\|!= 39\|Read=\|Write=\|want 39\|want 42" ennam.kg.go/internal/bridge/*_test.go` first, then change):
-- `internal/bridge/schema_test.go`: `if len(schemas) != 42 {` → `!= 44`, and the message `42` → `44`.
-- `internal/bridge/handler_test.go`: `if len(tools) != 42 {` → `!= 44`, message `42` → `44`.
-- `internal/bridge/client_test.go`: `if len(names) != 39 {` → `!= 41`, message `39` → `41`.
-- `internal/bridge/client_test.go` route-class block: total `39` → `41`; `kg_recall` is read so bump Read `17` → `18`; `kg_remember` is write so bump Write `22` → `23`. (Grep `grep -n "Read\|Write\|total" ennam.kg.go/internal/bridge/client_test.go` to find the exact assertion lines.)
-- Integration tool-enum test (find it: `grep -rn "kg_search\"" ennam.kg.go/internal/bridge/*integration*_test.go ennam.kg.go/internal/bridge/*_test.go | grep -i enum`): add `"kg_remember"` and `"kg_recall"` to the expected name set.
+Four edits (these are the exact, verified locations — `grep -n` to confirm line numbers before editing):
+
+1. `internal/bridge/schema_test.go` — `TestAllToolSchemasRegistered`: it holds an `expectedTools []string` literal of all 42 names AND asserts `if len(schemas) != 42`. Add `"kg_remember"` and `"kg_recall"` to the `expectedTools` slice, and change `!= 42` → `!= 44` (and the error message `42` → `44`). This slice IS the tool-name enum — there is no separate integration enum test.
+2. `internal/bridge/handler_test.go` (~line 276): `if len(tools) != 42 {` → `!= 44` (message `42` → `44`).
+3. `internal/bridge/client_test.go` (~line 216): `if len(names) != 39 {` → `!= 41` (message `39` → `41`).
+4. `internal/bridge/client_test.go` — `TestRouteClassCounts` (~lines 1052-1073). Current literal:
+```go
+	want := map[RouteClass]int{
+		RouteRead:  17,
+		RouteWrite: 22,
+	}
+	// ...
+	total := counts[RouteRead] + counts[RouteWrite]
+	if total != 39 {
+```
+Change to `RouteRead: 18`, `RouteWrite: 23`, and `if total != 41` (17+22=39 → 18+23=41; update the message string too). Also update the explanatory comment above `want` to note `+ agent_context (+2)`.
 
 - [ ] **Step 2: Run the bridge tests to verify they fail**
 
@@ -1639,11 +1666,11 @@ git -C ennam.kg.go commit -m "test(agent_context): cross-project recall isolatio
 
 - [ ] **Step 1: Write the failing worker handler test**
 
-Create `ennam.kg.python/tests/test_embed_agent_context_handler.py` (mirror `tests/test_ba031a_resolve_document_handler.py` patterns + `pytest-httpx`):
+Create `ennam.kg.python/tests/test_embed_agent_context_handler.py` (mirror `tests/test_ba031a_resolve_document_handler.py` — patch `ennam_kg.worker.KGClient` and assert on the mock, the established pattern):
 
 ```python
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 def _make_settings():
@@ -1655,8 +1682,32 @@ def _make_settings():
     )
 
 
+class _FakeConsumer:
+    """Delivers one message to the agent_context queue, then returns so gather() completes."""
+
+    def __init__(self, _redis_url, queue_name, *, msg=None):
+        self._queue_name = queue_name
+        self._msg = msg
+
+    async def consume_forever(self, handler):
+        if self._msg and self._queue_name == "ennam:agent_context_embed":
+            await handler(self._msg)
+
+    def stop(self):
+        pass
+
+
+class _FakeModel:
+    def __init__(self, *a, **k):
+        pass
+
+    def encode_passage(self, texts):
+        return [[0.01] * 384 for _ in texts]
+
+
 @pytest.mark.asyncio
-async def test_embed_agent_context_posts_vectors(httpx_mock):
+async def test_embed_agent_context_embeds_and_posts():
+    """handle_message must embed (passage, 384-dim) and POST to the batch endpoint."""
     settings = _make_settings()
     test_msg = {
         "type": "embed_agent_context",
@@ -1664,32 +1715,16 @@ async def test_embed_agent_context_posts_vectors(httpx_mock):
         "agent_context_id": "ac-1",
         "content": "prefers durable queues",
     }
-    httpx_mock.add_response(
-        method="POST",
-        url="http://localhost:8080/api/v1/projects/proj-1/agent-context/embeddings/batch",
-        json={"upserted": 1},
-    )
+    mock_kg = AsyncMock()
+    mock_kg.upsert_agent_context_embeddings.return_value = 1
 
-    class _FakeConsumer:
-        def __init__(self, _redis_url, queue_name):
-            self._queue_name = queue_name
-
-        async def consume_forever(self, handler):
-            if self._queue_name == "ennam:agent_context_embed":
-                await handler(test_msg)
-
-        def stop(self):
-            pass
-
-    class _FakeModel:
-        def __init__(self, *a, **k):
-            pass
-
-        def encode_passage(self, texts):
-            return [[0.01] * 384 for _ in texts]
+    def _consumer_factory(redis_url, queue_name):
+        return _FakeConsumer(redis_url, queue_name, msg=test_msg)
 
     with (
-        patch("ennam_kg.worker.RedisQueueConsumer", lambda url, name: _FakeConsumer(url, name)),
+        patch("ennam_kg.worker.RedisQueueConsumer", _consumer_factory),
+        patch("ennam_kg.worker.KGClient", return_value=mock_kg),
+        patch("ennam_kg.worker.AIClient", return_value=AsyncMock()),
         patch("ennam_kg.worker.LocalEmbeddingModel", _FakeModel),
         patch("ennam_kg.worker.IndexingEngine"),
         patch("ennam_kg.worker.KGGenerationEngine"),
@@ -1700,12 +1735,16 @@ async def test_embed_agent_context_posts_vectors(httpx_mock):
         from ennam_kg.worker import _run_worker
         await _run_worker(settings)
 
-    req = httpx_mock.get_request()
-    assert req is not None
-    assert req.headers["Authorization"] == "Bearer test-key"
+    mock_kg.upsert_agent_context_embeddings.assert_awaited_once()
+    args, _ = mock_kg.upsert_agent_context_embeddings.call_args
+    assert args[0] == "proj-1"
+    items = args[1]
+    assert items[0]["agent_context_id"] == "ac-1"
+    assert len(items[0]["embedding"]) == 384
+    assert items[0]["content_hash"]  # sha256 hex present
 ```
 
-Note: the exact `patch(...)` target list must match the engines `worker.py` constructs at startup — grep `worker.py` for the classes instantiated in `_run_worker` and patch each so startup doesn't load real models/DBs. If `worker.py` imports `LocalEmbeddingModel` lazily, patch its real import path instead of `ennam_kg.worker.LocalEmbeddingModel`.
+Note: the `patch(...)` set matches the classes `_run_worker` instantiates at startup (verified: `KGClient`, `AIClient`, `IndexingEngine`, `KGGenerationEngine`, `NLQueryEngine`, `BenchmarkEngine`, `IngestionPipelineEngine`). Patch `LocalEmbeddingModel` at `ennam_kg.worker.LocalEmbeddingModel` (the name imported into the worker module in Step 5). With `settings.extraction_llm_url` unset (default), `_run_worker` reuses `ai_client`, so no `DirectOpenAIClient` patch is needed.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1790,7 +1829,7 @@ embedding_model = LocalEmbeddingModel(model_name=settings.embedding_model_name)
         logger.info("embed_agent_context done: project=%s id=%s", project_id, agent_context_id)
 ```
 
-Note: `handle_message` must be able to see `embedding_model` and `kg_client` — confirm whether `handle_message` is a closure inside `_run_worker` (it can capture both) or a module-level function (then pass them in / use the existing mechanism the other branches use for `kg_client`). Match whatever pattern `kg_client` already uses in the `extract_document` branch.
+Note: `handle_message` is a nested closure inside `_run_worker` (verified, `worker.py:120`), so it captures `embedding_model` and `kg_client` directly — both are function-local in `_run_worker` (`kg_client` at `worker.py:31`). Place the `embedding_model = LocalEmbeddingModel(...)` from sub-step (a) alongside the other local engines so the closure can see it.
 
 - [ ] **Step 6: Run the test to verify it passes**
 
