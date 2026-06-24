@@ -16,6 +16,12 @@
 #   indexer     — Python indexing HTTP  (port 8081)
 #   worker      — Python queue worker  (no port)
 #   dashboard   — NextJS web UI        (port 3500)
+#
+# Project/stack name `daab-dev` (source-build hot-reload mode). Kept DISTINCT from
+# the pinned-image release stack `daab` (docker-compose.release.yml) so running one
+# never tears down or collides with the other. Run only one at a time (shared ports).
+
+name: daab-dev
 
 services:
   # ===========================================================================
