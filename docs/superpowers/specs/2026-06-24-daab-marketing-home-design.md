@@ -274,6 +274,36 @@ These changed during the build for correctness reasons; the design intent is unc
 
 ---
 
+## 14. v2 revision (PO feedback — aesthetic shift to "living neural brain")
+
+The PO directed three changes that intentionally move the hero away from the
+strict "no-bloom / restrained" lock toward the **Ethereal Glass / neural**
+direction (still ONE teal accent hue — glow, not rainbow neon; all motion
+reduced-motion-gated):
+
+1. **Brain-shaped graph + bloom glow.** `graph.ts` now generates a two-hemisphere,
+   folded (gyri/sulci) point cloud with a central fissure and organic
+   nearest-neighbour "neural" edges + corpus-callosum cross-links. `HeroGraph`
+   adds an `UnrealBloomPass` (strength 1.25 / radius 0.62 / threshold 0.06) +
+   ambient/directional lights so nodes glow, plus teal link particles (neural
+   firing on live edges). Node palette is now a graded teal-glow family
+   (`graphPalette.ts`), bright teal-white for live nodes. The static poster
+   (`StaticConstellation`) projects the same brain with an SVG glow filter.
+2. **Richer background.** New `MarketingBackground` (fixed, decorative): three
+   drifting teal/slate auroras, a masked dot-field, and a faint grain overlay
+   over the near-black canvas — wired in via `LocaleProvider` behind a `z-10`
+   content layer.
+3. **More motion.** Bloom + orbit + neural link-particles on the hero; drifting
+   auroras; `mk-card` hover-glow (lift + teal ring) on every bento/card; existing
+   reveals/count-up/connector retained. New CSS animations are all frozen under
+   `prefers-reduced-motion`, and the WebGL path remains gated off for
+   reduced-motion / mobile / save-data / no-WebGL2 clients (static glowing poster).
+
+Verified in-browser (dev): brain reads as two glowing hemispheres, background
+atmospheric, card hover-glow active; lint 0 errors.
+
+---
+
 ### Appendix A — Verified taxonomy (for fixtures)
 
 **Node types (20, `config.yaml`):** decision, concept, requirement, task, initiative, document, dataset, document_section, document_chunk, external, architecture, discovery, person, organization, event, document_ref, location, artifact, master_record, project. *(DB CHECK in `000061` also allows `session` = 21 in DB.)* Code symbols are stored as **`architecture`** with `properties.kind`.
