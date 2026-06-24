@@ -19,9 +19,9 @@ SHA="$(git -C ennam.kg.go rev-parse --short HEAD 2>/dev/null || echo local)"
 
 build() {  # name context dockerfile target
   local name="$1" ctx="$2" dockerfile="$3" target="$4"
-  echo ">> build ennam-kg-$name ($SHA)"
+  echo ">> build daab-$name ($SHA)"
   docker build -f "$ctx/$dockerfile" ${target:+--target "$target"} \
-    -t "ennam-kg-$name:$VERSION" -t "ennam-kg-$name:latest" -t "ennam-kg-$name:$SHA" "$ctx"
+    -t "daab-$name:$VERSION" -t "daab-$name:latest" -t "daab-$name:$SHA" "$ctx"
 }
 
 case "$SERVICE" in

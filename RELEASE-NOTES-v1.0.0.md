@@ -10,11 +10,11 @@ All three carry tags `:4dfdda2` (commit SHA), `:v1.0.0` (semver), and `:latest`.
 
 | Image | Service | Base / stage | Size |
 |---|---|---|---|
-| `ennam-kg-server` | Go API (`kg-server`) | `deploy/docker/Dockerfile` `target: production` — alpine, static `CGO_ENABLED=0` binary, non-root | 38.3 MB |
-| `ennam-kg-python` | Python indexer **and** worker (one image, command-switched) | `python:3.12-slim`, `uv --no-dev`, non-root | 1.68 GB |
-| `ennam-kg-dashboard` | Next.js 16 dashboard | `node:20-alpine`, standalone output, non-root | 284 MB |
+| `daab-server` | Go API (`kg-server`) | `deploy/docker/Dockerfile` `target: production` — alpine, static `CGO_ENABLED=0` binary, non-root | 38.3 MB |
+| `daab-python` | Python indexer **and** worker (one image, command-switched) | `python:3.12-slim`, `uv --no-dev`, non-root | 1.68 GB |
+| `daab-dashboard` | Next.js 16 dashboard | `node:20-alpine`, standalone output, non-root | 284 MB |
 
-> Naming note: CI/ECR call the Go image `ennam-kg` (repos `ennam-kg-staging`/`-production`). For a multi-image bundle these are named per service (`ennam-kg-server`, `-python`, `-dashboard`).
+> Naming note: local self-hosted images are named per service — `daab-server`, `daab-python`, `daab-dashboard` — matching the `daab` stack. (The cloud CI/ECR path uses its own repo names `ennam-kg-staging`/`-production` for the Go image.)
 
 ## Pre-release verification (security gate g2a)
 

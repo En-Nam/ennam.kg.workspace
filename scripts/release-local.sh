@@ -22,17 +22,17 @@ SHA="$(git -C ennam.kg.go rev-parse --short HEAD)"
 # service -> "context|dockerfile|extra-build-args"
 build_one() {
   local name="$1" ctx="$2" dockerfile="$3" target="$4"
-  echo ">> building ennam-kg-$name ($SHA / $VERSION)"
+  echo ">> building daab-$name ($SHA / $VERSION)"
   docker build -f "$ctx/$dockerfile" ${target:+--target "$target"} \
-    -t "ennam-kg-$name:$SHA" -t "ennam-kg-$name:$VERSION" -t "ennam-kg-$name:latest" \
+    -t "daab-$name:$SHA" -t "daab-$name:$VERSION" -t "daab-$name:latest" \
     "$ctx"
 }
 
 push_one() {
   local name="$1"
   for t in "$SHA" "$VERSION" latest; do
-    docker tag "ennam-kg-$name:$t" "$REGISTRY/ennam-kg-$name:$t"
-    docker push "$REGISTRY/ennam-kg-$name:$t"
+    docker tag "daab-$name:$t" "$REGISTRY/daab-$name:$t"
+    docker push "$REGISTRY/daab-$name:$t"
   done
 }
 

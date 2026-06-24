@@ -24,7 +24,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: ennam-kg-postgres
+    container_name: daab-postgres
     restart: unless-stopped
     ports:
       - "${KG_DB_PORT:-5432}:5432"
@@ -50,7 +50,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: ennam-kg-redis
+    container_name: daab-redis
     restart: unless-stopped
     ports:
       - "${KG_REDIS_PORT:-6379}:6379"
@@ -71,7 +71,7 @@ services:
       context: ./ennam.kg.go
       dockerfile: deploy/docker/Dockerfile
       target: development
-    container_name: ennam-kg-server
+    container_name: daab-server
     restart: unless-stopped
     ports:
       - "${KG_SERVER_PORT:-8080}:8080"
@@ -123,7 +123,7 @@ services:
     build:
       context: ./ennam.kg.python
       dockerfile: Dockerfile
-    container_name: ennam-kg-indexer
+    container_name: daab-indexer
     restart: unless-stopped
     ports:
       - "${KG_INDEXER_PORT:-8081}:8081"
@@ -174,7 +174,7 @@ services:
     build:
       context: ./ennam.kg.python
       dockerfile: Dockerfile
-    container_name: ennam-kg-worker
+    container_name: daab-worker
     restart: unless-stopped
     command: ["python", "-m", "ennam_kg.worker"]
     environment:
@@ -214,7 +214,7 @@ services:
     build:
       context: ./ennam.kg.next
       dockerfile: Dockerfile
-    container_name: ennam-kg-dashboard
+    container_name: daab-dashboard
     restart: unless-stopped
     ports:
       - "${KG_DASHBOARD_PORT:-3500}:3500"

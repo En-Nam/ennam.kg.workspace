@@ -1,9 +1,9 @@
 # Ennam Knowledge Graph Platform — RELEASE bundle (v1.0.0)
 #
 # Runs the pinned, pre-built PRODUCTION images (no source build, no bind-mounts):
-#   ennam-kg-server:v1.0.0      (Go API)
-#   ennam-kg-python:v1.0.0      (indexer + worker, same image / different command)
-#   ennam-kg-dashboard:v1.0.0   (Next.js dashboard)
+#   daab-server:v1.0.0      (Go API)
+#   daab-python:v1.0.0      (indexer + worker, same image / different command)
+#   daab-dashboard:v1.0.0   (Next.js dashboard)
 #
 # Usage:
 #   cp .env.release.example .env      # then fill in the required secrets
@@ -62,7 +62,7 @@ services:
   # Go API Server (production image)
   # ===========================================================================
   kg-server:
-    image: ${KG_IMAGE_PREFIX:-}ennam-kg-server:${KG_RELEASE_TAG:-v1.0.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v1.0.0}
     restart: unless-stopped
     ports:
       - "${KG_SERVER_PORT:-8080}:8080"
@@ -109,7 +109,7 @@ services:
   # Python Indexing Service — HTTP API (production image)
   # ===========================================================================
   indexer:
-    image: ${KG_IMAGE_PREFIX:-}ennam-kg-python:${KG_RELEASE_TAG:-v1.0.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-python:${KG_RELEASE_TAG:-v1.0.0}
     restart: unless-stopped
     ports:
       - "${KG_INDEXER_PORT:-8081}:8081"
@@ -147,7 +147,7 @@ services:
   # Python Queue Worker — background consumer (production image)
   # ===========================================================================
   worker:
-    image: ${KG_IMAGE_PREFIX:-}ennam-kg-python:${KG_RELEASE_TAG:-v1.0.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-python:${KG_RELEASE_TAG:-v1.0.0}
     restart: unless-stopped
     command: ["python", "-m", "ennam_kg.worker"]
     environment:
@@ -177,7 +177,7 @@ services:
   # Next.js Dashboard (production image)
   # ===========================================================================
   dashboard:
-    image: ${KG_IMAGE_PREFIX:-}ennam-kg-dashboard:${KG_RELEASE_TAG:-v1.0.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-dashboard:${KG_RELEASE_TAG:-v1.0.0}
     restart: unless-stopped
     ports:
       - "${KG_DASHBOARD_PORT:-3500}:3500"
