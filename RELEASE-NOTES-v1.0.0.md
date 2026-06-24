@@ -104,7 +104,8 @@ the boot line, `/api/v1/projects` 401→200. **No AWS anywhere in the local path
 
 **Local auto-deploy (build-on-commit) — DONE.** Entirely on local Docker, no cloud:
 - `scripts/deploy-local.sh [server|python|dashboard|all]` — rebuild a service image + `docker compose
-  -p ennam-kg -f docker-compose.release.yml up -d` (recreates only the changed container).
+  -f docker-compose.release.yml up -d` (stack name `daab` via `name:` in the compose file;
+  recreates only the changed container).
 - `scripts/install-deploy-hooks.sh` — installs `post-commit` + `post-merge` hooks into each sub-repo;
   a commit in `ennam.kg.go`/`ennam.kg.python`/`ennam.kg.next` rebuilds `server`/`python`/`dashboard`
   respectively and redeploys, **in the background** (commit never blocked), logging to `DAAB/.deploy-local.log`.

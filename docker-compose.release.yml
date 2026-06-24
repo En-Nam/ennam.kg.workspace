@@ -18,6 +18,10 @@
 # The staging/production profiles require AWS and are used by the cloud CI/ECS
 # pipeline (deploy-staging/production.yml) — not here.
 
+# Compose project (stack) name. Keeps the self-hosted stack named `daab`
+# regardless of which directory / -p flag it's launched from.
+name: daab
+
 services:
   # ===========================================================================
   # Infrastructure
