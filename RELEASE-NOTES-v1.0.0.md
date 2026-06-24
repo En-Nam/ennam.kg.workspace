@@ -102,14 +102,22 @@ off that commit (not `4dfdda2`). Decide: fold into v1.0.0, or ship as v1.0.1.
 `ENVIRONMENT=selfhosted`. Smoke-tested: all healthchecks green, `"environment":"selfhosted"` + JSON logs in
 the boot line, `/api/v1/projects` 401→200. **No AWS anywhere in the local path.**
 
-**Local auto-deploy (build-on-commit) — DONE.** Entirely on local Docker, no cloud:
-- `scripts/deploy-local.sh [server|python|dashboard|all]` — rebuild a service image + `docker compose
-  -f docker-compose.release.yml up -d` (stack name `daab` via `name:` in the compose file;
-  recreates only the changed container).
-- `scripts/install-deploy-hooks.sh` — installs `post-commit` + `post-merge` hooks into each sub-repo;
-  a commit in `ennam.kg.go`/`ennam.kg.python`/`ennam.kg.next` rebuilds `server`/`python`/`dashboard`
-  respectively and redeploys, **in the background** (commit never blocked), logging to `DAAB/.deploy-local.log`.
-- Verified end-to-end: firing the installed hook rebuilt the server and recreated only `kg-server`, healthy, `/healthz` 200.
+**Local auto-deploy — DONE.** Entirely on local Docker, no cloud. Two mechanisms:
+
+**Primary — track `origin/main` (`scripts/watch-main.sh`):** a polling watcher (local GitOps). Every
+`WATCH_INTERVAL`s (default 60) it `git fetch`es each sub-repo's `origin/main`; when main advances it
+rebuilds that service's image **from `origin/main` via `git archive`** (no checkout — never touches your
+working tree) and `docker compose up -d` redeploys only the changed container. This is the "commits land on
+main → local Docker updates" trigger. Run `bash scripts/watch-main.sh` (Ctrl+C to stop), background it with
+`nohup … >> .watch-main.log 2>&1 &`, or schedule `--once` via Task Scheduler/cron. State in `.deploy-state/`.
+- Verified: with state == `origin/main` it's a no-op; with main advanced it builds `daab-server` from main and
+  redeploys, `/healthz` 200. Builds from `origin/main` regardless of which branch the working tree is on.
+
+**Opt-in — build-on-commit (`scripts/deploy-local.sh` + `scripts/install-deploy-hooks.sh`):** `post-commit`/
+`post-merge` hooks redeploy on **local** commits (fast dev iteration, any branch). **Disabled by default**
+now that poll-`main` is the model (the two would otherwise fight over what's deployed); re-enable with
+`install-deploy-hooks.sh`. The installer self-heals a stale `core.hooksPath`. `deploy-local.sh
+[server|python|dashboard|all]` also works as a manual one-shot redeploy.
 
 > Why no AWS for local: the AWS bits live only in the cloud deploy workflows + the `production`/`staging`
 > config profiles. The self-hosted path uses the `selfhosted` profile + the local registry/compose + git-hook

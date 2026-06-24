@@ -16,6 +16,10 @@
 # --- Local auto-deploy log (scripts/deploy-local.sh) ---
 /.deploy-local.log
 
+# --- Local GitOps watcher (scripts/watch-main.sh) ---
+/.deploy-state/
+/.watch-main.log
+
 # --- Scratch screenshots at root (real images go in docs/) ---
 /*.png
 
