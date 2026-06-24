@@ -13,6 +13,9 @@
 /.ruff_cache/
 /.playwright-mcp/
 
+# --- Local auto-deploy log (scripts/deploy-local.sh) ---
+/.deploy-local.log
+
 # --- Scratch screenshots at root (real images go in docs/) ---
 /*.png
 

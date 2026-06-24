@@ -1,0 +1,202 @@
+# Ennam Knowledge Graph Platform — RELEASE bundle (v1.0.0)
+#
+# Runs the pinned, pre-built PRODUCTION images (no source build, no bind-mounts):
+#   ennam-kg-server:v1.0.0      (Go API)
+#   ennam-kg-python:v1.0.0      (indexer + worker, same image / different command)
+#   ennam-kg-dashboard:v1.0.0   (Next.js dashboard)
+#
+# Usage:
+#   cp .env.release.example .env      # then fill in the required secrets
+#   docker compose -f docker-compose.release.yml up -d
+#   docker compose -f docker-compose.release.yml ps
+#   docker compose -f docker-compose.release.yml logs -f kg-server
+#   docker compose -f docker-compose.release.yml down            # add -v to drop data
+#
+# NOTE on config profile: this bundle runs ENVIRONMENT=selfhosted — an AWS-free,
+# production-like profile (config/environments/selfhosted.yaml): JSON logs, no
+# verbose errors, rate limiting on, secrets from env, no CloudWatch/Secrets Manager.
+# The staging/production profiles require AWS and are used by the cloud CI/ECS
+# pipeline (deploy-staging/production.yml) — not here.
+
+services:
+  # ===========================================================================
+  # Infrastructure
+  # ===========================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    ports:
+      - "${KG_DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${KG_DB_NAME:-ennam_kg}
+      POSTGRES_USER: ${KG_DB_USER:-ennam_kg}
+      POSTGRES_PASSWORD: ${KG_DB_PASSWORD:?set KG_DB_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KG_DB_USER:-ennam_kg} -d ${KG_DB_NAME:-ennam_kg}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [ennam-kg]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${KG_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [ennam-kg]
+
+  # ===========================================================================
+  # Go API Server (production image)
+  # ===========================================================================
+  kg-server:
+    image: ${KG_IMAGE_PREFIX:-}ennam-kg-server:${KG_RELEASE_TAG:-v1.0.0}
+    restart: unless-stopped
+    ports:
+      - "${KG_SERVER_PORT:-8080}:8080"
+    environment:
+      # AWS-free, production-like profile (config/environments/selfhosted.yaml):
+      # JSON logs, no verbose errors, rate limiting on, no AWS. Auto-migrates from
+      # the migrations baked into the image.
+      ENVIRONMENT: selfhosted
+      KG_LOG_LEVEL: ${KG_LOG_LEVEL:-info}
+      # Database
+      KG_DB_HOST: postgres
+      KG_DB_PORT: 5432
+      KG_DB_NAME: ${KG_DB_NAME:-ennam_kg}
+      KG_DB_USER: ${KG_DB_USER:-ennam_kg}
+      KG_DB_PASSWORD: ${KG_DB_PASSWORD:?set KG_DB_PASSWORD in .env}
+      KG_DB_SSLMODE: disable
+      # Server
+      KG_SERVER_PORT: 8080
+      # Auth — validated against the api_keys table (NOT a trust-by-env master key)
+      KG_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
+      KG_AUTH_NOOP: "false"
+      # AES-256-GCM key (base64, 32 bytes) for credential + AI-provider-key encryption
+      KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:?set KG_ENCRYPTION_KEY in .env (openssl rand -base64 32)}
+      # Queue
+      KG_QUEUE_PROVIDER: redis
+      KG_REDIS_URL: redis://redis:6379/0
+      # Python indexer URL (SSE proxy for the agentic AI-query loop)
+      KG_PYTHON_URL: http://indexer:8081
+      KG_UPLOAD_DIR: /app/data/uploads
+    volumes:
+      - ennam_uploads:/app/data/uploads
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks: [ennam-kg]
+
+  # ===========================================================================
+  # Python Indexing Service — HTTP API (production image)
+  # ===========================================================================
+  indexer:
+    image: ${KG_IMAGE_PREFIX:-}ennam-kg-python:${KG_RELEASE_TAG:-v1.0.0}
+    restart: unless-stopped
+    ports:
+      - "${KG_INDEXER_PORT:-8081}:8081"
+    environment:
+      GO_API_URL: http://kg-server:8080
+      GO_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_QUEUE_NAME: ennam-kg:indexing
+      REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: ${KG_LOG_LEVEL:-INFO}
+      NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
+      BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+      # Python decrypts the X-DB-DSN header — must match the Go server's key.
+      # Python Settings expects ENCRYPTION_KEY (no KG_ prefix).
+      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:?set KG_ENCRYPTION_KEY in .env}
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
+      HF_HOME: /tmp/huggingface
+      TRANSFORMERS_CACHE: /tmp/huggingface
+    # To index local repositories, mount them read-only under /repos, e.g.:
+    #   volumes:
+    #     - ./ennam.kg.go:/repos/ennam-kg-go:ro
+    depends_on:
+      kg-server: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [ennam-kg]
+
+  # ===========================================================================
+  # Python Queue Worker — background consumer (production image)
+  # ===========================================================================
+  worker:
+    image: ${KG_IMAGE_PREFIX:-}ennam-kg-python:${KG_RELEASE_TAG:-v1.0.0}
+    restart: unless-stopped
+    command: ["python", "-m", "ennam_kg.worker"]
+    environment:
+      GO_API_URL: http://kg-server:8080
+      GO_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_QUEUE_NAME: ennam-kg:indexing
+      REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
+      REDIS_KG_GENERATION_QUEUE: ennam:kg_generation
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: ${KG_LOG_LEVEL:-INFO}
+      NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
+      BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+      ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:?set KG_ENCRYPTION_KEY in .env}
+      KG_UPLOAD_DIR: /app/data/uploads
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
+      HF_HOME: /tmp/huggingface
+      TRANSFORMERS_CACHE: /tmp/huggingface
+    volumes:
+      - ennam_uploads:/app/data/uploads
+    depends_on:
+      kg-server: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [ennam-kg]
+
+  # ===========================================================================
+  # Next.js Dashboard (production image)
+  # ===========================================================================
+  dashboard:
+    image: ${KG_IMAGE_PREFIX:-}ennam-kg-dashboard:${KG_RELEASE_TAG:-v1.0.0}
+    restart: unless-stopped
+    ports:
+      - "${KG_DASHBOARD_PORT:-3500}:3500"
+    environment:
+      GO_API_URL: http://kg-server:8080
+      KG_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env (>=32 chars)}
+    depends_on:
+      kg-server: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3500').then(r=>{process.exit(r.ok||r.status===307?0:1)}).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [ennam-kg]
+
+volumes:
+  postgres_data:
+    driver: local
+  ennam_uploads:
+    driver: local
+
+networks:
+  ennam-kg:
+    driver: bridge
