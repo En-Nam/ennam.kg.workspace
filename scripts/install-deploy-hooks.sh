@@ -30,6 +30,14 @@ for pair in "${REPOS[@]}"; do
     echo "skip $repo — no .git/hooks (not a git repo?)"
     continue
   fi
+  # A local core.hooksPath override makes git ignore .git/hooks. If it points at
+  # a missing dir (e.g. inherited from another clone), git runs NO hooks — unset
+  # it so the hooks we install below are actually used.
+  hp="$(git -C "$DAAB/$repo" config --local --get core.hooksPath || true)"
+  if [ -n "$hp" ] && [ ! -d "$hp" ]; then
+    git -C "$DAAB/$repo" config --local --unset core.hooksPath
+    echo "  fixed: unset stale local core.hooksPath ($hp) — now uses $repo/.git/hooks"
+  fi
   for h in post-commit post-merge; do
     cat > "$hooks/$h" <<HOOK
 #!/usr/bin/env bash
