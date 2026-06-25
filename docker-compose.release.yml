@@ -171,6 +171,8 @@ services:
       LOG_LEVEL: ${KG_LOG_LEVEL:-INFO}
       NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
       BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-5}
+      # BA-031 resolution: batch size for duplicate-verify LLM calls.
+      RESOLUTION_VERIFY_BATCH_SIZE: ${RESOLUTION_VERIFY_BATCH_SIZE:-6}
       ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:?set KG_ENCRYPTION_KEY in .env}
       KG_UPLOAD_DIR: /app/data/uploads
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
