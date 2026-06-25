@@ -92,7 +92,7 @@ services:
       KG_AUTH_NOOP: ${KG_AUTH_NOOP:-false}
       # Supabase login integration
       KG_SUPABASE_URL: ${KG_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
-      KG_SUPABASE_ADMIN_EMAILS: ${KG_SUPABASE_ADMIN_EMAILS:-admin@ennam.vn}
+      KG_SUPABASE_ADMIN_EMAILS: ${KG_SUPABASE_ADMIN_EMAILS:-admin@ennam.vn,dragoon@exnodes.vn}
       # Phase 2: Encryption key for data source credentials + AI provider API keys
       KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
       # Queue
@@ -254,6 +254,33 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - ennam-kg
+
+  # MCP gateway (kg-bridge) in MULTI-TENANT passthrough mode: each request's
+  # Bearer is the caller's own KG API key, forwarded per-request to kg-server,
+  # which enforces scope (role + project_members). Hosts one MCP endpoint for
+  # many consumers (AAAA/LAAM/agents), each with their own scoped key.
+  #
+  # Starts with the stack (docker compose up -d). Expose to the tailnet with
+  # Tailscale Serve (TLS) or by publishing the port directly.
+  kg-bridge:
+    build:
+      context: ./ennam.kg.go
+      dockerfile: deploy/docker/Dockerfile
+      target: production
+    container_name: ennam-kg-bridge
+    restart: unless-stopped
+    entrypoint: ["/app/kg-bridge"]
+    command: ["serve", "--http", "0.0.0.0:8765"]
+    environment:
+      KG_MCP_AUTH_PASSTHROUGH: "true"
+      KG_SERVER_URL: http://kg-server:8080   # internal docker network — no host port needed
+    ports:
+      - "${KG_BRIDGE_PORT:-8765}:8765"
+    depends_on:
+      kg-server:
+        condition: service_healthy
     networks:
       - ennam-kg
 
