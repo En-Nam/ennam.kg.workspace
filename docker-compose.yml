@@ -228,6 +228,9 @@ services:
     build:
       context: ./ennam.kg.next
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-sb_publishable_TT5H3qIx5dC8UPBTsbvn-A_JCs5zucU}
     container_name: ennam-kg-dashboard
     restart: unless-stopped
     ports:
