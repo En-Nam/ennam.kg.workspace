@@ -162,6 +162,11 @@ services:
       REDIS_QUEUE_NAME: ennam-kg:indexing
       REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
       REDIS_KG_GENERATION_QUEUE: ennam:kg_generation
+      # Extraction LLM (BA-031) — optional separate provider for structured
+      # extraction. Empty EXTRACTION_LLM_URL = fall back to the default path.
+      EXTRACTION_LLM_URL: ${EXTRACTION_LLM_URL:-}
+      EXTRACTION_LLM_KEY: ${EXTRACTION_LLM_KEY:-}
+      EXTRACTION_LLM_MODEL: ${EXTRACTION_LLM_MODEL:-deepseek-v4-pro}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${KG_LOG_LEVEL:-INFO}
       NL_QUERY_TIMEOUT: ${NL_QUERY_TIMEOUT:-30}
@@ -190,6 +195,11 @@ services:
       GO_API_URL: http://kg-server:8080
       KG_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env (>=32 chars)}
+      # Supabase public vars. NOTE: Next.js bakes NEXT_PUBLIC_* into the dashboard
+      # bundle at BUILD time — set them as build args when building daab-dashboard.
+      # Kept here for parity + any server-side reads; empty = Supabase login off.
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
     depends_on:
       kg-server: { condition: service_healthy }
     healthcheck:
