@@ -84,6 +84,11 @@ services:
       # Auth — validated against the api_keys table (NOT a trust-by-env master key)
       KG_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
       KG_AUTH_NOOP: "false"
+      # Supabase login (optional). Leave KG_SUPABASE_URL empty to disable and use
+      # password login only. Emails in KG_SUPABASE_ADMIN_EMAILS (comma-separated)
+      # become admin on their first Supabase login; all others default to viewer.
+      KG_SUPABASE_URL: ${KG_SUPABASE_URL:-}
+      KG_SUPABASE_ADMIN_EMAILS: ${KG_SUPABASE_ADMIN_EMAILS:-}
       # AES-256-GCM key (base64, 32 bytes) for credential + AI-provider-key encryption
       KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:?set KG_ENCRYPTION_KEY in .env (openssl rand -base64 32)}
       # Queue
