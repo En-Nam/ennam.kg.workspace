@@ -19,11 +19,15 @@ REGISTRY="${REGISTRY:-localhost:5000}"
 ACTION="${1:-build}"
 SHA="$(git -C ennam.kg.go rev-parse --short HEAD)"
 
-# service -> "context|dockerfile|extra-build-args"
+# Load .env (if present) so build args (e.g. the dashboard's NEXT_PUBLIC_SUPABASE_*)
+# come from there instead of being hardcoded. Empty when unset = feature disabled.
+set -a; [ -f .env ] && . ./.env; set +a
+
+# build_one NAME CTX DOCKERFILE TARGET [extra docker-build args...]
 build_one() {
-  local name="$1" ctx="$2" dockerfile="$3" target="$4"
+  local name="$1" ctx="$2" dockerfile="$3" target="$4"; shift 4
   echo ">> building daab-$name ($SHA / $VERSION)"
-  docker build -f "$ctx/$dockerfile" ${target:+--target "$target"} \
+  docker build -f "$ctx/$dockerfile" ${target:+--target "$target"} "$@" \
     -t "daab-$name:$SHA" -t "daab-$name:$VERSION" -t "daab-$name:latest" \
     "$ctx"
 }
@@ -38,7 +42,11 @@ push_one() {
 
 build_one server    ennam.kg.go     deploy/docker/Dockerfile production
 build_one python    ennam.kg.python Dockerfile               ""
-build_one dashboard ennam.kg.next   Dockerfile               ""
+# Dashboard: NEXT_PUBLIC_* are baked at build time (Next.js), so pass them as
+# build args (sourced from .env above; empty => Supabase login disabled).
+build_one dashboard ennam.kg.next   Dockerfile               "" \
+  --build-arg "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-}" \
+  --build-arg "NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}"
 
 if [ "$ACTION" = "push" ]; then
   for s in server python dashboard; do push_one "$s"; done
