@@ -40,7 +40,8 @@ push_one() {
   done
 }
 
-build_one server    ennam.kg.go     deploy/docker/Dockerfile production
+build_one server    ennam.kg.go     deploy/docker/Dockerfile production \
+  --build-arg "VERSION=$VERSION" --build-arg "COMMIT=$SHA"
 build_one python    ennam.kg.python Dockerfile               ""
 # Dashboard: NEXT_PUBLIC_* are baked at build time (Next.js), so pass them as
 # build args (sourced from .env above; empty => Supabase login disabled).
