@@ -96,6 +96,9 @@ services:
       # Auth
       KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
       KG_AUTH_NOOP: ${KG_AUTH_NOOP:-false}
+      # Supabase login integration
+      KG_SUPABASE_URL: ${KG_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
+      KG_SUPABASE_ADMIN_EMAILS: ${KG_SUPABASE_ADMIN_EMAILS:-admin@ennam.vn,dragoon@exnodes.vn}
       # Phase 2: Encryption key for data source credentials + AI provider API keys
       KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
       # Queue
@@ -198,12 +201,23 @@ services:
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
       HF_HOME: /tmp/huggingface
       TRANSFORMERS_CACHE: /tmp/huggingface
+      # Models live in the hf_cache named volume (survives rebuilds — the real fix).
+      # Online HEAD lookups stay enabled: sentence-transformers resolves the repo
+      # online then reads the cached snapshot (+ .no_exist markers). Full offline
+      # (HF_HUB_OFFLINE=1) breaks bare-name resolution, so it is NOT set.
+      EXTRACTION_LLM_URL: ${EXTRACTION_LLM_URL:-}
+      EXTRACTION_LLM_KEY: ${EXTRACTION_LLM_KEY:-}
+      EXTRACTION_LLM_MODEL: ${EXTRACTION_LLM_MODEL:-deepseek-v4-pro}
+      # BA-031 Phase C C.2: batch LLM verify (5-10x fewer calls). Default off (=1);
+      # enabled here to speed Pass-2 resolution on large docs.
+      RESOLUTION_VERIFY_BATCH_SIZE: ${RESOLUTION_VERIFY_BATCH_SIZE:-6}
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
       - ./ennam.kg.python:/repos/ennam-kg-python:ro
       - ./ennam.kg.requirements:/repos/ennam-kg-requirements:ro
       - ennam_uploads:/app/data/uploads
+      - hf_cache:/tmp/huggingface
     depends_on:
       kg-server:
         condition: service_healthy
@@ -220,6 +234,9 @@ services:
     build:
       context: ./ennam.kg.next
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-sb_publishable_TT5H3qIx5dC8UPBTsbvn-A_JCs5zucU}
     container_name: daab-dashboard
     restart: unless-stopped
     ports:
@@ -228,6 +245,8 @@ services:
       GO_API_URL: http://kg-server:8080
       KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
       SESSION_SECRET: ${SESSION_SECRET:-ennam-kg-dev-session-secret-32chars!!}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-https://nicrcubktflnwdkhotut.supabase.co}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-sb_publishable_TT5H3qIx5dC8UPBTsbvn-A_JCs5zucU}
     depends_on:
       kg-server:
         condition: service_healthy
@@ -244,10 +263,39 @@ services:
     networks:
       - ennam-kg
 
+  # MCP gateway (kg-bridge) in MULTI-TENANT passthrough mode: each request's
+  # Bearer is the caller's own KG API key, forwarded per-request to kg-server,
+  # which enforces scope (role + project_members). Hosts one MCP endpoint for
+  # many consumers (AAAA/LAAM/agents), each with their own scoped key.
+  #
+  # Starts with the stack (docker compose up -d). Expose to the tailnet with
+  # Tailscale Serve (TLS) or by publishing the port directly.
+  kg-bridge:
+    build:
+      context: ./ennam.kg.go
+      dockerfile: deploy/docker/Dockerfile
+      target: production
+    container_name: daab-bridge
+    restart: unless-stopped
+    entrypoint: ["/app/kg-bridge"]
+    command: ["serve", "--http", "0.0.0.0:8765"]
+    environment:
+      KG_MCP_AUTH_PASSTHROUGH: "true"
+      KG_SERVER_URL: http://kg-server:8080   # internal docker network — no host port needed
+    ports:
+      - "${KG_BRIDGE_PORT:-8765}:8765"
+    depends_on:
+      kg-server:
+        condition: service_healthy
+    networks:
+      - ennam-kg
+
 volumes:
   postgres_data:
     driver: local
   ennam_uploads:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:
