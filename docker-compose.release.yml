@@ -195,6 +195,27 @@ services:
       start_period: 30s
     networks: [ennam-kg]
 
+  # ===========================================================================
+  # MCP Gateway (kg-bridge) — multi-tenant passthrough (production image)
+  # ===========================================================================
+  # Reuses the daab-server image — its production stage also ships /app/kg-bridge —
+  # via an entrypoint override. Each request's Bearer is the caller's own KG key,
+  # forwarded per-request to kg-server, which enforces scope (role + project_members).
+  # Expose port 8765 to the tailnet/proxy. See docs/deploy-mcp-bridge.md.
+  kg-bridge:
+    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v1.0.0}
+    restart: unless-stopped
+    entrypoint: ["/app/kg-bridge"]
+    command: ["serve", "--http", "0.0.0.0:8765"]
+    environment:
+      KG_MCP_AUTH_PASSTHROUGH: "true"
+      KG_SERVER_URL: http://kg-server:8080
+    ports:
+      - "${KG_BRIDGE_PORT:-8765}:8765"
+    depends_on:
+      kg-server: { condition: service_healthy }
+    networks: [ennam-kg]
+
 volumes:
   postgres_data:
     driver: local
