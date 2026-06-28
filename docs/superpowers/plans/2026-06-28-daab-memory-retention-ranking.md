@@ -1222,11 +1222,20 @@ In `Recall`, compute the half-life and pass it into the params (insert before th
 	})
 ```
 
-- [ ] **Step 2: Fix handler test constructors (build first)**
+- [ ] **Step 2: Fix ALL handler test constructors (incl. the integration-tagged one)**
 
-Run: `go build ./... ` — it will fail at `NewAgentContextHandler` call sites. Update each (e.g. in `internal/handler/agent_context_test.go` and `agent_context_userscope_test.go`) to pass `nil` for the new `settings` argument:
+Run: `go build ./...` — it fails at the non-tagged `NewAgentContextHandler` call sites. Update every call site to insert `nil` for the new `settings` argument (before `logger`):
+- `internal/handler/agent_context_test.go` — 6 sites (lines ~52, 79, 91, 106, 125): `NewAgentContextHandler(fs, <embedder>, <pub>, nil, slog.Default())`.
+- `internal/handler/agent_context_userscope_test.go` — 3 sites (lines ~62, 93, 121): same shape.
+- `internal/handler/agent_context_isolation_integration_test.go` — 1 multi-line site (~line 71). **This file is `//go:build integration`, so plain `go build ./...` and non-tagged `go test` will NOT catch it.** Add the `settings` arg:
 ```go
-h := NewAgentContextHandler(fs, embedder, pub, nil, logger)
+	handler.NewAgentContextHandler(
+		store.NewAgentContextStore(db),
+		nil, // embedder: nil → lexical-only recall
+		nil, // publisher: nil → no queue
+		nil, // settings: nil → store default half-life
+		logger,
+	).RegisterRoutes(mux)
 ```
 (Match the actual local variable names at each site.)
 
@@ -1257,8 +1266,10 @@ Run:
 go build ./...
 go test -race ./internal/store/ ./internal/service/ ./internal/handler/
 go test -tags=integration ./internal/store/ -run 'TestRecall_|TestRetention'
+go test -tags=integration ./internal/handler/ -run TestAgentContextRecall_Isolation
 ```
-Expected: build OK; unit packages PASS; integration recall + retention tests PASS. (Pre-existing unrelated failures — e.g. `TestSectionNeighbors_ParentChildrenSiblings` `chk_title_min_length` fixture — may appear; confirm they are not in the files this plan touched before treating as a regression.)
+The last command forces compilation of the integration-tagged handler test, catching the `agent_context_isolation_integration_test.go` constructor fix from Step 2.
+Expected: build OK; unit packages PASS; integration recall + retention + isolation tests PASS. (Pre-existing unrelated failures — e.g. `TestSectionNeighbors_ParentChildrenSiblings` `chk_title_min_length` fixture — may appear; confirm they are not in the files this plan touched before treating as a regression.)
 
 - [ ] **Step 6: Smoke-test the worker boots**
 
@@ -1268,7 +1279,7 @@ Expected: a log line `agent_context retention worker started interval=1h0m0s` (o
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/handler/agent_context.go internal/handler/agent_context_test.go internal/handler/agent_context_userscope_test.go cmd/kg-server/main.go
+git add internal/handler/agent_context.go internal/handler/agent_context_test.go internal/handler/agent_context_userscope_test.go internal/handler/agent_context_isolation_integration_test.go cmd/kg-server/main.go
 git commit -m "feat(daab): wire recall half-life + start retention worker"
 ```
 
