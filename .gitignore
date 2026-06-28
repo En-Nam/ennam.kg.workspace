@@ -29,3 +29,12 @@ env.zip
 # --- git research repos ---
 /git_research/
 /other_projects/
+
+# --- Confidential M&A data — NEVER commit (DAAB: do not store source docs) ---
+/doc_pdf_test/
+/*.sql
+/*-deal-report.md
+
+# --- OS / local tooling junk ---
+.DS_Store
+/.mcp.json
