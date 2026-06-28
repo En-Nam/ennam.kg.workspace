@@ -25,3 +25,7 @@
 
 # stray secrets archive — never commit
 env.zip
+
+# --- git research repos ---
+/git_research/
+/other_projects/
