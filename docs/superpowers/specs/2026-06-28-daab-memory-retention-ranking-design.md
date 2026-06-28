@@ -110,6 +110,8 @@ AND (
 
 When the explicit `Kind`/`Scope`/`Tags` filters are supplied they still apply on top. The standalone `user_id = $N` filter is removed in favor of the scope-aware predicate. *(Edge case: an explicit `scope='user'` request with empty caller `UserID` returns nothing — correct: no owner, no user rows.)*
 
+**Contract change (intentional).** This redefines the user-recall contract from *"a caller with `UserID` recalls **only** that user's memory"* (current store SQL `a.user_id = $N`, which over-filters and hides shared `scope='project'` rows — consultant bug (b)) to *"a caller recalls their own `scope='user'` rows **plus** shared `scope='project'`/`'agent'` rows."* The existing `agent_context_userscope_test.go` cases assert only **param wiring** through fakes, so they keep passing, but their doc-comment contract (*"recalls only that user's memory"*) must be updated, and a new store-level test (§11) must assert the new visibility. The cross-project isolation guarantee is unchanged (the `project_id` filter is untouched; cross-project recall stays blocked).
+
 ### 7.2 Over-fetch then decay
 Each branch fetches `LIMIT max(TopK, 50)` (not `LIMIT TopK`). Decay+RRF then reorder the larger candidate set; `fuseAgentRecall` trims to `TopK` last. Without over-fetch, SQL's per-branch `LIMIT` truncates candidates before Go ever applies decay, making decay cosmetic.
 
@@ -211,3 +213,4 @@ Config comments must state: cap + decay act on **free-form rows only**; `mem_key
 - `cmd/kg-server/main.go` — wire + start the worker.
 - `config/config.yaml` (+ environment YAML if needed) — three settings + comments.
 - Store/service/handler test files alongside the above.
+- `internal/handler/agent_context_userscope_test.go` — update the doc-comment to the new contract (§7.1); param-wiring assertions stay as-is.
