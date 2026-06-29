@@ -43,7 +43,7 @@ A second, pre-existing problem this design must NOT inherit: recall/search handl
 - **Schema** (`db/migrations/000036_create_conversation_threads.up.sql`): `conversation_threads(id, user_id NOT NULL, project_id NOT NULL, name, is_archived, deleted_at, …)`; `thread_messages(id, thread_id FK, role CHECK in (user,assistant), content TEXT NOT NULL, response_blocks JSONB [000037], created_at)`. `content` is NOT NULL for both roles; `response_blocks` is the rich render (NULL for user msgs).
 - **Indexing today:** `thread_messages` has B-tree `(thread_id, created_at)`, `(thread_id)`, partial `(ai_query_id)`, and GIN on `response_blocks`. **No FTS / trigram / embeddings on `content`.**
 - **RBAC:** `internal/store/thread.go` scopes EVERY query by `user_id` (+ `project_id` + `deleted_at IS NULL`). Sessions are single-user-owned; no shared-project sessions. `GetByID(id, userID)`, `List(userID, projectID, …)`.
-- **Identity:** `middleware/auth.go` — `APIKey.UserID` is `*string`, **nil for service/project keys** (`auth.go:62,244`). So a recall/search caller's `identity.UserID` is empty unless the key is user-bound. v1 session search returns empty for a non-user-bound key (acceptable; LAAM identity-assertion is deferred).
+- **Identity:** `middleware/auth.go` — `APIKey.UserID` is `*string`. It is populated for **user-bound keys**: web-login session keys AND **consumer keys bound to a user** via `api_keys.user_id` (migration `000070`, role `agent` keys included — the shipped consumer-key-user-scope mechanism that `kg_recall` already relies on). It is nil only for **pure service/project keys**. So `kg_search_sessions` is usable via MCP for a user-bound consumer key (same identity model as `kg_recall`); a pure service key gets empty results. This is the intended single-user model — cross-user `monitoring` is the deferred piece, not "no MCP access".
 - **FTS today:** `'english'` everywhere (`store/search.go:344,352` hardcode it for `ts_rank`/`ts_headline`). No `simple`/`vietnamese`/`unaccent` config anywhere.
 - **Extensions (verified on `daab-postgres`):** `pg_trgm` 1.6 installed; **`unaccent` available but NOT installed**. `to_tsvector(regconfig,text)` is **IMMUTABLE** (the `'simple'`-explicit form); the 1-arg `to_tsvector(text)` is STABLE. `unaccent()` is STABLE → needs an IMMUTABLE wrapper to be used in a generated column / index.
 - **Reuse:** `store/rrf.go` `ReciprocalRankFusion(lists,k=60,limit)` (only needed once a 2nd signal exists — not in v1). `kg_recall` envelope `{"results":[recallView{…, score float64}]}` to mirror.
@@ -123,7 +123,7 @@ type SessionSearchParams struct {
     ProjectID string  // required
     Query     string
     Limit     int     // default 8, cap 50 (mirror recall)
-    Cursor    string  // opaque pagination cursor (score+id or offset)
+    Offset    int     // OFFSET-based pagination (see note); next_cursor encodes offset+limit
     Role      string  // optional filter: 'user' | 'assistant'
     // (date_from/date_to optional — include only if cheap; else defer)
 }
@@ -136,7 +136,8 @@ Query shape:
 - `WHERE t.user_id = $userID AND t.project_id = $projectID AND t.deleted_at IS NULL AND m.search_vector @@ plainto_tsquery('simple', f_unaccent($query))` (+ optional `m.role = $role`).
 - `ORDER BY ts_rank(m.search_vector, plainto_tsquery('simple', f_unaccent($query))) DESC, m.created_at DESC, m.id` — deterministic tie-break.
 - `ts_headline('simple', f_unaccent(m.content), plainto_tsquery('simple', f_unaccent($query)), 'StartSel=<mark>,StopSel=</mark>,MaxFragments=2,MaxWords=18,MinWords=6')` — Run only on the returned page (re-tokenizes at query time — expensive on the full candidate set). **Two correctness traps:** (1) `to_tsvector` (column), `ts_headline`, and `plainto_tsquery` must ALL use `'simple'` — config mismatch yields silently empty highlights. (2) The document passed to `ts_headline` must be `f_unaccent(m.content)`, NOT raw `m.content`: the query lexemes are unaccented, so highlighting against the accented original would never match (silent empty snippet). **Consequence (documented v1 limitation):** the returned `snippet` is **diacritic-stripped** (e.g. "Viet Nam" not "Việt Nam"). This is acceptable for a locate-the-moment snippet; the full original `content` (with diacritics) remains retrievable via the existing message-fetch endpoints by `message_id`. Restoring accented snippets is a v2 follow-up (§10).
-- `total_count` via a `COUNT(*)` over the same WHERE (separate cheap query) or window count; cursor pagination on `(score, id)` or offset.
+- `total_count` via a `COUNT(*)` over the same WHERE (a second GIN scan — acceptable at current scale; revisit if the table grows large).
+- **Pagination = OFFSET-based** for v1 (`LIMIT $limit OFFSET $offset`). Rationale: keyset pagination on `ts_rank` is fragile — the score is a recomputed float, not unique or stable across pages. The full ordering (`ts_rank desc, created_at desc, id`) is deterministic within a snapshot, so OFFSET paging is stable for a given query. `next_cursor` encodes the next `offset`. Fine for the small, capped result sets expected; revisit only if deep pagination becomes a real need.
 - Empty `UserID` → return `(nil, 0, nil)` immediately (no query).
 - `archived` threads: **included** by default (history search spans archived); only `deleted_at` excludes. (If consumer wants to exclude archived, add an opt-in flag later.)
 
@@ -145,7 +146,7 @@ Query shape:
 New handler (e.g. `internal/handler/session_search.go`) — or extend an existing thread handler — exposing the read endpoint and registered route. RBAC:
 - Resolve `projectID` and `userID` from `middleware.GetDeveloperIdentity` (same pattern as `kg_recall`'s `Recall`). **Never** read project/user from the body.
 - If no project context → empty results (mirror recall's soft-fail to `{results:[]}`).
-- Body carries only: `query` (required), `limit`, `cursor`, `role` (optional). A body `project_id` is ignored/forbidden (no widening).
+- Body carries only: `query` (required), `limit`, `cursor`, `role` (optional). A body `project_id` is ignored/forbidden (no widening). The opaque `cursor` (echoed from a prior `next_cursor`) is decoded server-side into the internal `Offset`; callers never see a raw offset.
 - Soft-fail to empty result set on store error (never 5xx), mirroring `Recall`.
 
 Response view (mirror `recallView`, add thread attribution + pagination):
@@ -182,7 +183,7 @@ Response view (mirror `recallView`, add thread attribution + pagination):
 - Project isolation: search excludes other projects' messages.
 - Soft-deleted threads excluded; archived threads included.
 - Empty `UserID` → empty result, no query error.
-- Pagination cursor returns the next page without overlap.
+- Pagination: `cursor`/offset returns the next page without overlap or gaps (deterministic order).
 
 **Handler (integration + unit):**
 - Body `project_id` does NOT widen scope (server-resolved wins).
@@ -197,4 +198,4 @@ Response view (mirror `recallView`, add thread attribution + pagination):
 - `internal/store/thread_message.go` — `SearchMessages` + `SessionSearchHit`/`SessionSearchParams` (+ test).
 - `internal/handler/session_search.go` (new) — handler + route registration (+ tests, incl. isolation gate test).
 - `internal/bridge/schema.go` + `internal/bridge/client.go` — `kg_search_sessions` tool + route (+ schema/client/handler/integration test bumps).
-- `internal/handler/recall_isolation_test.go` (or a sibling) — extend isolation gate to session search.
+- `internal/handler/session_search_isolation_integration_test.go` (new) — isolation gate test mirroring the existing `recall_isolation_integration_test.go` / `agent_context_isolation_integration_test.go` pattern.
