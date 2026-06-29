@@ -1,0 +1,20 @@
+# Backlog — kg_search_sessions follow-ups
+
+Filed 2026-06-29 after shipping `kg_search_sessions` (DAAB session/conversation search). Branch `task/implement_docs_sync`, HEAD `0e0523a`. Plan: `docs/superpowers/plans/2026-06-29-daab-kg-search-sessions.md` §10 + final-review notes.
+
+## Deferred from spec §10 (contract-stable v2)
+- **Semantic + hybrid (RRF):** add embedding-based recall and reciprocal-rank-fusion over the FTS path. The MCP tool contract (`kg_search_sessions`) was designed opaque so this lands without a breaking change.
+- **Trigram / CJK:** pg_trgm fallback + CJK tokenization for non-space-delimited queries (current `simple` config is whitespace-tokenized).
+- **Cross-user `monitoring` scope:** a privileged scope to search across users — REQUIRES a decision record + threat model first (this is the LAAM Phase-2 consumer; see `mem:decisions/ecosystem-hermes-allocation`). Do NOT implement until the monitoring-scope decision lands.
+- **`response_blocks` indexing:** index structured assistant response blocks, not just `thread_messages.content`.
+- **Archived-thread filter:** optional include/exclude of archived threads (currently only soft-deleted `deleted_at IS NULL` are excluded).
+- **Accented snippets:** v1 `ts_headline` runs on `f_unaccent(content)` so snippets are diacritic-stripped — restore original-accent snippets (documented accepted v1 limitation).
+
+## From final whole-branch review (non-blocking behavioral notes)
+- **REST role validation:** the REST handler accepts an unknown `role` value as "no filter" (the MCP bridge enum guards the MCP path). Consider 400 on unrecognized `role` at the REST layer for symmetry. `internal/handler/session_search.go` + `internal/store/thread_message.go` (`roleActive` gate).
+- **Write-path coupling:** the generated `search_vector` column couples every `thread_messages` INSERT/UPDATE to `to_tsvector('simple', f_unaccent(content))`; a pathological message (tsvector ~1MB lexeme limit) would fail message creation, not just search. New failure mode on a core write path — low probability, worth awareness/monitoring.
+
+## Migration ops note
+`000072_thread_messages_fts.up.sql` does a full-table rewrite (ACCESS EXCLUSIVE) + non-CONCURRENTLY index. A deployment-note comment was added in-file. If `thread_messages` is large in prod, split into ADD COLUMN / backfill / `CREATE INDEX CONCURRENTLY` (separate non-transactional migrations) before deploy.
+
+Related: `mem:backlog/agent-context-retention-followups`.
