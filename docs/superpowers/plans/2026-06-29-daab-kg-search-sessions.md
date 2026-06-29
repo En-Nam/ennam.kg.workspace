@@ -670,7 +670,11 @@ In `internal/bridge/client.go`, in the routes map (next to `kg_recall`):
 
 - [ ] **Step 4: Bump the count assertions**
 
-In `internal/bridge/client_test.go:216-217` change `41` → `42` (both the condition and the message). In `TestRouteClassCounts` (`client_test.go:1052`), increment the expected `RouteRead` count by 1. In `internal/bridge/handler_test.go:276-277` change `44` → `45`.
+- `internal/bridge/client_test.go:216-217` (`TestListToolNames`-style): change `41` → `42` (both the `!=` condition and the `want 41` message).
+- `internal/bridge/client_test.go` `TestRouteClassCounts` (~:1052): `want` map `RouteRead: 18` → `19`; the `total != 41` check → `42` (and its message). Leave `RouteWrite: 23` unchanged.
+- `internal/bridge/handler_test.go:276-277`: change `44` → `45`.
+- Optional (cosmetic, not asserted): in `schema.go` `buildToolSchemas`, bump the `make(map[string]*ToolSchema, 44)` capacity hint to `45`.
+- The `e2e_tools_test.go` "missing core tools" check asserts only a core subset is present (not an exact set), so adding `kg_search_sessions` does NOT require touching it; the `schema==routes+local` invariant (`:805`) holds automatically (45 == 42 + 3).
 
 - [ ] **Step 5: Run the bridge tests**
 
