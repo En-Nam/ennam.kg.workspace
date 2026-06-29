@@ -7,7 +7,7 @@ Filed 2026-06-29 after shipping `kg_search_sessions` (DAAB session/conversation 
 - **Trigram / CJK:** pg_trgm fallback + CJK tokenization for non-space-delimited queries (current `simple` config is whitespace-tokenized).
 - **Cross-user `monitoring` scope:** a privileged scope to search across users — REQUIRES a decision record + threat model first (this is the LAAM Phase-2 consumer; see `mem:decisions/ecosystem-hermes-allocation`). Do NOT implement until the monitoring-scope decision lands.
 - **`response_blocks` indexing:** index structured assistant response blocks, not just `thread_messages.content`.
-- **Archived-thread filter:** optional include/exclude of archived threads (currently only soft-deleted `deleted_at IS NULL` are excluded).
+- ~~**Archived-thread filter:**~~ **DONE 2026-06-29** — `include_archived` bool (default false: archived excluded). Store `SessionSearchParams.IncludeArchived` + inlined `AND t.is_archived = false` clause (both count & page queries); handler `include_archived` field; bridge schema `include_archived` property. ⚠️ BEHAVIOR CHANGE: archived threads were previously returned; now excluded by default. Tests: 2 unit (handler forward) + 2 integration (g/h: excluded by default, returned on opt-in). Done pre-adoption so the default flip is safe.
 - **Accented snippets:** v1 `ts_headline` runs on `f_unaccent(content)` so snippets are diacritic-stripped — restore original-accent snippets (documented accepted v1 limitation).
 
 ## From final whole-branch review (non-blocking behavioral notes)
