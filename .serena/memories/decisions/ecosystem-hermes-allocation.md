@@ -58,7 +58,7 @@ Keep per-platform (do NOT centralize): provider-agnostic routing (refactor = ris
 
 - **Phase 0 — Foundations (parallel):** DAAB confirm internals exist as asserted ← GATE · all: write the shared security invariant + audit-guard (cheap, now) · AAAA multi-tenancy (`tenant_id` isolation) ← HARD GATE for any AAAA search.
 - **Phase 1 — Keystone (DAAB):** `agent_memory`+`user_profile`; `kg_remember`/`kg_recall`; always-runs capture checkpoint; recall ranking/retention · prove cross-platform RBAC isolation ← GATE before consumers.
-- **Phase 2 — Thin consumers:** AAAA dealMemory (DataCorrections → one prompt via `kg_recall`) · LAAM chat/session recall (read-only Qwen) · DAAB `kg_search_sessions`.
+- **Phase 2 — Thin consumers:** AAAA dealMemory (DataCorrections → one prompt via `kg_recall`) · LAAM chat/session recall (read-only Qwen) · DAAB `kg_search_sessions` ✅ **SHIPPED 2026-06-29** (branch `task/implement_docs_sync`, HEAD `0e0523a`): VN-correct FTS (`simple`+`f_unaccent`), user+project scoped, raw windowed `ts_headline` (no LLM summary), opaque MCP tool — security-reviewed (scope unwidenable by body/header). LAAM consume-shared (FTS recall) is now unblocked; **cross-user `monitoring` scope still gated** on the RBAC monitoring-scope decision + threat model (see `mem:backlog/daab-kg-search-sessions-followups`).
 - **Phase 3 — Native, platform-private:** AAAA bounded feedback loop (hard cap + budget gate) · AAAA deal-doc FTS (ONLY after multi-tenancy) · LAAM session search over transcripts.
 - **Phase 4 — Deferred:** AAAA narrow inbound-email→Inngest (treat email as untrusted).
 
