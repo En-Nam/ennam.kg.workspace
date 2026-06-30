@@ -73,8 +73,9 @@ func rdSeed(t *testing.T, db *sql.DB) *store.GraphRetrieveStore {
 		db.ExecContext(ctx, `DELETE FROM projects WHERE id=$1`, rdProj)                //nolint:errcheck
 	})
 	node := func(id, typ, title string) {
-		ex(`INSERT INTO knowledge_nodes (id, project_id, node_type, title, properties, status)
-		    VALUES ($1,$2,$3,$4,'{}'::jsonb,'active')`, id, rdProj, typ, title)
+		// created_by is NOT NULL (no default) on knowledge_nodes.
+		ex(`INSERT INTO knowledge_nodes (id, project_id, node_type, title, properties, status, created_by)
+		    VALUES ($1,$2,$3,$4,'{}'::jsonb,'active','test')`, id, rdProj, typ, title)
 	}
 	const dA, dB, dC = "eeee0001-0000-0000-0000-000000000001", "eeee0002-0000-0000-0000-000000000002", "eeee0003-0000-0000-0000-000000000003"
 	const cSpecific, cUbiq = "eeeeccc1-0000-0000-0000-000000000001", "eeeeccc2-0000-0000-0000-000000000002"
@@ -84,8 +85,9 @@ func rdSeed(t *testing.T, db *sql.DB) *store.GraphRetrieveStore {
 	node(cSpecific, "concept", "Công ty Hàm Giang") // rare: A,B only
 	node(cUbiq, "concept", "Tỉnh Trà Vinh")          // ubiquitous: A,B,C
 	mention := func(doc, concept string) {
-		ex(`INSERT INTO knowledge_edges (id, project_id, source_id, target_id, edge_type)
-		    VALUES (uuid_generate_v4(),$1,$2,$3,'mentions')`, rdProj, doc, concept)
+		// created_by is NOT NULL (no default) on knowledge_edges.
+		ex(`INSERT INTO knowledge_edges (id, project_id, source_id, target_id, edge_type, created_by)
+		    VALUES (uuid_generate_v4(),$1,$2,$3,'mentions','test')`, rdProj, doc, concept)
 	}
 	mention(dA, cSpecific); mention(dB, cSpecific)              // specific shared by A,B (df=2)
 	mention(dA, cUbiq); mention(dB, cUbiq); mention(dC, cUbiq)  // ubiquitous in A,B,C (df=3)
@@ -164,12 +166,12 @@ const docMentionsIDF = `
 	WITH dm AS (
 		SELECT e.source_id AS doc, e.target_id AS concept
 		FROM knowledge_edges e
-		JOIN knowledge_nodes sn ON sn.id = e.source_id AND sn.node_type = 'document'
-		JOIN knowledge_nodes cn ON cn.id = e.target_id AND cn.node_type = 'concept'
+		JOIN knowledge_nodes sn ON sn.id = e.source_id AND sn.node_type = 'document' AND sn.status = 'active'
+		JOIN knowledge_nodes cn ON cn.id = e.target_id AND cn.node_type = 'concept' AND cn.status = 'active'
 		                        AND COALESCE(cn.properties->>'merged_into','') = ''
 		WHERE e.edge_type = 'mentions' AND e.project_id = $1),
 	nn AS (SELECT GREATEST(count(DISTINCT id),1)::float8 AS n FROM knowledge_nodes
-	       WHERE node_type='document' AND project_id = $1),
+	       WHERE node_type='document' AND status='active' AND project_id = $1),
 	idf AS (SELECT concept, ln((SELECT n FROM nn) / count(DISTINCT doc)) AS idf FROM dm GROUP BY concept)`
 
 // SharedDocumentEntities returns the canonical entities both documents mention,
@@ -583,4 +585,4 @@ Serena checkpoint; mark Step 2 done; note the deferred follow-ups (fuzzy alias m
 - **Security:** T2 mandates `requireProjectAccess` on the path project (closes `mem:be-path-project-access-gap`); `TestRelatedDocuments_DeniesForeignProject` regresses it.
 - **Bridge counts (TWO tools):** routes 42→44, schemas 45→47, `RouteRead` 19→21 — pinned from `client_test.go:216`/`handler_test.go:276`/`TestRouteClassCounts`. Two tools because the bridge PathTemplate is fixed (can't switch `/related`↔`/shared-entities` on an arg); verified `ToolRoute.QueryParams` exists and serve.go:346-351 auto-fills `{projectId}` from `cfg.DefaultProjectID`, matching the existing `/projects/{projectId}/...` routes.
 - **Verified:** `requireProjectAccess(w,r,resolver,projectIDs...) bool` (authz.go:35) writes 403 + returns false on deny, returns true on `identity==nil` (dev); `ProjectRoleResolverFunc(ctx,projectID,userID)→(models.ProjectMemberRole,bool)`; bridge path/query substitution (client.go:563 `{param}` replace + QueryParams).
-- **Confirm at execution (single-file):** `reqWithIdentityUser` helper presence in the handler test package (added for kg_search_sessions; if absent, add it mirroring `reqWithIdentity`).
+- **Verified (corrected here):** `created_by` is NOT NULL (no default) on `knowledge_nodes` AND `knowledge_edges` → the T1 seed sets it; superseded concepts carry `status='superseded'` (1266) while active carry `status='active'` (1929) → the IDF CTE filters `status='active'` on both document and concept (plus `merged_into=''` belt-and-suspenders) — matches `SharedEntityNeighbors`'s convention and the empirical validation; `reqWithIdentityUser` already exists (`session_search_test.go:194`, same `handler` package) → T2 reuses it.
