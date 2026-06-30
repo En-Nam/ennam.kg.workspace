@@ -116,21 +116,28 @@ def wilson_lcb(successes: int, n: int, z: float = 1.96) -> float:
 
 # ---- DB + CLI ----
 
-def _load_band(project_id: str) -> list[dict]:
-    import psycopg
-    with psycopg.connect(os.environ["KG_DATABASE_URL"]) as conn, conn.cursor() as cur:
-        cur.execute(
+async def _load_band_async(project_id: str) -> list[dict]:
+    import asyncpg  # the repo's driver (see classify_corpus_cli.py); asyncpg uses $1 placeholders
+    conn = await asyncpg.connect(os.environ["KG_DATABASE_URL"])
+    try:
+        rows = await conn.fetch(
             """
             SELECT ms.id::text, na.title, nb.title, ms.embedding_similarity
             FROM merge_suggestions ms
             JOIN knowledge_nodes na ON na.id = ms.node_a_id
             JOIN knowledge_nodes nb ON nb.id = ms.node_b_id
-            WHERE ms.project_id = %s AND ms.decision = 'suggested'
+            WHERE ms.project_id = $1::uuid AND ms.decision = 'suggested'
               AND ms.reason <> 'exact normalized name match'
             """,
-            (project_id,),
+            project_id,
         )
-        return [{"id": r[0], "a": r[1], "b": r[2], "sim": float(r[3] or 0)} for r in cur.fetchall()]
+        return [{"id": r[0], "a": r[1], "b": r[2], "sim": float(r[3] or 0)} for r in rows]
+    finally:
+        await conn.close()
+
+def _load_band(project_id: str) -> list[dict]:
+    import asyncio
+    return asyncio.run(_load_band_async(project_id))
 
 def _draw(project_id: str, out_path: str, n_random: int, n_targeted: int, seed: int) -> None:
     rng = random.Random(seed)
@@ -276,4 +283,5 @@ Serena checkpoint; mark B done; update `mem:backlog/daab-entity-resolution-corpu
 - **Spec coverage:** precision gate §6 → T1 + T2 Steps 3-5; apply mechanism §7 → T2 Step 6 (existing `Apply`, degree gate ON); trapdoor §8 → the "do not call /apply until gate passes" constraint; manifest §7/§10 → T2 Step 2 (SQL snapshot, no Go change); consumer window §9 → T2 Step 7; reversibility §10 → un-merge in T2 Step 7; defer hubs §11 → free (degree gate). Step-0 §4 → T2 Step 1.
 - **Verified anchors:** `Apply(projectID, threshold)` = reason-agnostic `ListByProject('suggested')` + `processSuggestion(...,false,...)` gate-on (`apply_suggestions.go:84-95`); `HandleApply` body `{project_id}`, gated `ApplyMode != "apply"` (config threshold); `maxSuggestions=10000` (one call covers 4695); `merge.go` re-points edges + sets `re_embed_pending`; worker auto-calls only `/apply-exact-name`; `_normalize` + `KG_DATABASE_URL` pattern from `classify_corpus_cli.py`. ApplyResult has only counts → manifest is the pre-apply SQL snapshot (no Go change).
 - **No new Go code, no migration, no `merge.go`/`pass2.py` change.** Net new = one Python script + the runbook. This matches B's reality: "run the existing gated path, after a precision gate."
-- **Confirm at execution:** the `is_danger_pair` `_NOISE` stoplist may need tuning after the first `--draw` (if it over/under-flags on the real data) — recall-oriented is intentional; the human is the final gate. The default thresholds (0.95/0.90) are a starting point; tune from the first scored run.
+- **Verified (corrected here):** the repo's Python DB driver is **`asyncpg`** (dep `asyncpg>=0.30`; `classify_corpus_cli.py` uses `asyncpg.connect` + `$1` placeholders) — `_load_band` uses asyncpg async wrapped in `asyncio.run`, NOT psycopg. `_normalize` lowercases + NFC + collapses separators + strips leading honorifics and **keeps diacritics** + splits on space → the `is_danger_pair` tests hold and `_NOISE` matches the diacritic-bearing normalized tokens. The 4695 fuzzy rows all have a valid `proposed_canonical_id` (0 NULL, 0 not-in-pair) → `processSuggestion` validation passes, `Apply` won't error on them (so `errors` empty / `applied ≈ band` is realistic).
+- **Confirm at execution:** the `is_danger_pair` `_NOISE` stoplist may need tuning after the first `--draw` (recall-oriented is intentional; the human is the final gate); the default thresholds (0.95/0.90) are a starting point — tune from the first scored run.
