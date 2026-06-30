@@ -40,7 +40,7 @@ BA-031 resolution merges duplicates **per-document** (ANN blocking surfaces near
 | D1 | **1b is "install the discriminator," not "relax the degree gate."** | The degree gate is ALREADY bypassed for the exact-name band; the real gap is the missing genericness guard. |
 | D2 | **Build A — a corpus-global name-grouping scan** (not filter existing rows). | Step-0 measured **0 parked exact-name suggestions** (all `applied`); survivors never co-blocked → a fresh `GROUP BY _normalize(name)` scan is required. |
 | D3 | **Hybrid discriminator, fail-safe (deny-and-default-to-review).** | Deterministic for clear buckets; LLM one-shot for the ambiguous residual (which holds the majority of value). Anything not positively cleared → `needs_review`, never silent merge. |
-| D4 | **Distinct reason string + apply-path genericness guard** (fix the footgun). | 1b candidates MUST NOT use `reason='exact normalized name match'` (the worker would auto-apply them gate-bypassed before the discriminator runs). |
+| D4 | **Distinct reason string + producer-side genericness guard** (fix the footgun). | 1b candidates MUST NOT use `reason='exact normalized name match'` (the worker would auto-apply them gate-bypassed before the discriminator runs). The guard lives in the Python producer (`rules.py`, where `_normalize` is), not the Go apply path — avoids `_normalize` drift (D7). |
 | D5 | **One-time backfill + resident lightweight guard.** | Backfill the current corpus; install a cheap denylist lookup in the apply path so future ingestion can't re-accumulate the trap. |
 | D6 | **Top-degree hubs reviewed by a human even when classified `specific`.** | Blast radius + homonym risk ("Công ty TNHH ABC" could be two firms) scale with degree. Folded into the manifest-review danger strata. |
 | D7 | **Reuse `_normalize`, `merge.go`/`unmerge.go`/`merge_undo`** — do not rewrite merge/normalization. | Match 1a's notion of "same name"; reuse the byte-reversible merge contract. |
@@ -89,12 +89,14 @@ Go: ApplyHubNameMerges(projectID, dryRun)   ← sibling of ApplyExactNameMerges
   dryRun → emit MANIFEST (group, canonical, members, degrees, projected connectivity-gain); apply nothing
   apply → reuse merge.go (reversible) ; bypassDegreeGate for cleared specifics ; record manifest
 
-Go: apply-path genericness guard (footgun fix)
-  ApplyExactNameMerges / ListExactNameSuggestions consult entity_name_classification:
-    skip any name classified 'generic' ; route 'uncertain' to needs_review (never auto-merge)
+Python producer guard (footgun fix — at the SOURCE, where _normalize lives)
+  rules.py exact-name decision consults entity_name_classification (by normalized_name):
+    'specific' → emit suggestion ; 'generic' → skip ; 'uncertain'/absent → needs_review (fail-safe)
+  ⟹ the existing `reason='exact normalized name match'` path stops producing generic suggestions,
+     so the worker's /apply-exact-name never receives a generic to auto-merge.
 ```
 
-Two reusable units: a **classification artifact** (per-name, auditable) and a **discriminator-gated apply** (reuses existing merge). The corpus scan and `_normalize` live in Python (where `_normalize` is); the merge apply lives in Go (where `merge.go` is) — mirroring the existing producer/apply split.
+Two reusable units: a **classification artifact** (per-name, auditable) and a **discriminator-gated apply** (reuses existing pairwise merge). The corpus scan, `_normalize`, AND the genericness guard all live in **Python** (where `_normalize` is); the merge apply lives in Go (where `merge.go` is) — mirroring the existing producer/apply split. The guard is at production, NOT the Go apply path, so Go never re-implements `_normalize` (D7) and the footgun is closed at the source.
 
 ## 6. The discriminator
 
@@ -113,14 +115,16 @@ Classify each residual normalized name into `{specific | generic | uncertain}`. 
 ## 7. The merge job
 
 - **Corpus-global scan** (Python): `GROUP BY _normalize(title)` over `node_type='concept'` (active, non-archived), groups size>1. Reuse `_normalize` exactly (D7).
-- **Candidate emission** (Python): for `specific` groups, write `merge_suggestions` rows with `reason='exact-name hub merge candidate'` (distinct — D4), `decision='suggested'`, a chosen `proposed_canonical_id` (e.g. highest-degree or earliest-created member; deterministic tiebreak).
+- **Candidate emission** (Python): for `specific` groups, pick one canonical (highest-degree, tiebreak earliest-created — deterministic) and write **N−1 pairwise `merge_suggestions` rows** (each non-canonical member paired with the canonical), `reason='exact-name hub merge candidate'` (distinct — D4), `decision='suggested'`, `proposed_canonical_id`=the canonical. `processSuggestion` is pairwise and already chain-drains via `ResolveLiveCanonical` (apply_suggestions.go:156-172), so the N−1 rows collapse the group correctly even as earlier rows in the batch supersede endpoints.
 - **Apply** (Go `ApplyHubNameMerges`): lists the distinct-reason candidates whose name class=`specific`; `dryRun` emits the manifest; apply reuses `merge.go` (reversible), `bypassDegreeGate=true` for cleared specifics, writes each merge to a retained **manifest** (group → canonical, members, degrees, projected connectivity-gain).
 - **Idempotent + re-runnable** — re-running skips already-merged groups (members carry `merged_into`/`superseded_by_merge`).
 
 ## 8. Footgun fix (mandatory)
 
-1. **Distinct reason string** for 1b candidates (§7) — the worker's `/apply-exact-name` (filters `reason='exact normalized name match'`) never touches them.
-2. **Apply-path genericness guard:** `ListExactNameSuggestions` / `processSuggestion` consult `entity_name_classification` and **skip names classified `generic`**, route `uncertain` to `needs_review`. This closes the live footgun for the existing `exact normalized name match` path too, so future ingestion cannot silently merge "dự án". Resident cost = one indexed lookup per candidate.
+1. **Distinct reason string** for 1b candidates (§7) — the worker's `/apply-exact-name` (filters `reason='exact normalized name match'`) never touches them; only 1b's own discriminator-gated `ApplyHubNameMerges` does.
+2. **Producer-side genericness guard (at the source, in Python):** the `rules.py` exact-name decision consults `entity_name_classification` (by `normalized_name`, which it already computes via `_normalize`) and **does NOT emit a `reason='exact normalized name match'` suggestion for a `generic` name** (routes `uncertain`/absent to `needs_review`). So the existing path stops producing generic exact-name suggestions, and the worker's `/apply-exact-name` can never receive a generic to auto-merge. The guard is in Python (NOT the Go apply path) so `_normalize` is never re-implemented in Go (D7). Resident cost = one indexed lookup in the producer.
+
+   *(Defense-in-depth note: a thin Go check in `ApplyExactNameMerges` is intentionally NOT added — it would require Go to normalize names to look up the class, reintroducing the `_normalize`-drift risk D7 forbids. The single source-side guard is sufficient because every `exact normalized name match` suggestion originates in `rules.py`.)*
 
 ## 9. Rollout & safety
 
@@ -136,7 +140,7 @@ Classify each residual normalized name into `{specific | generic | uncertain}`. 
 
 ## 10. Ongoing guard (resident, lightweight)
 
-The `entity_name_classification` table is resident. The apply-path guard (§8.2) makes future ingestion fail-safe: known-`generic` names never merge; names not positively cleared route to `needs_review`. No heavy classification at ingest — a list lookup + a review queue. New unseen names accumulate in `needs_review`; a periodic (manual) re-run of the classification job clears them.
+The `entity_name_classification` table is resident. The **producer guard (§8.2, in Python `rules.py`)** makes future ingestion fail-safe: known-`generic` names never produce an auto-mergeable exact-name suggestion; names not positively cleared route to `needs_review`. No heavy classification at ingest — a list lookup + a review queue. New unseen names accumulate in `needs_review`; a periodic (manual) re-run of the classification job clears them.
 
 ## 11. Deferred — follow-ups
 
@@ -159,16 +163,16 @@ The `entity_name_classification` table is resident. The apply-path guard (§8.2)
 - Candidate rows use `reason='exact-name hub merge candidate'` (NOT the footgun reason).
 - `ApplyHubNameMerges(dryRun)` emits a manifest and applies nothing; non-dryRun applies + records manifest.
 - Idempotent: second run merges nothing further.
-- **Footgun regression:** `ApplyExactNameMerges` skips a name classified `generic` (route `uncertain` to needs_review) — a generic exact-name pair is NOT auto-merged.
+- **Footgun regression (Python producer):** the `rules.py` exact-name decision does NOT emit a `reason='exact normalized name match'` suggestion for a name classified `generic` (routes `uncertain`/absent to `needs_review`) — so a generic exact-name pair never reaches the worker's auto-apply.
 - Un-merge restores byte-equivalent.
 
 **Connectivity (integration):** after merging a `specific` group spanning 2 documents, the two documents share a canonical node (a cross-document path exists that did not before).
 
 ## 13. Files touched (anticipated)
 
-- `ennam.kg.python/.../resolution/` — new `classify_corpus_names` + `emit_hub_merge_candidates` (reuse `_normalize`, `rules.py`); CLI entrypoint; deterministic bucket rules + LLM classification.
+- `ennam.kg.python/.../resolution/` — new `classify_corpus_names` + `emit_hub_merge_candidates` (reuse `_normalize`, `rules.py`); CLI entrypoint; deterministic bucket rules + LLM classification. **Plus the producer guard in `rules.py`/`pass2`** (exact-name decision consults `entity_name_classification`).
 - `ennam.kg.go/db/migrations/000074_entity_name_classification.{up,down}.sql` — the artifact table (current head is `000073`; re-verify at implementation).
 - `ennam.kg.go/internal/store/` — `entity_name_classification` store + a `ListHubMergeCandidates` (clone of `ListExactNameSuggestions` with the distinct reason + class join).
-- `ennam.kg.go/internal/service/apply_suggestions.go` — `ApplyHubNameMerges` (sibling; manifest + dryRun) + insert the genericness guard into `ApplyExactNameMerges`/`processSuggestion`.
+- `ennam.kg.go/internal/service/apply_suggestions.go` — `ApplyHubNameMerges` (sibling of `ApplyExactNameMerges`; manifest + dryRun; reuses `processSuggestion`). No genericness check added here — the guard is producer-side (Python, §8.2).
 - `ennam.kg.go/internal/service/merge.go`/`unmerge.go` — reused, not modified (unless the manifest needs a hook).
 - Tests alongside each.
