@@ -140,9 +140,15 @@ type RelatedDoc struct { RelatedDocumentID, TopSharedEntity, TopSharedEntityID s
 
 Before the ranked `doc → related docs` mode is blessed as a trusted default, run a **pre-registered falsifiable check**: sample top-N ranked pairs across several seed docs; for each, surface the driving `top_shared_entity`. **Pass = the connector is a *specific* entity (not one of the ubiquitous "Tỉnh Trà Vinh"/"UBND tỉnh Trà Vinh"/"Ban Quản lý…"/"Hàm Giang"-as-province-blob) for ≥ a pre-registered X% (e.g. 80%) of sampled pairs.** A blob-dominated top = NO-GO (revisit ranking) — exactly the BA-033 discipline. (The §4 sample already passes; this gate formalizes it on a larger sample.) The **pairwise mode ships without a gate** (deterministic raw evidence).
 
-## 9. RBAC
+## 9. RBAC (security-critical — must NOT inherit the path-project gap)
 
-Project-scoped: both methods take `projectID` and filter `mentions.project_id`/node `project_id`. The handler resolves project + validates the caller's access to it (mirror existing document handlers / the path-project gate). No cross-project surface. Documents are not user-scoped, so no per-user filter (unlike agent_context).
+Project-scoped: both store methods take `projectID` and filter `mentions.project_id` / node `project_id`.
+
+**Mandatory path-project access check.** The `ProjectID` middleware only validates the project in the **header/query**, NOT the path `{projectId}` (documented at `handler/document.go:218-221`; the known `mem:be-path-project-access-gap`). So the handler MUST explicitly call **`requireProjectAccess(w, r, h.roleResolver, projectID)`** (`handler/authz.go:35`) on the path `projectId` before querying — otherwise a caller scoped to project A could read project B's relatedness via `/projects/{B}/...`. This requires injecting a `ProjectRoleResolverFunc` (`h.roleResolver`) into the handler, as the other authz'd handlers do (e.g. `concept.go:74`, `datasource.go`).
+
+**documentId IDOR is bounded but verified.** Because the `dm` CTE filters `project_id = $projectID`, a `documentId` (or `with_document_id`) from another project simply isn't in the universe → the query returns empty, no leak. Still, the handler SHOULD 404 when the document is not in the authorized project (mirror `requireNodeProjectAccess`, `authz.go:68`) for clean semantics rather than a silent empty result.
+
+No cross-project surface. Documents are not user-scoped, so no per-user filter (unlike agent_context).
 
 ## 10. Performance
 
@@ -165,7 +171,8 @@ The IDF CTE recomputes per query. At current scale (158 docs, ~1500 concept ment
 - Determinism: stable order via `(max_idf desc, shared_count desc, id)`.
 
 **Handler (integration + unit):**
-- Project-scope: a caller can't get related docs across projects.
+- **Path-project access (security):** a caller NOT a member of the path `{projectId}` is denied (403/404) before any query — `requireProjectAccess` is invoked (regression for `mem:be-path-project-access-gap`).
+- A `documentId` from another project (within an authorized path project) returns empty / 404, never another project's data.
 - `with_document_id` switches to pairwise; absent → ranked.
 
 **MCP:** schema present + routed; tool-count drift tests updated.
@@ -173,6 +180,6 @@ The IDF CTE recomputes per query. At current scale (158 docs, ~1500 concept ment
 ## 13. Files touched (anticipated)
 
 - `internal/store/graph_retrieve.go` — `SharedDocumentEntities` + `RelatedDocuments` + `SharedEntity`/`RelatedDoc` structs (+ integration tests).
-- `internal/handler/related_documents.go` (new) — REST handlers + route registration (+ tests); wire in `cmd/kg-server/main.go`.
+- `internal/handler/related_documents.go` (new) — REST handlers + route registration + **`requireProjectAccess` path-gate (§9)**; the handler takes a `ProjectRoleResolverFunc` (mirror `concept.go`/`datasource.go`). Wire it + the resolver in `cmd/kg-server/main.go` (+ tests, incl. a cross-project access-denied case).
 - `internal/bridge/schema.go` + `client.go` — `kg_related_documents` tool + route (+ count-drift test bumps).
 - No migration (read-only over existing graph). No service-layer pipeline. No LLM.
