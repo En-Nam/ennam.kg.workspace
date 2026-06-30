@@ -263,7 +263,6 @@ package handler
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -296,7 +295,6 @@ func TestNameClassification_BatchUpsert(t *testing.T) {
 	if len(fs.upserts) != 2 || fs.upserts[0].ProjectID != "p1" || fs.upserts[0].Class != "generic" {
 		t.Errorf("upserts not wired: %+v", fs.upserts)
 	}
-	_ = json.Marshal // keep import if unused
 }
 ```
 
@@ -1131,6 +1129,8 @@ SELECT decision, count(*) FROM merge_suggestions WHERE reason='exact normalized 
 -- bucket the duplicate groups (org_marker / bare_geo / short / residual) + residual node-mass
 ```
 Expected: confirm Build A (≈0 parked exact-name) and the bucket sizes that size the review tiers.
+
+**Scope note (retroactive audit):** 1a already auto-applied ~5725 exact-name merges with NO genericness guard. The big generic groups ("dự án" ×40) *survived unmerged* (they didn't co-block), so the retroactive risk is low — but it is NOT zero. After the artifact is built (Step 2), optionally spot-check: `SELECT … FROM <applied merges> JOIN entity_name_classification c ON c.normalized_name=… WHERE c.class='generic'` — any hit is a wrong 1a merge to `unmerge`. This is a low-priority follow-up, separate from 1b's forward fix; flag it, don't block on it.
 
 - [ ] **Step 2: Build the classification artifact**
 
