@@ -1,39 +1,40 @@
 # Backlog — BA-033 Slice 2 readiness path (AAAA-independent, post local-upload)
 
-**Filed:** 2026-06-29 · **Supersedes the blocking framing in** `mem:decisions/ba033-slice2-deferred` (that analysis still valid; this is the actionable re-entry path now that corpus seeding no longer needs AAAA). **Branch:** `task/implement_docs_sync`.
+**Filed:** 2026-06-29 · **Gate A empirically measured 2026-06-29 → RED (structural).** Supersedes the blocking framing in `mem:decisions/ba033-slice2-deferred` (analysis still valid; this is the actionable re-entry path). **Branch:** `task/implement_docs_sync`.
 
-## Key change that unblocks the corpus gate
-- **Local upload feeds the OCR pipeline directly** → corpus seeding NO LONGER depends on AAAA wiring Supabase. Path: `POST /api/v1/projects/{projectId}/upload` (`ennam.kg.go/internal/handler/ingest_upload.go`) → `ennam.kg.python/.../ingestion/adapters/files.py` (tiered pypdf→Tesseract `vie`+RapidOCR, VN NFC-normalize — already shipped).
-- ⟹ **planB Supabase connector = DEPRIORITIZED** (only needed for automated pull of the 216 Supabase docs; manual/script local upload is enough to seed any corpus). Off the critical path.
+## Key change: corpus seeding no longer needs AAAA
+- **Local upload feeds the OCR pipeline directly** → seeding no longer depends on AAAA/Supabase. Path: `POST /api/v1/projects/{projectId}/upload` (`ennam.kg.go/internal/handler/ingest_upload.go`) → `ennam.kg.python/.../ingestion/adapters/files.py` (tiered pypdf→Tesseract `vie`+RapidOCR, VN-normalize — shipped).
+- ⟹ **planB Supabase connector = DEPRIORITIZED**, off critical path (only needed for automated pull of the 216 Supabase docs).
 
-## Current corpus reality (verified on :5433, 2026-06-29)
-- `knowledge_nodes`: 31 `document`, 155 `document_section`, 214 `document_chunk`, **1 project** = the **Cảng Định An** corpus.
-- This is the SAME corpus that made **Slice 1 NO-GO** (entity-blob: every doc shares entities) and **Slice 2 defer** (concept-EXCLUDED subgraph = 35 edges / 109 nodes / 36% connected / 70 singletons; ~81% of relations run through `concept`).
-- ⟹ "can seed via upload" (✅ mechanism) ≠ "have a corpus that passes readiness" (❌ current one already failed twice).
+## ⚡ Gate A — EMPIRICALLY MEASURED (2026-06-29, :5433) → RED, structural
+Corpus grew since the deferral: now **~176 documents across ~5 projects** (big new project `592c7ff7…` = 145 docs / 2681 nodes; old Định An `a0000000…` = 687 nodes). Nodes: 1793 concept, 840 chunk, 533 section, 176 document, 28 architecture. **4648 edges total.**
 
-## Slice 2 has TWO independent gates — BOTH must pass before building
+**The ONLY edge types in the whole DB:**
+- `mentions`: document→concept (1793) + document_section→concept (1484) — a **bipartite** doc↔concept graph.
+- `contains_section`: document hierarchy (1371).
+- **concept↔concept = 0 · `related_to` (FR-001 chunk-similarity) = 0 · entity↔entity = 0.**
 
-### Gate A — Empirical (corpus/graph). Now testable locally, cheap, decisive.
-The gate that killed Slice 1 + Slice 2 twice. Two ways to make the graph dense enough to cluster:
-1. **(cheapest, do FIRST) Resolve OQ-033-8 toward "include concept" and re-measure on the existing 31 docs.** Concept-excluded gave 35 edges; since ~81% of relations run through `concept`, the concept-INCLUDED graph may already be dense enough to form meaningful communities. This is analysis only, NO build. Run a density/connectivity + community-formation measure (concept-included) + a small cross-doc retrieval sanity.
-2. If still too sparse → **upload more same-domain docs** (more Định An, or another coherent single-domain set) via local upload → re-measure.
+⟹ **Community detection has NOTHING to cluster** (concept subgraph = 1793 singletons). The bigger corpus did NOT help — the gap is **edge TYPE (entity↔entity), not node count**. This is more fundamental than OQ-033-8 (concept include/exclude is moot when concepts have no inter-concept edges).
 
-### Gate B — Product (named consumer). NOT unblocked by local upload — the DEEPEST blocker.
-- `kg_global_retrieve` / community-summary currently have **NO valid caller**: LAAM (Qwen 8B) forbids LLM-summary-on-read; AAAA multi-tenant forbids cross-deal global retrieval (leak by construction).
-- Must **define one valid consumer** or do NOT build (YAGNI — twice corpus-failed + no caller).
-- Candidate that does NOT violate LAAM/AAAA constraints: a **DAAB-internal admin "global themes" dashboard** (human-facing community summaries, not an 8B agent, not cross-deal).
-- Also need a **runnable falsifiability gate** (community-global beats hybrid + entity-neighborhood on corpus-level queries).
+**A path EXISTS but is a NEW prerequisite (not in code):** derive a **co-occurrence projection** (concept↔concept edge when co-mentioned in a section). Measured potential: **~11,523 co-occurrence edges over 1774 concepts** (avg ~13 degree → dense/clusterable); **82.9% of concepts span >1 section**.
+⚠️ Risk: avg **11.87 concepts/section** + 82.9% ubiquity ⟹ likely an **"entity-blob hairball"** (ubiquitous concepts connect everything → poor community separation — same root cause as Slice 1 NO-GO). The projection MUST be weighted/pruned (TF-IDF-style weights or drop ubiquitous concepts), then community quality re-measured before trusting it.
+
+## Slice 2 gates — BOTH must pass before building
+### Gate A — Empirical (corpus/graph). Currently RED (no entity↔entity edges).
+Prerequisite to even make it measurable: build an entity↔entity edge layer — cheapest = deterministic **co-occurrence projection** from existing `mentions`; alternatives = BA-031 relation extraction, or BA-033 FR-001 chunk-similarity links (`document_chunk related_to document_chunk`, 0 today). THEN measure density/clustering + community quality (watch the hairball).
+### Gate B — Product (named consumer). RED, NOT unblocked by local upload — deepest blocker.
+`kg_global_retrieve`/community-summary have **no valid caller**: LAAM (Qwen 8B) forbids LLM-summary-on-read; AAAA multi-tenant forbids cross-deal global. Candidate that fits constraints: a **DAAB-internal admin "global themes" dashboard** (human-facing, not 8B, not cross-deal). Also need a **runnable falsifiability gate**.
 
 ## Steps (ordered)
-1. **(do first, cheap)** Gate A re-measure: resolve OQ-033-8 = include-concept → measure graph density/clustering + cross-doc retrieval sanity on the current 31 docs. Empirical go/no-go.
-2. **(parallel)** Gate B: decide a real consumer (e.g. admin global-themes dashboard) + write the falsifiability gate. No consumer ⟹ STOP.
-3. If A weak on current corpus → upload more same-domain docs locally → re-measure A.
-4. Only if **A and B both green** → build Slice 2: `community` node type + `member_of`/`summarised_as` edges (OQ-033-1 migration + config edge rule) + batch Leiden/Louvain jobengine job + one community summary per cluster via BA-009 + `kg_global_retrieve` REST+MCP. Per BA-033 doc FR-002/003/005.
+1. **NEW prerequisite (build):** entity↔entity edge layer — start with deterministic co-occurrence projection (concept↔concept from shared-section mentions), weighted/pruned to avoid the hairball.
+2. **Gate A re-measure:** density/connectivity + community-formation quality on the projected graph (+ cross-doc retrieval sanity). Empirical go/no-go.
+3. **(parallel) Gate B:** decide a real consumer (e.g. admin global-themes dashboard) + write the falsifiability gate. No consumer ⟹ STOP.
+4. Only if **A and B both green** → build Slice 2: `community` node type + `member_of`/`summarised_as` edges (OQ-033-1 migration + config edge rule) + batch Leiden/Louvain jobengine job + one summary/cluster via BA-009 + `kg_global_retrieve` REST+MCP (FR-002/003/005).
 
-## Re-entry conditions (from the deferral decision — all 4)
-coherent single-domain multi-doc corpus · resolve OQ-033-8 · named consumer · runnable falsifiability gate.
+## Re-entry conditions (deferral decision — all 4)
+coherent corpus + **entity↔entity edges (NEW — currently absent)** + resolve OQ-033-8 + named consumer + runnable falsifiability gate.
 
 ## See also (other unblocked DAAB work, not Slice 2)
-- `mem:backlog/daab-kg-search-sessions-followups` — incl. **`monitoring` scope decision** (decision record + threat model) to let LAAM consume `kg_search_sessions` cross-user. Highest-value unblocked keystone item; independent of Slice 2.
-- `mem:backlog/agent-context-retention-followups`. · `mem:backlog/sse-block-ordering-bug` (P1).
-- DAAB Phase-1 keystone (RBAC + retention/ranking + kg_search_sessions) = COMPLETE; branch not yet merged to main.
+- `mem:backlog/daab-kg-search-sessions-followups` — **`monitoring` scope decision** to let LAAM consume `kg_search_sessions` cross-user. Highest-value unblocked keystone item, independent of Slice 2.
+- `mem:backlog/agent-context-retention-followups` · `mem:backlog/sse-block-ordering-bug` (P1).
+- DAAB Phase-1 keystone (RBAC + retention/ranking + kg_search_sessions) = COMPLETE; branch not merged to main.
