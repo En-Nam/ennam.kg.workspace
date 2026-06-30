@@ -211,6 +211,7 @@ services:
       # BA-031 Phase C C.2: batch LLM verify (5-10x fewer calls). Default off (=1);
       # enabled here to speed Pass-2 resolution on large docs.
       RESOLUTION_VERIFY_BATCH_SIZE: ${RESOLUTION_VERIFY_BATCH_SIZE:-6}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
