@@ -127,7 +127,9 @@ Reuse `fuzzy_sample_cli.py`: add a `--decision` param to `_load_band_async` (tar
 
 ## 10. Re-embed / consumer orchestration
 
-The apply path sets no `re_embed_pending`, but a merge can change `canonical_name` (longer title wins) → the canonical's embedding is stale. So, as an explicit orchestrated step after the drain: flag `re_embed_pending` for every applied fuzzy-hub canonical (or invoke the re-embed worker path) and recompute/warm Step-2 related-documents (query-time IDF self-updates, but verify) **before AAA/LAAM read**. Bound the consumer exposure window.
+**Two distinct consumer effects — keep them separate:**
+- **Step-2 related-documents (the GOAL) needs NO re-embed.** It is graph/IDF at query time over `mentions` edges; the merge re-points edges immediately, so the canonical accretes the aliases' document-mentions and Step-2 relatedness **improves the moment the merge commits** (verify/warm, but nothing to recompute offline).
+- **Embedding-based consumers DO need a re-embed.** The apply path sets no `re_embed_pending`, but a merge can change `canonical_name` (longer title wins) → the canonical's embedding goes stale. This affects `kg_recall`'s semantic branch, the BA-033 graph retriever, and any semantic search — NOT Step-2. So, as an explicit orchestrated step after the drain: set `re_embed_pending=true` on every applied fuzzy-hub canonical (a post-apply SQL update / merge-with-`MergedDescription`) so the Python embed worker (the transient-flag consumer) recomputes their embeddings **before embedding-based consumers read**. Bound the exposure window.
 
 ## 11. Reversibility / rollback
 
