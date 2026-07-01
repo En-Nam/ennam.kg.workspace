@@ -179,8 +179,9 @@ git commit -m "feat(daab): de-diacritic partition of fuzzy-hub needs_review (typ
 **Files:**
 - Modify: `ennam.kg.go/internal/service/apply_suggestions.go`
 - Modify: `ennam.kg.go/internal/handler/apply_suggestions.go` (+ `Applier` interface + route)
-- Modify: `ennam.kg.go/cmd/kg-server/main.go` (no change if the same handler/applier is reused — verify)
 - Test: `ennam.kg.go/internal/service/apply_suggestions_test.go` (extend)
+- Test: `ennam.kg.go/internal/handler/apply_suggestions_test.go` (**must** extend `fakeApplier` with the new method + a handler test)
+- **`cmd/kg-server/main.go`: NO change** — verified (:427-428) the handler/service is already wired; the new route registers inside `RegisterRoutes`.
 
 **Interfaces:**
 - Produces: `(*ApplySuggestionsService).ApplyReviewClearedMerges(ctx, projectID string, dryRun bool) (ApplyResult, HubMergeManifest, error)` — clone of `ApplyHubNameMerges` sourcing `ListByProject(…, "review_cleared", …)`, with a live-degree **max-blast ceiling** that routes a too-high-degree canonical back to `needs_review`.
@@ -256,7 +257,12 @@ func (s *ApplySuggestionsService) ApplyReviewClearedMerges(ctx context.Context, 
 }
 ```
 
-- [ ] **Step 4: handler + route** — in `handler/apply_suggestions.go`: add `ApplyReviewClearedMerges(...)` to the `Applier` interface (:21); add `HandleApplyReviewCleared` mirroring `HandleApplyHubName:124` (decode `{project_id, dry_run}`, `authorizeBodyProjectID`, call the service, return `{applied, needs_review, errors, manifest}` reusing `applyHubNameResponse` shape); register `mux.HandleFunc("POST /api/v1/internal/resolution/apply-review-cleared", h.HandleApplyReviewCleared)`. No `main.go` change if the same `ApplySuggestionsHandler`/service instance is reused (verify — the applier is the same `ApplySuggestionsService`).
+- [ ] **Step 4: handler + route + fake** — in `handler/apply_suggestions.go`:
+  - Add `ApplyReviewClearedMerges(ctx context.Context, projectID string, dryRun bool) (service.ApplyResult, service.HubMergeManifest, error)` to the `Applier` interface (:21).
+  - **⚠️ MUST also add it to `fakeApplier`** (`apply_suggestions_test.go:19`) — else the handler test package won't compile (fakeApplier no longer satisfies `Applier`). Mirror the existing `func (f *fakeApplier) ApplyHubNameMerges(...)` fake at :49.
+  - Add `HandleApplyReviewCleared` mirroring `HandleApplyHubName:124` (decode `{project_id, dry_run}`, `authorizeBodyProjectID`, call the service, return `{applied, needs_review, errors, manifest}` reusing the `applyHubNameResponse` shape).
+  - Register in `RegisterRoutes` (:54): `mux.HandleFunc("POST /api/v1/internal/resolution/apply-review-cleared", h.HandleApplyReviewCleared)`.
+  - **No `main.go` change** — verified: `applyHandler := NewApplySuggestionsHandler(applySvc, …)` + `applyHandler.RegisterRoutes(apiMux)` already wire the same handler/service (:427-428); the new route registers inside `RegisterRoutes`.
 
 - [ ] **Step 5: run + build**
 ```bash
@@ -266,7 +272,7 @@ go build ./... && go test ./internal/handler/ -run ApplyReviewCleared
 
 - [ ] **Step 6: commit**
 ```bash
-git add internal/service/apply_suggestions.go internal/handler/apply_suggestions.go cmd/kg-server/main.go internal/service/apply_suggestions_test.go
+git add internal/service/apply_suggestions.go internal/service/apply_suggestions_test.go internal/handler/apply_suggestions.go internal/handler/apply_suggestions_test.go
 git commit -m "feat(daab): ApplyReviewClearedMerges (reviewed fuzzy-hub bypass applier, max-blast ceiling)"
 ```
 
