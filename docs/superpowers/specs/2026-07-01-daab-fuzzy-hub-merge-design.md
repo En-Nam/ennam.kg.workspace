@@ -84,7 +84,7 @@ Net new code: one migration, a Python partition step (reuse `_normalize` + a `de
 
 ## 6. The discriminator (auto-clear gate)
 
-**`de_diacritic_base(name)`** = `_normalize(name)` (NFC + lowercase + collapse-sep + strip-honorific) then **strip Unicode combining marks** (NFD → drop `Mn` category → recompose). Two names **auto-clear** iff `de_diacritic_base(a) == de_diacritic_base(b)`.
+**`de_diacritic_base(name)`** = `_normalize(name)` (NFC + lowercase + collapse-sep + strip-honorific) then **strip Unicode combining marks** (NFD → drop `Mn` category → recompose) **AND explicitly map `đ→d`** (and `Đ→D`). The `đ`/`Đ` step is REQUIRED and separate: `đ` (U+0111) is a distinct base letter, NOT `d`+combining, so NFD alone does NOT fold it — verified. Without it, an `đ↔d` OCR typo ("Định An" ↔ "Dinh An") would over-route to human review instead of auto-clearing. Two names **auto-clear** iff `de_diacritic_base(a) == de_diacritic_base(b)`.
 
 - "Hàm Giang"/"Hâm Giang" → "ham giang" == "ham giang" → **auto-clear** (typo).
 - "Ban Quản lý…"/"Ban Quản lỷ…" → "…ly…" == "…ly…" → **auto-clear**.
@@ -142,7 +142,7 @@ The apply path sets no `re_embed_pending`, but a merge can change `canonical_nam
 
 ## 13. Test plan
 
-- **Discriminator (Python unit):** `de_diacritic_base` strips combining marks; auto-clear pairs equal ("Hàm/Hâm Giang", "lý/lỷ"), danger pairs differ ("Trà Vinh"/"Sóc Trăng", digit diff, OCR-garble). Confirm `is_danger_pair` is NOT used as the auto-clear gate (it keeps diacritics).
+- **Discriminator (Python unit):** `de_diacritic_base` strips combining marks AND folds `đ→d` (assert "Định An"→"dinh an", i.e. `đ` folded — NFD alone leaves it "đinh an"); auto-clear pairs equal ("Hàm/Hâm Giang", "lý/lỷ", "Định/Dinh"), danger pairs differ ("Trà Vinh"/"Sóc Trăng", digit diff, OCR-garble "Xay d\lllg"). Confirm `is_danger_pair` is NOT used as the auto-clear gate (it keeps diacritics → would over-flag typos).
 - **Partition step (integration):** seed needs_review fuzzy rows; typo pairs flip to `review_cleared`, danger pairs stay `needs_review`.
 - **Migration:** `000075` applies (`review_cleared` accepted), down reverts (after resetting any review_cleared rows).
 - **Applier (Go integration):** `ApplyReviewClearedMerges(dryRun=true)` emits a per-canonical manifest, applies nothing; `dryRun=false` merges via `processSuggestion` bypass, suggestion → `applied`, `mergeOpID` captured; a canonical above `fuzzyHubCeiling` routes back to `needs_review`; un-merge restores byte-equivalent.
