@@ -1,40 +1,23 @@
-# Backlog — BA-033 Slice 2 readiness path (AAAA-independent, post local-upload)
+# Backlog — BA-033 Slice 2 readiness path
 
-**Filed:** 2026-06-29 · **Gate A empirically measured 2026-06-29 → RED (structural).** Supersedes the blocking framing in `mem:decisions/ba033-slice2-deferred` (analysis still valid; this is the actionable re-entry path). **Branch:** `task/implement_docs_sync`.
+**UPDATED 2026-07-03: Gate A RE-MEASURED → GREEN.** (Supersedes the 2026-06-29 RED below — that measurement is stale.) **Branch:** `task/implement_docs_sync`.
 
-## Key change: corpus seeding no longer needs AAAA
-- **Local upload feeds the OCR pipeline directly** → seeding no longer depends on AAAA/Supabase. Path: `POST /api/v1/projects/{projectId}/upload` (`ennam.kg.go/internal/handler/ingest_upload.go`) → `ennam.kg.python/.../ingestion/adapters/files.py` (tiered pypdf→Tesseract `vie`+RapidOCR, VN-normalize — shipped).
-- ⟹ **planB Supabase connector = DEPRIORITIZED**, off critical path (only needed for automated pull of the 216 Supabase docs).
+## ⚡ Gate A — RE-MEASURED 2026-07-03 (:5433, project 592c7ff7…) → GREEN
+Since the 2026-06-29 RED, **BA-031 relation extraction created entity↔entity edges** — the old "concept↔concept=0, entity↔entity=0" blocker is GONE.
+- Live edge types now include `related_to` (concept↔concept 182, org↔org 175, org↔concept 163, org↔location 64…), `part_of` (org↔org 139, concept↔concept 125, artifact↔concept 102…), `works_for` (person↔org 188).
+- **entity↔entity subgraph: 2081 edges over 1462 nodes** (of 3083 entity nodes; 1621=53% isolated).
+- **Community spike (networkx louvain, seed 42):** RAW modularity **0.833** (120 comms, 49 non-trivial≥3); PRUNED-generics modularity **0.849** (140 comms, 61 non-trivial, top sizes 135/94/86/82…). Hairball manageable: pruning ~15 generic titles (Công ty, Dự án, Pháp luật, …) breaks the 193→135 blob. Script: scratchpad `gate_a_spike.py`.
+- ⟹ **Strong, well-separated community structure. Gate A no longer blocks slice 2.** Caveat: coverage ~47% (53% entity nodes isolated) → global themes cover ~half the entities.
 
-## ⚡ Gate A — EMPIRICALLY MEASURED (2026-06-29, :5433) → RED, structural
-Corpus grew since the deferral: now **~176 documents across ~5 projects** (big new project `592c7ff7…` = 145 docs / 2681 nodes; old Định An `a0000000…` = 687 nodes). Nodes: 1793 concept, 840 chunk, 533 section, 176 document, 28 architecture. **4648 edges total.**
+## Gate B — Product (named consumer). STILL the binding blocker (product decision, not empirical).
+`kg_global_retrieve`/community-summary need a valid caller: LAAM (Qwen 8B) forbids LLM-summary-on-read; AAAA multi-tenant forbids cross-deal global. Candidate that fits: **DAAB-internal admin "global themes" dashboard** (human-facing, not 8B, not cross-deal). With 61 coherent communities measured, this now has real content. **Decide the consumer + a runnable falsifiability gate before building.**
 
-**The ONLY edge types in the whole DB:**
-- `mentions`: document→concept (1793) + document_section→concept (1484) — a **bipartite** doc↔concept graph.
-- `contains_section`: document hierarchy (1371).
-- **concept↔concept = 0 · `related_to` (FR-001 chunk-similarity) = 0 · entity↔entity = 0.**
+## Build path (if Gate B committed)
+`community` node type + `member_of`/`summarised_as` edges (OQ-033-1 migration + config edge rule) + batch Leiden/Louvain jobengine job (prune generic hubs first) + one summary/cluster via BA-009 + `kg_global_retrieve` REST+MCP (FR-002/003/005). OQ-033-8 (concept include/exclude) now measurable — concepts DO have inter-concept edges.
 
-⟹ **Community detection has NOTHING to cluster** (concept subgraph = 1793 singletons). The bigger corpus did NOT help — the gap is **edge TYPE (entity↔entity), not node count**. This is more fundamental than OQ-033-8 (concept include/exclude is moot when concepts have no inter-concept edges).
+## Prior context (2026-06-29, superseded on Gate A)
+Corpus was bipartite doc↔concept then; entity resolution (fuzzy-hub + danger-stratum drains, 2026-07-01/03) merged ~1200 dup entities improving edge density. Local upload feeds OCR directly (AAAA-independent seeding). planB Supabase connector deprioritized.
 
-**A path EXISTS but is a NEW prerequisite (not in code):** derive a **co-occurrence projection** (concept↔concept edge when co-mentioned in a section). Measured potential: **~11,523 co-occurrence edges over 1774 concepts** (avg ~13 degree → dense/clusterable); **82.9% of concepts span >1 section**.
-⚠️ Risk: avg **11.87 concepts/section** + 82.9% ubiquity ⟹ likely an **"entity-blob hairball"** (ubiquitous concepts connect everything → poor community separation — same root cause as Slice 1 NO-GO). The projection MUST be weighted/pruned (TF-IDF-style weights or drop ubiquitous concepts), then community quality re-measured before trusting it.
-
-## Slice 2 gates — BOTH must pass before building
-### Gate A — Empirical (corpus/graph). Currently RED (no entity↔entity edges).
-Prerequisite to even make it measurable: build an entity↔entity edge layer — cheapest = deterministic **co-occurrence projection** from existing `mentions`; alternatives = BA-031 relation extraction, or BA-033 FR-001 chunk-similarity links (`document_chunk related_to document_chunk`, 0 today). THEN measure density/clustering + community quality (watch the hairball).
-### Gate B — Product (named consumer). RED, NOT unblocked by local upload — deepest blocker.
-`kg_global_retrieve`/community-summary have **no valid caller**: LAAM (Qwen 8B) forbids LLM-summary-on-read; AAAA multi-tenant forbids cross-deal global. Candidate that fits constraints: a **DAAB-internal admin "global themes" dashboard** (human-facing, not 8B, not cross-deal). Also need a **runnable falsifiability gate**.
-
-## Steps (ordered)
-1. **NEW prerequisite (build):** entity↔entity edge layer — start with deterministic co-occurrence projection (concept↔concept from shared-section mentions), weighted/pruned to avoid the hairball.
-2. **Gate A re-measure:** density/connectivity + community-formation quality on the projected graph (+ cross-doc retrieval sanity). Empirical go/no-go.
-3. **(parallel) Gate B:** decide a real consumer (e.g. admin global-themes dashboard) + write the falsifiability gate. No consumer ⟹ STOP.
-4. Only if **A and B both green** → build Slice 2: `community` node type + `member_of`/`summarised_as` edges (OQ-033-1 migration + config edge rule) + batch Leiden/Louvain jobengine job + one summary/cluster via BA-009 + `kg_global_retrieve` REST+MCP (FR-002/003/005).
-
-## Re-entry conditions (deferral decision — all 4)
-coherent corpus + **entity↔entity edges (NEW — currently absent)** + resolve OQ-033-8 + named consumer + runnable falsifiability gate.
-
-## See also (other unblocked DAAB work, not Slice 2)
-- `mem:backlog/daab-kg-search-sessions-followups` — **`monitoring` scope decision** to let LAAM consume `kg_search_sessions` cross-user. Highest-value unblocked keystone item, independent of Slice 2.
-- `mem:backlog/agent-context-retention-followups` · `mem:backlog/sse-block-ordering-bug` (P1).
-- DAAB Phase-1 keystone (RBAC + retention/ranking + kg_search_sessions) = COMPLETE; branch not merged to main.
+## See also (unblocked, independent of Slice 2)
+- `mem:backlog/daab-kg-search-sessions-followups` — `monitoring` scope for LAAM cross-user `kg_search_sessions`. Highest-value unblocked keystone, no gates.
+- `mem:backlog/agent-context-retention-followups` · `mem:backlog/sse-block-ordering-bug`.
