@@ -76,7 +76,7 @@ Split because the pieces touch different clauses of the same query and have no i
 - New store fn `TouchRecalled(ctx, ids []string)`:
   `UPDATE agent_context SET last_recalled_at = now() WHERE id = ANY($1) AND is_archived = false AND (last_recalled_at IS NULL OR last_recalled_at < now() - $2::interval)`, ids sorted (`ORDER BY id` semantics) to avoid deadlock ordering against the sweep. **Never** touches `updated_at`.
 - New batched writer (reuse `agent_context_retention.go:48-69` lifecycle): a buffered channel receives top-K id-slices from recall; a single goroutine coalesces and flushes `TouchRecalled` every few seconds (or on buffer threshold). Drop-on-full (best-effort). Joined to server shutdown via the worker's `Stop()`.
-- Recall handler: after building the response, push the **returned top-K ids** (guard `len(ids)==0`) onto the writer's channel — non-blocking, fire-and-forget. Recall's soft-fail-to-empty contract (`handler/agent_context.go:198-203`) is untouched; a writer failure only logs.
+- Recall handler: after building the response, push the **returned top-K ids** (guard `len(ids)==0`) onto the writer's channel — non-blocking, fire-and-forget. Recall's soft-fail-to-empty contract (`handler/agent_context.go:145-147` doc, success return `:203`) is untouched; a writer failure only logs.
 - Throttle `interval` = `const` (default 1h).
 
 ## 6. Testing (TDD)
