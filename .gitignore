@@ -8,6 +8,7 @@
 /.env
 /SECRET.md
 /.claude/settings.local.json
+/kg-service/
 
 # --- Cache / tool dirs ---
 /.ruff_cache/
