@@ -212,6 +212,9 @@ services:
       # enabled here to speed Pass-2 resolution on large docs.
       RESOLUTION_VERIFY_BATCH_SIZE: ${RESOLUTION_VERIFY_BATCH_SIZE:-6}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      # Plan B: fuzzy alias LLM adjudication after each resolve_document job.
+      KG_DATABASE_URL: postgres://ennam_kg:${KG_DB_PASSWORD:-ennam_kg_dev}@postgres:5432/ennam_kg
+      FUZZY_MERGE_DEGREE_THRESHOLD: ${FUZZY_MERGE_DEGREE_THRESHOLD:-0.84}
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
