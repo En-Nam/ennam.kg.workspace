@@ -356,9 +356,12 @@ After `RunRetentionSweep` (after its closing brace ~360) add:
 // TouchRecalled records that the given memories were surfaced by recall, by
 // setting last_recalled_at = now() on rows whose last_recalled_at is NULL or
 // older than minInterval. It writes last_recalled_at ONLY (never updated_at),
-// skips archived rows, and is a no-op on empty ids. ids are sorted so concurrent
-// touches acquire row locks in a consistent order (deadlock avoidance vs the
-// retention sweep). Best-effort: callers log the error and move on.
+// skips archived rows, and is a no-op on empty ids. Best-effort / no-retry:
+// callers log the error and move on. A deadlock with the concurrent retention
+// sweep (rare — hourly sweep vs ~5s flush) simply aborts this touch harmlessly;
+// we do NOT rely on lock ordering (sorting the id array does not control
+// Postgres row-lock order for id = ANY). ids are sorted only for deterministic
+// statement shape.
 func (s *AgentContextStore) TouchRecalled(ctx context.Context, ids []string, minInterval time.Duration) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
@@ -823,6 +826,6 @@ PR title: `feat(daab): populate last_recalled_at on recall (batched, best-effort
 ## Self-Review Notes (author)
 
 - **Spec coverage:** T1 → Task 2 (⑤ doc + cap-exemption test); T2 → Task 1 (Pass B `GREATEST` + doc); T3 → Tasks 4 (TouchRecalled), 5 (writer), 6 (handler), 7 (wiring). §6 test table: keyed-cap (Task 2), usage-recency eviction (Task 1), throttle/archived/updated_at-untouched (Task 4), writer idle/flush (Task 5), recall soft-fail + enqueue (Task 6). Determinism tie-break by `id` is inherent in the `, id` suffix retained in the Pass B ORDER BY (Task 1 Step 4).
-- **Deliberately NOT covered (per spec §7):** recall-ranking change, per-recall goroutine, `updated_at` bump, config knob, functional index, Pass A change. The concurrent sweep-vs-touch integration test (§6 last row) is intentionally deferred: row locks + best-effort touch make it tolerable-by-design (documented in the Task 1 Step 5 comment); add only if a real deadlock is observed.
+- **Deliberately NOT covered (per spec §7):** recall-ranking change, per-recall goroutine, `updated_at` bump, config knob, functional index, Pass A change. The concurrent sweep-vs-touch integration test (§6 last row) is intentionally deferred: best-effort/no-retry touch makes a deadlock a harmless abort (documented in the Task 4 `TouchRecalled` comment); add only if a real deadlock is observed in practice.
 - **Type consistency:** `TouchRecalled(ctx, ids []string, minInterval time.Duration) (int64, error)` is used identically in Task 4 (store), Task 5 (`touchRecaller` interface), and the fake. `Enqueue(ids []string)` matches across writer (Task 5), `recalledEnqueuer` (Task 6), stub, and main wiring (Task 7). `RecallAgentContext` returns `[]store.SearchResult` whose `.ID` is used in Task 6.
 ```

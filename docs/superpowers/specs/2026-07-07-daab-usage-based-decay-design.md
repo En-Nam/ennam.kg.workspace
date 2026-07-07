@@ -73,8 +73,8 @@ Split because the pieces touch different clauses of the same query and have no i
 - Test (integration, synthetic data via `backdate` + a new `setLastRecalled` helper): a bucket over cap where an *old-by-`updated_at`* row has a recent `last_recalled_at` and a *newer-written* row has none → assert Pass B evicts the newer-written, keeps the recalled one.
 
 ### T3 — ① write-half (low risk; idle-when-quiet)
-- New store fn `TouchRecalled(ctx, ids []string)`:
-  `UPDATE agent_context SET last_recalled_at = now() WHERE id = ANY($1) AND is_archived = false AND (last_recalled_at IS NULL OR last_recalled_at < now() - $2::interval)`, ids sorted (`ORDER BY id` semantics) to avoid deadlock ordering against the sweep. **Never** touches `updated_at`.
+- New store fn `TouchRecalled(ctx, ids []string, minInterval time.Duration) (int64, error)`:
+  `UPDATE agent_context SET last_recalled_at = now() WHERE id = ANY($1) AND is_archived = false AND (last_recalled_at IS NULL OR last_recalled_at < now() - make_interval(secs => $2))`, with `$2 = minInterval.Seconds()` (all comparisons in DB time). **Never** touches `updated_at`. Deadlock handling: the touch is **best-effort / no-retry**, so if it ever deadlocks with the sweep (rare — hourly sweep vs ~5s flush, tiny overlap) Postgres aborts the touch, which is logged and dropped. We do **not** rely on lock ordering — sorting the id array does *not* control Postgres's row-lock acquisition order for `id = ANY(...)`; ids are sorted only as a harmless determinism nicety.
 - New batched writer (reuse `agent_context_retention.go:48-69` lifecycle): a buffered channel receives top-K id-slices from recall; a single goroutine coalesces and flushes `TouchRecalled` every few seconds (or on buffer threshold). Drop-on-full (best-effort). Joined to server shutdown via the worker's `Stop()`.
 - Recall handler: after building the response, push the **returned top-K ids** (guard `len(ids)==0`) onto the writer's channel — non-blocking, fire-and-forget. Recall's soft-fail-to-empty contract (`handler/agent_context.go:145-147` doc, success return `:203`) is untouched; a writer failure only logs.
 - Throttle `interval` = `const` (default 1h).
@@ -90,7 +90,7 @@ Split because the pieces touch different clauses of the same query and have no i
 | `TouchRecalled` empty ids = no-op; archived id updates 0 rows | T3 | D5 guards (4.1/4.2) |
 | Batched writer: idle with no input; flushes on input; drop-on-full | T3 | D4 lifecycle |
 | Recall stays 200 + returns results when writer errors (injected) | T3 | soft-fail contract preserved |
-| (integration, `//go:build integration`) concurrent sweep vs touch on overlapping rows → no deadlock, final state is one of the documented-legal outcomes | T3 | §7 race is tolerable, not corrupting |
+| (integration, `//go:build integration`; **optional/deferred**) concurrent sweep vs touch on overlapping rows → no data corruption; the touch either lands or aborts harmlessly (a deadlock is a tolerated best-effort abort, not a failure) | T3 | §7 race is tolerable, not corrupting |
 
 ## 7. Explicitly rejected (with reason)
 
