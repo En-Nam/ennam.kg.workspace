@@ -444,9 +444,19 @@ git commit -m "feat(dedup): KGClient.find_canonical_document_by_content_hash"
 - Consumes: `self._kg.find_canonical_document_by_content_hash(project_id, content_hash)` (Task 3); existing `complete_draft_node`, `_safe_complete`.
 - Produces: on tier-3 hit → draft completed with existing `knowledge_node_id`, `result.reused += 1`, `result.processed += 1`, no `create_node`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1a: Update the shared `_make_mock_kg` helper (REQUIRED — prevents breaking existing tests)**
 
-Append to `test_dedup.py`. Reuse the file's existing helpers (`_make_mock_kg`, `_make_mock_ai`, `_make_existing_canonical_doc`, constants `PROJECT_ID`/`DRAFT_ID`/`EXISTING_NODE_ID`, and the `patch(...)` block from `test_dedup_reuse_skips_create_node_and_embeddings`). Extend `_make_mock_kg` usage by setting the new method on the returned mock inside each test.
+`_make_mock_kg` returns a bare `MagicMock`, so any test that reaches tier-3 (e.g. the existing `test_cache_miss_falls_through_to_create_node`, which misses tier-1 and tier-2) would `await` an auto-created non-awaitable MagicMock and raise `TypeError`. Add a default stub for the new method inside `_make_mock_kg` (near the other `AsyncMock` assignments, ~line 133):
+
+```python
+    kg.find_canonical_document_by_content_hash = AsyncMock(return_value=None)
+```
+
+This defaults tier 3 to "no duplicate" so unrelated tests fall through unchanged; per-test overrides set it explicitly.
+
+- [ ] **Step 1b: Write the failing tests**
+
+Append to `test_dedup.py`. Reuse the file's existing helpers (`_make_mock_kg`, `_make_mock_ai`, `_make_existing_canonical_doc`, constants `PROJECT_ID`/`DRAFT_ID`/`EXISTING_NODE_ID`, and the `patch(...)` block from `test_dedup_reuse_skips_create_node_and_embeddings`). Each test overrides the tier-1/tier-2/tier-3 mocks it needs.
 
 ```python
 # ---------------------------------------------------------------------------
@@ -502,7 +512,7 @@ async def test_global_hash_dedup_lookup_error_fails_draft_no_create():
     kg = _make_mock_kg(existing_doc=None)
     kg.find_canonical_document_by_source = AsyncMock(return_value=None)
     kg.find_canonical_document_by_content_hash = AsyncMock(
-        side_effect=KGClientError("boom", status_code=500)
+        side_effect=KGClientError(500, "boom")  # constructor is (status_code, detail)
     )
     ai = _make_mock_ai()
 
@@ -531,7 +541,7 @@ async def test_global_hash_dedup_lookup_error_fails_draft_no_create():
     assert result.nodes_created == 0
 ```
 
-Ensure `KGClientError` is imported at the top of the test file: `from ennam_kg_indexer.kg_client.client import KGClientError` (match the import path already used in `engine.py`).
+Match the file's convention: import `KGClientError` **locally inside** the error test function (`from ennam_kg_indexer.kg_client.client import KGClientError`), exactly as the existing `test_dedup_lookup_kg_error_fails_draft_no_create_node` does — not at module top.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
