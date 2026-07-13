@@ -193,16 +193,25 @@ uneven across the old duplicate copies.
 1. **Snapshot** current counts (documents, sections, chunks, embeddings, `similar_to` edges) for the project — before/after evidence.
 2. **Delete the document substrate**, reusing existing primitives:
    - Enumerate the project's `document` hub nodes.
-   - For each hub, hard-delete its subtree (`document_section` + `document_chunk`, cascading embeddings) via the existing `DeleteDocumentSubtree` path, then delete the hub node and its `similar_to` edges.
-   - Soft-delete the project's `canonical_document` rows (`SoftDeleteBySource` per source, or a project-scoped soft-delete added only if no existing method fits).
-   The plan may wrap this as a one-shot scripted cleanup (SQL + existing endpoints) rather than new production code, since it runs once.
+   - For each hub, call the existing `DeleteDocumentSubtree(project, hub)` — it hard-deletes the `document_section` + `document_chunk` nodes, cascades embeddings, and deletes the edges touching those chunks (**including the cross-document `similar_to` edges, which live between chunks**). It does **not** delete the hub node itself.
+   - Delete each `document` hub node and any hub-level edges (`has_section` etc.) — no existing store method targets the hub, so the one-shot script does this via direct SQL / the generic node-delete path.
+   - Soft-delete the project's `canonical_document` rows (`SoftDeleteBySource` per source, or a project-scoped soft-delete added only if no existing method fits). Soft-delete is sufficient because tier-3 lookup filters `deleted_at IS NULL`.
+   Because this runs once, the plan wraps it as a scripted cleanup (SQL + existing endpoints), not new production code.
 3. **Re-ingest** `doc_pdf_test/project_1` through the normal upload → queue → worker path (same mechanism used for the Sala Food ingest), with the prevention fix deployed.
 4. **Verify** (success criteria below).
 
-### 4.3 Ordering
+### 4.3 Ordering (two hard constraints)
 
-Prevention ships and is verified **first** (unit + a 2-file re-upload E2E), then cleanup
-re-ingests against the fixed pipeline. Cleanup before the fix would just re-create duplicates.
+1. **Prevention before cleanup.** Prevention ships and is verified first (unit + a 2-file
+   re-upload E2E), then cleanup re-ingests against the fixed pipeline. Cleanup on the old
+   pipeline would just re-create duplicates.
+2. **Deletion fully complete before re-ingest.** This is the subtle trap: tier-3 reuse
+   matches any live `canonical_document` row with the same `content_hash`. If re-ingest
+   starts while the old duplicate nodes still exist (or their canonical rows are not yet
+   soft-deleted), tier 3 will happily **reuse the stale duplicated node** and the cleanup
+   achieves nothing. Therefore deletion must be verified complete (zero live document hubs
+   **and** zero live `canonical_document` rows for the project) before the first re-ingest
+   upload. The plan gates re-ingest on this check.
 
 ---
 
@@ -240,7 +249,7 @@ re-ingests against the fixed pipeline. Cleanup before the fix would just re-crea
 ## 7. Success criteria
 
 1. Re-uploading an identical file creates **no** second document node (tier 3 reuse; unit + E2E proven).
-2. Cảng Định An after cleanup: **document count == distinct-title count** (≈75), zero duplicate-document `similar_to` edges.
+2. Cảng Định An after cleanup: **live document-hub count == distinct `content_hash` count** among the re-ingested files (the exact dedup invariant; distinct-title ≈75 is the human-readable proxy). Zero `similar_to` edges linking two chunks whose parent documents share a `content_hash`.
 3. `kg_graph_retrieve` on Cảng returns distinct documents — no duplicate corroboration in results.
 4. All existing dedup tests (tiers 1–2, regenerate, A→B→A revert) still pass — no regression.
 5. Sala Food (already clean) unaffected.
