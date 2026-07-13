@@ -482,23 +482,57 @@ git commit -m "feat(retrieve): entity_neighbors carry title (kills entity-mode r
 
 - [ ] **Step 1: Write the failing handler test**
 
-Append to `graph_retrieve_test.go` (reuse the file's fake retriever/harness; inspect it first). Assert that a request with `"include_snippet": true` reaches the retriever as `cfg.IncludeSnippet == true`, and default is false:
+**Note (verified):** `GraphRetrieveHandler` holds a **concrete** `*service.GraphRetriever` — there is NO fake-retriever seam. `graph_retrieve_test.go` already builds a *real* retriever from fakes (`fakeQueryEmbedder`, `fakeSeedSearcher`, `fakeExpander`, `fakeSectionExpander`, `fakeEntityExpander`) via a `newGraphRetrieveMux`-style helper (line ~89) and posts JSON via `postGraphRetrieve` (line ~95). Test through the response, not a captured cfg.
+
+Append to `graph_retrieve_test.go`. Add the `fakeContentReader` from Task 2 (or a local copy) and build a retriever whose seeder returns a known chunk id that the content fake maps:
 
 ```go
-func TestHandleRetrieve_IncludeSnippetFlagPassthrough(t *testing.T) {
-	// fake retriever captures the cfg it was called with
-	fr := &fakeRetriever{bundle: service.Bundle{}}
-	h := handler.NewGraphRetrieveHandler(fr.asService(), nil) // adapt to the file's existing wiring
-	body := `{"query":"q","project_id":"p","include_snippet":true}`
-	req := httptest.NewRequest("POST", "/api/v1/retrieve/graph", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-	h.HandleRetrieve(rec, req)
-	if rec.Code != http.StatusOK { t.Fatalf("code %d: %s", rec.Code, rec.Body) }
-	if !fr.lastCfg.IncludeSnippet { t.Error("include_snippet=true not propagated to cfg") }
+func TestGraphRetrieve_IncludeSnippet_InlinesContent(t *testing.T) {
+	// Reuse the file's existing fakes. Configure fakeSeedSearcher to return one
+	// SearchResult whose ID is "c1" (match the fake's actual field names), and a
+	// content fake mapping c1 -> "hello". Then POST include_snippet:true.
+	embedder := &fakeQueryEmbedder{ /* vec as the existing helper sets it */ }
+	seeder := &fakeSeedSearcher{ /* results: []store.SearchResult{{ID:"c1", Rank:0.9, Properties: []byte(`{"document_id":"d1"}`)}} */ }
+	expander := &fakeExpander{}
+	content := &fakeContentReader{byID: map[string]string{"c1": "hello"}}
+
+	retriever := service.NewGraphRetriever(embedder, seeder, expander, service.WithChunkContent(content))
+	h := NewGraphRetrieveHandler(retriever, logger())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := postGraphRetrieve(mux, `{"query":"q","project_id":"p","include_snippet":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+	}
+	var got service.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var seen bool
+	for _, r := range got.Results {
+		if r.ChunkID == "c1" {
+			seen = true
+			if string(r.Snippet) != `"hello"` {
+				t.Errorf("snippet: got %s want %q", r.Snippet, `"hello"`)
+			}
+		}
+	}
+	if !seen {
+		t.Fatal("c1 not in results")
+	}
+}
+
+func TestGraphRetrieve_DefaultNoSnippetKey(t *testing.T) {
+	// Same setup, body WITHOUT include_snippet → response results carry no snippet key.
+	// Assert the raw JSON body does not contain "snippet".
+	// (build retriever+mux as above; content fake may be nil-safe since flag is off)
+	// ... post `{"query":"q","project_id":"p"}` ...
+	// if strings.Contains(rec.Body.String(), "\"snippet\"") { t.Error("default must omit snippet") }
 }
 ```
 
-> If `graph_retrieve_test.go` currently tests through a real retriever + fakes rather than a fake retriever, match that style: assert on the JSON response containing a `snippet` for a seeded chunk instead. Use whichever harness exists.
+> Match the exact fake field names by copying how the existing `newGraphRetrieveMux` helper constructs `fakeSeedSearcher`/`fakeQueryEmbedder` (open the file). The load-bearing assertions: `snippet == "hello"` when on, and no `snippet` key when off.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -613,60 +647,66 @@ git commit -m "fix(neighbors): deterministic paging tie-break (edge_id) under ti
 **Interfaces:**
 - Produces: request param `view` (`full`|`slim`, default `full`) on `GET/POST /api/v1/nodes/{id}/neighbors` and `kg_get_neighbors`; slim response = 9 frozen fields per neighbor.
 
-- [ ] **Step 1: Write the failing handler tests**
+**Note (verified):** `NeighborHandler.store` is a **concrete** `*store.NeighborStore` — there is NO fake-store seam, and the existing `neighbors_test.go` tests pass `NewNeighborHandler(nil, logger)` and only exercise **validation paths** (they return before the store call). So the slim happy-path cannot be handler-unit-tested with a fake. Instead: **extract the slim projection as a pure function** and unit-test it directly; test `view` validation via the existing nil-store validation style; cover the live full-vs-slim response in Task 7 smoke.
 
-Append to `neighbors_test.go` (reuse the file's fake `NeighborStore`/harness). Define the slim shape inline in the test as the expected key set:
+- [ ] **Step 1: Write the failing tests**
+
+Append to `neighbors_test.go`:
 
 ```go
-func TestHandleGetNeighbors_ViewSlim_ExactFields(t *testing.T) {
-	// fake store returns one NeighborNode with heavy Properties + timestamps set
-	h, _ := newNeighborHarness(oneHeavyNeighbor())
-	req := httptest.NewRequest("GET", "/api/v1/nodes/n1/neighbors?project_id=p&view=slim", nil)
-	rec := httptest.NewRecorder()
-	h.HandleGetNeighbors(rec, req.WithContext(withNodeID(req.Context(), "n1")))
-	if rec.Code != http.StatusOK { t.Fatalf("code %d: %s", rec.Code, rec.Body) }
-
-	var resp struct {
-		Neighbors []map[string]json.RawMessage `json:"neighbors"`
+// Pure-function test — the slim projection, independent of handler/store wiring.
+func TestToSlimNeighborResponse_ExactFields(t *testing.T) {
+	full := store.NeighborResponse{
+		NodeID: "n1", TotalCount: 1, Limit: 50, Offset: 0,
+		Neighbors: []store.NeighborNode{{
+			ID: "x", ProjectID: "p", NodeType: "concept", Title: "T", Status: "active",
+			Scope: "project", Version: 3, CreatedBy: "u", EdgeID: "e1", EdgeType: "about",
+			Direction: "outgoing", Properties: json.RawMessage(`{"big":"blob"}`),
+			EdgeProperties: json.RawMessage(`{"w":1}`),
+		}},
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	slim := toSlimNeighborResponse(full)
+
+	// Round-trip to JSON and assert EXACT key set on the neighbor.
+	b, _ := json.Marshal(slim.Neighbors[0])
+	var m map[string]json.RawMessage
+	_ = json.Unmarshal(b, &m)
 	want := map[string]bool{
 		"id": true, "project_id": true, "node_type": true, "title": true, "status": true,
 		"scope": true, "edge_id": true, "edge_type": true, "direction": true,
 	}
-	for _, n := range resp.Neighbors {
-		for k := range n {
-			if !want[k] { t.Errorf("slim neighbor has unexpected key %q", k) }
-		}
-		for k := range want {
-			if _, ok := n[k]; !ok { t.Errorf("slim neighbor missing key %q", k) }
-		}
+	for k := range m {
+		if !want[k] { t.Errorf("slim neighbor has unexpected key %q", k) }
+	}
+	for k := range want {
+		if _, ok := m[k]; !ok { t.Errorf("slim neighbor missing key %q", k) }
+	}
+	// heavy fields must be gone
+	if _, ok := m["properties"]; ok { t.Error("slim must drop properties") }
+	if _, ok := m["edge_properties"]; ok { t.Error("slim must drop edge_properties") }
+	if _, ok := m["created_at"]; ok { t.Error("slim must drop timestamps") }
+	// envelope fields preserved
+	if slim.NodeID != "n1" || slim.TotalCount != 1 || slim.Limit != 50 {
+		t.Errorf("envelope not preserved: %+v", slim)
 	}
 }
 
-func TestHandleGetNeighbors_ViewFull_Unchanged(t *testing.T) {
-	// default (no view) and view=full both return properties/timestamps (regression)
-	h, _ := newNeighborHarness(oneHeavyNeighbor())
-	for _, url := range []string{"/api/v1/nodes/n1/neighbors?project_id=p", "/api/v1/nodes/n1/neighbors?project_id=p&view=full"} {
-		req := httptest.NewRequest("GET", url, nil)
-		rec := httptest.NewRecorder()
-		h.HandleGetNeighbors(rec, req.WithContext(withNodeID(req.Context(), "n1")))
-		if !strings.Contains(rec.Body.String(), `"properties"`) {
-			t.Errorf("full view must retain properties for %s", url)
-		}
-	}
-}
-
+// Validation test — invalid view returns 400 BEFORE any store call (nil store is safe).
 func TestHandleGetNeighbors_InvalidView_400(t *testing.T) {
-	h, _ := newNeighborHarness(oneHeavyNeighbor())
+	logger := slog.Default()
+	h := NewNeighborHandler(nil, logger)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
 	req := httptest.NewRequest("GET", "/api/v1/nodes/n1/neighbors?project_id=p&view=garbage", nil)
 	rec := httptest.NewRecorder()
-	h.HandleGetNeighbors(rec, req.WithContext(withNodeID(req.Context(), "n1")))
-	if rec.Code != http.StatusBadRequest { t.Errorf("invalid view must 400, got %d", rec.Code) }
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("invalid view must 400, got %d: %s", rec.Code, rec.Body.String())
+	}
 }
 ```
 
-> Match `neighbors_test.go`'s existing harness for injecting the node id + fake store (the file already tests `HandleGetNeighbors`; reuse `newNeighborHarness`/equivalent and its node-id plumbing rather than inventing `withNodeID`).
+> Copy the exact request/router setup from an existing `neighbors_test.go` validation test (e.g. `TestHandleGetNeighbors_ValidEdgeTypes`) so the node-id path value is wired the same way. The invalid-view check MUST run before `h.store.GetNeighbors`, so nil store never panics.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -677,18 +717,18 @@ Expected: FAIL — `view` ignored; slim keys present in full form; invalid view 
 
 In `neighbors.go`:
 
-a. Parse `view` from query/body (alongside the existing param parsing), default `"full"`. Validate:
+a. Parse `view` for **both** transports, matching how the handler already dual-sources params (GET → `r.URL.Query()`, POST → decoded JSON body). Add a `View string \`json:"view,omitempty"\`` field to the request struct the POST branch decodes into, and in the GET branch read `r.URL.Query().Get("view")`. Then normalize + validate once, before the store call:
 ```go
-	view := strings.TrimSpace(r.URL.Query().Get("view"))
+	view := strings.TrimSpace(req.View) // req.View populated from body (POST) or query (GET)
 	if view == "" { view = "full" }
 	if view != "full" && view != "slim" {
 		errorResponse(w, http.StatusBadRequest, "invalid view: must be 'full' or 'slim'")
 		return
 	}
 ```
-(place after node-id resolution / before/after the existing validations, consistent with the handler's structure; also read it from the decoded JSON body for POST if the handler supports body params.)
+Place the validation among the existing early validations (status/edge_types/node_types), so an invalid `view` returns 400 before `h.store.GetNeighbors` (nil-store-safe, matching the existing validation tests).
 
-b. Define the slim DTO (in `neighbors.go` or a small sibling file):
+b. Define the slim DTO + **pure projection function** (in `neighbors.go`; the function is what the Step-1 unit test targets):
 ```go
 type slimNeighbor struct {
 	ID        string `json:"id"`
@@ -709,24 +749,30 @@ type slimNeighborResponse struct {
 	Limit      int            `json:"limit"`
 	Offset     int            `json:"offset"`
 }
+
+// toSlimNeighborResponse projects a full NeighborResponse to the frozen 9-field
+// slim shape, dropping properties/edge_properties/timestamps/version/created_by/session_id.
+func toSlimNeighborResponse(resp store.NeighborResponse) slimNeighborResponse {
+	out := slimNeighborResponse{
+		NodeID: resp.NodeID, TotalCount: resp.TotalCount, Limit: resp.Limit, Offset: resp.Offset,
+		Neighbors: make([]slimNeighbor, len(resp.Neighbors)),
+	}
+	for i, n := range resp.Neighbors {
+		out.Neighbors[i] = slimNeighbor{
+			ID: n.ID, ProjectID: n.ProjectID, NodeType: n.NodeType, Title: n.Title,
+			Status: n.Status, Scope: n.Scope, EdgeID: n.EdgeID, EdgeType: n.EdgeType, Direction: n.Direction,
+		}
+	}
+	return out
+}
 ```
 
-c. After `resp, err := h.store.GetNeighbors(...)`, branch on `view`:
+c. After `resp, err := h.store.GetNeighbors(...)` succeeds, branch on `view`:
 ```go
 	if view == "slim" {
-		slim := slimNeighborResponse{
-			NodeID: resp.NodeID, TotalCount: resp.TotalCount, Limit: resp.Limit, Offset: resp.Offset,
-			Neighbors: make([]slimNeighbor, len(resp.Neighbors)),
-		}
-		for i, n := range resp.Neighbors {
-			slim.Neighbors[i] = slimNeighbor{
-				ID: n.ID, ProjectID: n.ProjectID, NodeType: n.NodeType, Title: n.Title,
-				Status: n.Status, Scope: n.Scope, EdgeID: n.EdgeID, EdgeType: n.EdgeType, Direction: n.Direction,
-			}
-		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(slim)
+		_ = json.NewEncoder(w).Encode(toSlimNeighborResponse(resp))
 		return
 	}
 	// existing full-response encode unchanged
