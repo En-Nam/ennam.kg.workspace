@@ -23,7 +23,7 @@ Both tools are exposed over the MCP bridge (`kg_graph_retrieve`, `kg_get_neighbo
 
 **In scope**
 - **Part A** — inline chunk snippets on `kg_graph_retrieve` (opt-in).
-- **Part B** — a `slim` response view on `kg_get_neighbors`, plus exposing the tool's *already-implemented* `limit`/`offset` through the MCP bridge.
+- **Part B** — a `slim` response view on `kg_get_neighbors` (plus a small sort tie-break for coherent paging). Pagination itself (`limit`/`offset`) is already fully implemented and bridge-exposed — no work there.
 
 **Out of scope (YAGNI — explicitly rejected in review)**
 - `snippet_chars` consumer-tunable truncation (chunks are fixed ~1 KB; truncating a 1 KB blob is pointless).
@@ -55,12 +55,11 @@ One spec, **two independently-shippable parts** (shared driver, shared blast rad
 
 ### 3.2 Implementation
 
-- Seeds already carry `Properties` (JSON) → `content` is in hand for hop-0 results.
-- Expanded chunks (`store.Expanded`) carry only ids → **after** the result set is built, deduped, sorted, and **capped** (`result_k`, `per_document_cap`), batch-fetch content for the ≤`result_k` surviving chunk ids via a new store method:
+- **After** the result set is built, deduped, sorted, and **capped** (`result_k`, `per_document_cap`), batch-fetch content for the ≤`result_k` surviving chunk ids via a new store method:
   ```
   ChunkContentByIDs(ctx, projectID, ids []string) (map[string]string, error)
   ```
-  Fetching after the cap bounds it to ≤`result_k` lookups (one batch query, not N+1, not fetch-before-cap).
+  Fetch **all** surviving result ids uniformly (both hop-0 seeds and hop-1 expanded) in this one batch — do **not** special-case seeds from their in-memory `Properties`. Uniform fetch is simpler (KISS, one code path) and avoids depending on whether the seed's `Properties` projection includes `content`. Fetching after the cap bounds it to ≤`result_k` lookups (one query, not N+1, not fetch-before-cap).
 - **SECURITY (CRITICAL — hard blocker, §5).** The SQL is project- and type-scoped:
   ```sql
   SELECT id, properties->>'content'
@@ -76,13 +75,14 @@ Max snippet payload = `result_k × maxSnippetBytes` cap (≤ result_k × ~1.2 KB
 
 ---
 
-## 4. Part B — `kg_get_neighbors` slim view + bridge-exposed pagination
+## 4. Part B — `kg_get_neighbors` slim view (+ paging tie-break)
 
 ### 4.1 Contract
 
 **Request (added):**
-- `view: "full" | "slim"` — optional, **default `full`** (current behavior byte-identical). Idiomatic with the existing `mode` string-enum. Invalid value → **400** (fail loud, no silent fallback).
-- `limit`, `offset` — **already implemented** in the HTTP handler + store (`default 50, max 200`, `ORDER BY edge_created_at DESC`). Part B **exposes them in the MCP bridge schema** so consumers can page. No behavior change (50 is already today's default).
+- `view: "full" | "slim"` — optional, **default `full`** (current behavior byte-identical). Idiomatic with the existing `mode` string-enum. Invalid value → **400** (fail loud, no silent fallback). **This is the only new parameter in Part B.**
+
+**Pagination is already complete — no work.** `limit` (default 50, max 200) + `offset` are already implemented in the store (`ORDER BY edge_created_at DESC LIMIT/OFFSET`), the HTTP handler, **and the MCP bridge schema** (`schema.go` lines ~1365/1372). The consumer's 30-neighbor / 118 KB case was pure per-row size (the `properties` blob), not row count — so `slim` is the actual fix. The only paging-related change here is a **sort tie-break** (§4.2) for correctness under tied timestamps; it is optional-but-recommended, not required for the token win.
 
 **Response — `slim` view, frozen field set (9 fields):**
 ```
@@ -117,7 +117,7 @@ The 9-field list is **frozen in this spec** so future additions to `NeighborNode
 
 Both reviewers were sharp but assumed `kg_get_neighbors` behaves like the chunk retrieval path. Source/DB checks corrected two premises, which this spec reflects:
 
-1. **Pagination already exists.** The CTO's "no limit/offset" was true only of the *bridge schema* — the HTTP handler + store already implement `limit` (default 50, max 200) + `offset`. Part B's pagination work is schema exposure + a sort tie-break, not new API/DB logic. The "default-50 breaks existing consumers" concern is moot (50 is already the default).
+1. **Pagination is fully done — including the bridge.** The CTO claimed the bridge doesn't expose `limit`/`offset`; source shows it does (`schema.go` ~1365/1372), alongside the handler and store (`store/neighbors.go:77,122`). So the entire O3 "add pagination" thread is **moot** — nothing to add. The 118 KB was per-row size, not row count. Part B's only new parameter is `view`; the sole paging-adjacent change is an optional sort tie-break for correctness. The "default-50 breaks consumers" concern is doubly moot (50 is already the shipped default).
 2. **No `edge_weight` to preserve.** The consultant's slim `edge_weight` hoist assumed `similar_to` traversal; `kg_get_neighbors` traverses KG semantic edges that carry no weight scalar. `edge_weight` is dropped as always-null.
 
 Everything else is the reviewers' converged consensus.
@@ -144,7 +144,7 @@ Everything else is the reviewers' converged consensus.
 13. **Stable paging:** two overlapping `limit`/`offset` windows over tied `edge_created_at` return no duplicated/skipped `edge_id` (proves the tie-break).
 
 **Bridge (both):**
-14. `include_snippet` (A) and `view`/`limit`/`offset` (B) present in `bridge/schema.go`, round-trip through the stdio bridge; unknown params rejected; `schemas == routes + localToolNames` invariant preserved (no tool added).
+14. `include_snippet` (A) and `view` (B) added to `bridge/schema.go` and round-trip through the stdio bridge; `limit`/`offset` remain present on `kg_get_neighbors` (regression — already exposed); unknown params rejected; `schemas == routes + localToolNames` invariant preserved (no tool added).
 
 ---
 
@@ -155,5 +155,5 @@ Everything else is the reviewers' converged consensus.
 3. `include_snippet` never alters which/what-order results come back.
 4. `ChunkContentByIDs` cannot return another project's chunk content (isolation test passes).
 5. `view=slim` on `kg_get_neighbors` cuts the 30-neighbor payload from ~118 KB to < 15 KB while keeping cross-project disambiguation.
-6. MCP consumers can page neighbors (`limit`/`offset` exposed) with coherent, non-overlapping pages.
+6. Neighbor paging (already exposed via `limit`/`offset`) returns coherent, non-overlapping pages under tied timestamps (tie-break fix).
 7. All existing `kg_graph_retrieve` / `kg_get_neighbors` behavior is unchanged when the new params are absent (regression locks pass).
