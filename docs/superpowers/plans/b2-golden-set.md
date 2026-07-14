@@ -225,11 +225,71 @@ fix should target; #5: decorative-font garbling, a different failure mode
 that preprocessing/config tuning in Task 2 is more likely to help than a
 regex fix). Mean CER across the 3 MISS items: 0.348.
 
-## AFTER baseline (Tasks 2/3 — NOT YET CAPTURED)
+## AFTER — Task 2 preprocessing A/B (CAPTURED)
 
-- Re-run `uv run python scripts/b2_figure_metrics.py` with the
-  preprocessed-image / vi-model OCR callable substituted in, once Task 2
-  (preprocessing) and/or Task 3 (RapidOCR + regex fixes) land.
-- Gate: #2 and #3 should flip to FOUND with CER trending toward 0; #1 and
-  #4 must remain FOUND (no regression on already-correct figures); #5 is
-  best-effort and not a hard gate.
+Actual run, `TesseractEngine(preprocess=True)` (grayscale → median denoise →
+Otsu binarize → ±8° deskew, `ennam_kg.ingestion.ocr.preprocess.preprocess_for_ocr`)
+against the same golden set / pdf_root, no other change:
+
+```
+[FOUND] cer= 0.000  gt='122,81ha'  window='122,81ha'  page=0  file=11381263.pdf
+[MISS ] cer= 0.143  gt='98,18ha'  window='98,I8ha'  page=1  file=11381263.pdf
+[MISS ] cer= 0.143  gt='4,38 ha'  window='4.38 ha'  page=7  file=11381263.pdf
+[FOUND] cer= 0.000  gt='33,6ha'  window='33,6ha'  page=0  file=II. Detailed planning/2019 CV 1517-SXD 03-12-2019 HDTT lập ĐAQH CTXD Khu bến tổng hợp Định An-GĐ 2 (33,6ha).pdf
+[MISS ] cer= 0.706  gt='Số: 115/TB-BQLKKT'  window='8Ó: I3 TH-HỘI K'  page=0  file=III. Land use rights/06 Nộp tiền thuê đất.pdf
+```
+
+Re-run twice with identical output (byte-for-byte same `found`/`cer`/`window`
+per item both times) — confirms `preprocess_for_ocr` is deterministic, no
+`random`/wall-clock inputs.
+
+| # | Item | BEFORE found/CER | AFTER found/CER | Delta |
+|---|------|-------------------|-------------------|-------|
+| 1 | `122,81ha` (control) | FOUND / 0.000 | FOUND / 0.000 | no change |
+| 2 | `98,18ha` | MISS / 0.286 | MISS / 0.143 | CER halved; window `98,1 §ha` → `98,I8ha` (still MISS — `I` vs `1`, one char off) |
+| 3 | `4,38 ha` | MISS / 0.286 | MISS / 0.143 | CER halved; window `4.3§ ha` → `4.38 ha` (still MISS — `.` vs `,`, one char off) |
+| 4 | `33,6ha` (control) | FOUND / 0.000 | FOUND / 0.000 | no change |
+| 5 | `Số: 115/TB-BQLKKT` (best-effort, non-gate) | MISS / 0.471 | MISS / 0.706 | **CER regressed** (`: 115 PH-BÓILKIKT` → `8Ó: I3 TH-HỘI K`, arguably less readable) |
+
+**Gate decision: keep `ocr_preprocess_enabled = False` (default unchanged).**
+Reasoning, reading `found` (figure retrievability) as the plan's primary
+metric and `cer` as diagnostic-only (per this doc's own "Harness" section
+above — CER is explicitly "not an absolute OCR-quality claim"):
+
+- **Retrievability did not move.** 2/5 FOUND before, 2/5 FOUND after — the
+  same two items (both controls, #1/#4). Neither #2 nor #3 crossed the
+  MISS→FOUND line, which was this doc's own stated gate expectation
+  ("#2 and #3 should flip to FOUND").
+- **No regression on the currently-correct figures** (#1, #4 — both stayed
+  FOUND / CER 0.000). This half of the gate condition is satisfied.
+- **CER did improve substantially on the two on-target items** (#2, #3: CER
+  halved 0.286→0.143, and both windows are now a single character away from
+  the ground truth — `I`/`1` and `.`/`,` confusions rather than the
+  `8`→`§`/glyph-loss pattern). This is real signal, just not enough to flip
+  `found` on its own.
+- **#5 (best-effort, explicitly not a hard gate) got measurably worse**
+  under preprocessing (CER 0.471→0.706) — a real case of preprocessing
+  degrading OCR on a real scanned page, not just a synthetic-test artifact.
+  Hypothesis, not yet verified: this page's header uses a decorative/stylized
+  font (per the item-5 detail note above); Otsu binarization at a single
+  global threshold likely clips or fuses the thin/ornamented strokes, and the
+  deskew search (which maximizes horizontal-projection variance) may be
+  misfiring on a page whose dominant structure isn't ordinary paragraph text.
+  Flagging rather than fixing — item 5 is out of this task's gate scope, and
+  a targeted fix belongs with Task 3's regex/config work if revisited, since
+  #2/#3 are now only a character away from FOUND.
+- Per Rule 7 (surface conflicts, don't average them): the plan text has two
+  slightly different phrasings of the "no regression" condition — Task 2's
+  brief says "no regression on currently-correct figures" (item 5 exempt,
+  since it was never correct); the broader plan intent (per this doc's own
+  gate note above) reads more strictly. Taking the stricter reading here
+  since flipping a production default is the higher-blast-radius action:
+  a real regression exists (item 5), and the primary metric (retrievability)
+  is flat, so the honest call is **do not adopt yet**. The flag ships
+  wired end-to-end and OFF by default — "if it doesn't help, keep it OFF and
+  behind the flag (no harm)," per the plan.
+
+Next step if this is revisited: combine Task 2's preprocessing with Task 3's
+digit-confusable regex repair — #2/#3 are now one character off, which is
+exactly the class of error Task 3 targets, so the combination may clear the
+FOUND bar where preprocessing alone did not.
