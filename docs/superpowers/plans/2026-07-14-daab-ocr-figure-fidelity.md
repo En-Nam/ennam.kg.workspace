@@ -159,10 +159,16 @@ def preprocess_for_ocr(img: Image.Image) -> Image.Image:
 
 
 def _deskew(img: Image.Image) -> Image.Image:
-    arr = np.array(img)
+    # PERF: search the best angle on a DOWNSCALED copy (angle is scale-invariant),
+    # then apply the single chosen rotation to the full-res image. A 300-DPI page is
+    # ~2500x3500; searching 17 rotations at full res would cost ~1-3s/page. Downscale
+    # to ~1000px wide first → the search is ~cheap, the final rotate is one op.
+    small = img.copy()
+    if small.width > 1000:
+        small = small.resize((1000, max(1, round(small.height * 1000 / small.width))))
     best_angle = 0.0; best_score = -1.0
     for angle in np.arange(-8, 8.1, 1.0):
-        rot = np.array(img.rotate(angle, expand=False, fillcolor=255))
+        rot = np.array(small.rotate(angle, expand=False, fillcolor=255))
         score = float(np.var(np.sum(255 - rot, axis=1)))
         if score > best_score: best_score = score; best_angle = angle
     return img.rotate(best_angle, expand=False, fillcolor=255) if best_angle else img
@@ -208,20 +214,21 @@ Record the decision (model wired / deferred) — this is the honest scope gate f
 
 - [ ] **Step 2: Write the failing unit-tolerance test**
 
-The regex repair is deterministic and independent of the model:
+The regex repair is deterministic and independent of the model. **Scope: number+unit (area/amount) spans only** — the verified critical failures. Doc-number confusables ("Số O9") are out of scope (a different pattern, lower value; extend later if needed).
 ```python
 from ennam_kg.ingestion.ocr.rapidocr_fields import _repair_confusables_near_units, _AREA
 
 
 def test_confusable_repair_recovers_area():
-    # I→1, §→5, O→0 adjacent to a unit token
+    # I→1, §→5, O→0 ONLY inside a number+unit span.
     assert _AREA.search(_repair_confusables_near_units("dien tich 122,8Iha")) is not None
     assert _repair_confusables_near_units("4.3§ ha") == "4.35 ha"
-    assert _repair_confusables_near_units("So O9") == "So 09"
 
 
 def test_repair_does_not_touch_normal_text():
+    # Confusable letters OUTSIDE a number+unit span are untouched (no over-reach).
     assert _repair_confusables_near_units("Hàm Giang 122,81 ha") == "Hàm Giang 122,81 ha"
+    assert _repair_confusables_near_units("So O9 tai lieu") == "So O9 tai lieu"  # no unit → unchanged
 ```
 
 - [ ] **Step 3: Run to verify it fails**
@@ -233,18 +240,17 @@ Expected: FAIL — `_repair_confusables_near_units` undefined.
 
 Add to `rapidocr_fields.py`:
 ```python
-# Digit/letter confusables OCR emits near numbers. Applied ONLY to runs adjacent to
-# a digit or a unit token, so normal words are untouched.
-_CONFUSABLE = str.maketrans({"I": "1", "l": "1", "§": "5", "S": "5", "O": "0", "o": "0"})
-_NEAR_UNIT = re.compile(r"(?i)(\d[\d.,]*\s?[IlOo§S]?\s?(?:ha|m²|m2|m³|m3))|(?<=\bs\bố?\s)[IlOo§S]?\d+")
+# Digit/letter confusables OCR emits inside numbers. Applied ONLY within a
+# number+unit span, so normal words (incl. "So O9") are never rewritten.
+_CONFUSABLE = str.maketrans({"I": "1", "l": "1", "§": "5", "O": "0", "o": "0"})
+# A number+unit span, tolerant of confusable chars where a digit belongs.
+_NUM_UNIT = re.compile(r"\d[\d.,IlOo§]*\s?(?:ha|m²|m2|m³|m3)", re.IGNORECASE)
 
 def _repair_confusables_near_units(text: str) -> str:
-    # Repair a confusable ONLY when it sits inside a number-unit span.
-    def fix(m: "re.Match[str]") -> str:
-        return m.group(0).translate(_CONFUSABLE)
-    return re.sub(r"\d[\d.,IlOo§S]*\s?(?:ha|m²|m2|m³|m3)", fix, text)
+    """Repair digit/letter confusables ONLY inside a number+unit span (areas/amounts)."""
+    return _NUM_UNIT.sub(lambda m: m.group(0).translate(_CONFUSABLE), text)
 ```
-> Keep the repair span-scoped (only inside a number+unit match) so it never rewrites real letters in words. Refine the exact spans against the test until green — the tests are the contract; adjust the regex to satisfy them without over-reaching (`test_repair_does_not_touch_normal_text` guards over-reach).
+> The repair is strictly span-scoped: `_NUM_UNIT` matches a digit-led run ending in a unit, and only that matched substring is translated — so `test_repair_does_not_touch_normal_text` (incl. the unit-less "So O9") stays unchanged. Note `S→5` is deliberately NOT in `_CONFUSABLE` (it would corrupt unit-adjacent text); if a real `S`-for-`5` case appears in an area, add it scoped to inside `_NUM_UNIT` only.
 
 Call it inside `extract_structured_fields` after `_normalize_ocr_text`: `text = _repair_confusables_near_units(text)`. If the spike (Step 1) sourced a model, set `_engine = RapidOCR(config_path=<vi_config>)` (or kwargs) in `_get_engine`.
 
@@ -362,9 +368,16 @@ docker compose up -d --build worker indexer
 docker compose ps
 ```
 
-- [ ] **Step 2: Targeted re-OCR of the labeled pages/docs**
+- [ ] **Step 2: Targeted re-OCR of the labeled docs (MUST bypass content-hash dedup)**
 
-Re-ingest **only** the specific docs behind the labeled failures (from `b2-golden-set.md`) via the upload path — NOT all 77. (Re-uploading an identical file is safe: B1's/dedup's content-hash reuse handles it; but to force fresh OCR you may need to target the specific documents. Confirm the re-OCR path produces new structured_fields.)
+**Critical:** the ingest pipeline has tier-3 content-hash dedup (`engine.py:241` "content-hash dedup hit") — **re-uploading an identical PDF reuses the existing node and SKIPS OCR entirely**, so a naive re-upload would run **none** of the new B2 OCR code and the verification would show no change. To force fresh OCR you MUST first remove the existing doc so the re-upload is treated as new:
+
+1. For each labeled doc, **soft-delete its canonical row + delete its substrate** (hub + sections + chunks + embeddings + similar_to edges) — reuse the dedup-cleanup SQL pattern (`docs/superpowers/plans/2026-07-13-daab-document-dedup.md` Task 6 Step 2), scoped to just those `document_id`s (not the whole project).
+2. **Verify** 0 live nodes + 0 live canonical rows for those docs (hard gate — else dedup will still reuse).
+3. **Re-ingest only those specific docs** (from `doc_pdf_test/project_1`) via the upload path — NOT all 77.
+4. Confirm the worker log shows fresh OCR (not "content-hash dedup hit") and new `structured_fields`.
+
+> After re-ingest, B1's entity resolution will re-run on the new nodes (worker post-resolve) — expect the investor variants to re-merge/re-queue per NFR-256; that's fine and independent of the figure fix.
 
 - [ ] **Step 3: Verify success criteria**
 
