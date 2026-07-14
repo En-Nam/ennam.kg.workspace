@@ -712,3 +712,158 @@ fallback → live re-ingest verification). The only remaining open item
 from the whole B2 plan is the optional, explicitly spike-gated Task 3
 vi/latin PP-OCR model-conversion half, which was deferred by design
 (unit-tolerance regex ships regardless and is what's verified above).
+
+## Task 6 — Wire confusable repair into the Tesseract chunk-content path (committed `15f185b`, honestly did NOT close the gap)
+
+**What it did:** `_extract_pdf` (`src/ennam_kg/ingestion/adapters/files.py`)
+feeds `document_chunk.content` (the search/RAG-visible text) from
+per-page Tesseract OCR. Unlike the RapidOCR-fields path, that Tesseract
+output had no confusable-character repair applied. Task 6 applied the
+already-proven `_repair_confusables_near_units` (Task 3) to each
+genuinely-OCR'd page's text before it's joined into markdown.
+
+**What it found (documented honestly in the commit, reproduced here):**
+re-validating against the two target figures (`98,18ha`, `4,38ha`)
+showed this does **not** flip either to FOUND — CER unchanged
+(`0.2857 → 0.2857`). Two separate reasons:
+- Item #3 (`4,38ha`, mangled `4.3§ ha`): the existing confusable map
+  assumes `§ → 5`, based on the plan's own illustrative-but-wrong test
+  data. This specific mangled digit actually needs `§ → 8`. A single
+  confusable character can legitimately represent different real
+  digits depending on which figure it appears in — no regex can
+  resolve that without visual context (out of scope, no LLM-vision).
+- Item #2 (`98,18ha`, mangled `98,1 §ha`): the stray `§` is separated
+  from the digit run by a whitespace, which falls outside the
+  number+unit regex's matched span — a scoped regex gap, not a
+  confusable-mapping problem.
+
+Fixing either requires touching Task 3's already-reviewed regex/map,
+which was out of scope for Task 6. Task 6 is a real, correct fix (it
+does repair confusables that fall within scope on the Tesseract path)
+but it does not close the B2 golden-set gap for these two figures.
+
+## Task 7 — Make already-correct RapidOCR field values searchable (this task, closes the gap)
+
+**Root cause reframe:** the actual blocker was never "Tesseract can't be
+regex-patched to fix these two figures" (Task 6 confirmed that's
+genuinely hard/out of scope without vision). It's that a *different*
+OCR pass — RapidOCR, via `extract_structured_fields_for_file` — already
+parses both figures correctly on this exact corpus (`98,18ha`,
+`4,38ha` verbatim in `structured_fields.areas`, confirmed in Task 5).
+That correct data was being written to `draft_nodes.metadata` (a
+write-only PATCH, `ennam.kg.go/internal/service/draft_node.go:348`,
+confirmed to have exactly one reference in the whole Go codebase) —
+nothing in the query/search/RAG path ever reads it. The gap was a
+**retrievability** gap, not an OCR-accuracy gap.
+
+**The fix:** in `handle_extract_upload`
+(`ennam.kg.python/src/ennam_kg/worker.py`), after both
+`extract_file_text` (Tesseract → `content_raw`) and
+`extract_structured_fields_for_file` (RapidOCR → `structured_fields`)
+are computed, a new helper `_build_recovered_fields_section` renders
+any non-empty, non-`unrecovered` structured field values as a small
+markdown section:
+
+```
+## Recovered Figures (OCR fields)
+areas: 122,81ha, 98,18ha, 4,38ha, ...
+doc_numbers: ...
+```
+
+This is appended to `content_raw` **before** `update_draft_content` is
+called, so the already-correct values become part of the chunked,
+indexed, full-text-searchable content — using data the pipeline already
+extracts correctly, with no LLM/vision call, no change to chunking,
+embedding, or resolution code. The `unrecovered` marker key is
+explicitly excluded (it's a "we tried and failed" signal, already
+surfaced via `_attach_structured_fields` + a WARNING log — not a value
+to make searchable). `_attach_structured_fields`'s separate
+metadata-PATCH call is untouched; this is additive.
+
+**TDD:** `tests/test_worker_extract_gate.py::TestRecoveredFieldsAppendedToContent`
+— 3 tests: (1) non-empty `structured_fields` (e.g.
+`{"areas": ["98,18ha", "4,38ha"]}`) → both values present in the
+`content_raw` passed to `update_draft_content`; (2) empty
+`structured_fields` → `content_raw` passed through unchanged, byte for
+byte; (3) an `unrecovered`-only result → `content_raw` unchanged and
+the literal string `"unrecovered"` does not leak into the indexed
+text. All 3 written RED first (test 1 failed against the pre-fix code,
+confirming the negative cases already matched current behavior),
+GREEN after the fix. Full suite: 667 passed / 1 pre-existing unrelated
+failure (`tests/extraction/test_parser.py::test_drops_out_of_range_span_and_orphan_relation`,
+confirmed failing identically on `15f185b` before this change, i.e.
+not a regression) / 1 skipped. `ruff check` clean on both touched
+files.
+
+**Live re-ingest verification (same 3 golden-set docs, freshly deleted
+and re-ingested against the rebuilt `daab-worker` image with this
+fix):**
+
+Old (Task 5) hub ids were confirmed live, then deleted under the same
+scoped hard-gate pattern as Task 5 (preview SELECT → transaction
+scoped to exactly these 3 hub ids and their sections/chunks →
+`knowledge_edges` (142 rows) → `knowledge_node_versions` (3) →
+`draft_nodes.knowledge_node_id = NULL` (3) → `canonical_document` (3)
+→ `knowledge_nodes` (95, cascades to `knowledge_node_embeddings`) →
+COMMIT). Hard gate after delete: 0 live nodes / 0 live canonical rows
+/ 0 live embeddings for these 3 doc ids; project `document` count
+77 → 74 (exactly −3).
+
+Rebuilt `daab-worker` (`docker compose up -d --build worker`), verified
+API key + project still live (`GET /projects/592c7ff7.../` → 200), then
+re-ran the same scratchpad re-ingest script from Task 5
+(`reingest_b2_task5.py`, unchanged — same key, same project, same 3
+target files) against the rebuilt worker:
+
+```
+[1/3] 11381263.pdf                                            -> draft_id=1570cd4e-...  status=processed
+[2/3] ...HDTT lập ĐAQH...(33,6ha).pdf                          -> draft_id=b6ed814b-...  status=processed
+[3/3] 06 Nộp tiền thuê đất.pdf                                 -> draft_id=e770ab87-...  status=processed
+Done: 3/3 processed successfully.
+```
+
+New hub node ids: `11381263.pdf` → `aa05c1ce-64cd-4b31-a41a-5c5f392c8f26`,
+`33,6ha doc` → `2bfb480a-217d-4bd9-bf47-2f1997d277b9`,
+`06 Nộp tiền thuê đất.pdf` → `ce77d987-36db-4ad5-9263-2505c807cdd4`.
+Worker logs confirm real OCR latency (`11381263.pdf`: "Extracting
+upload text" 10:08:42 → content PUT 10:10:40, ~2 min), zero `dedup`
+log lines — fresh OCR, not a content-hash dedup short-circuit.
+
+**Direct DB query against `document_chunk.content`
+(`knowledge_nodes.properties->>'content'` where `node_type =
+'document_chunk'`, scoped to the new `11381263.pdf` hub id
+`aa05c1ce-64cd-4b31-a41a-5c5f392c8f26`) — the actual proof:**
+
+| target figure | query | result |
+|---|---|---|
+| `98,18ha` (previously mangled, Task 6 could not fix) | `properties->>'content' ILIKE '%98,18ha%'` | **1 chunk match** — now present verbatim in the chunked, indexed text |
+| `4,38ha` (previously mangled, Task 6 could not fix) | `ILIKE '%4,38ha%' OR ILIKE '%4.38ha%'` | **1 chunk match** — present verbatim |
+| `122,81ha` (control, previously correct) | `ILIKE '%122,81ha%'` | **2 chunk matches** — no regression |
+| `33,6ha` (control, other doc, hub `2bfb480a-...`) | `ILIKE '%33,6%'` | **1 chunk match** — no regression |
+
+The matching chunk's content confirms the appended section renders
+exactly as designed:
+```
+## Recovered Figures (OCR fields)
+...
+areas: ,81ha, 122,81ha, 34,46ha, 88,35ha, ..., 98,18ha, ..., 4,38ha, ...
+...
+```
+
+**Unrelated-document spot-check:** `de64038d-5b91-4c8d-98af-1bd2e6dfdd99`
+(same doc used for Task 5's spot-check) — still exactly 1 document +
+1 section + 25 chunks (26 substrate nodes, unchanged), 1 live
+`canonical_document` row. Project `document` count returned to exactly
+**77** (round trip: 77 → 74 → 77), confirming no leakage into or loss
+from the other 74 documents.
+
+### Outcome
+
+Task 7 closes the retrievability half of the B2 golden-set gap that
+Task 6 honestly could not close via regex alone: `98,18ha` and
+`4,38ha` are now literal substrings of `document_chunk.content` for
+the live re-ingested `11381263.pdf`, using RapidOCR data the pipeline
+was already extracting correctly — no LLM/vision, no chunking/
+embedding/resolution changes, no Go-side changes. Controls
+(`122,81ha`, `33,6ha`) and an unrelated document are confirmed
+unaffected.
