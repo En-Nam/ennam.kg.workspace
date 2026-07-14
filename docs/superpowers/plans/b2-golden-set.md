@@ -137,12 +137,14 @@ WHERE project_id='592c7ff7-9f6f-4cc5-9094-d9b3b685277e' AND node_type='document'
   AND id='89a0ea6a-8605-4408-b765-a7598464cc40';
 ```
 
-### `Số 09` doc-number confusable — out of scope for this task
+### `Số 09` doc-number confusable — controller-ratified exclusion
 
-Per the plan's own Task 3 Step 2 scope note, doc-number confusables (`Số
-09` ↔ `Số O9`-style letter/digit swaps) are explicitly out of scope for the
-regex fix in Task 3. No time was spent searching for a standalone example;
-not included in the golden set.
+This item is deliberately excluded from the golden set's retrievability/CER
+targets because Task 3 (the RapidOCR fields fix) explicitly scopes
+doc-number confusables (`Số 09` ↔ `Số O9`-style letter/digit swaps) out of
+its regex repair — see plan Task 3 Step 2. Since no fix in this plan will
+target this failure mode, a golden-set entry for it would have no gate to
+validate against. Controller-ratified exclusion, not an oversight.
 
 ## Reconnaissance corrections (summary)
 
