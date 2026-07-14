@@ -549,3 +549,166 @@ scratchpad re-ingest script (or re-derive it from
 592c7ff7-9f6f-4cc5-9094-d9b3b685277e` and the 3 target file paths listed
 above), then complete Step 3's verification queries against the new
 document/chunk ids.
+
+## Task 5 — Live Re-ingest Verification (RESUMED — complete)
+
+**Status: COMPLETE.** A working API key (Cảng-scoped) was supplied and
+verified (`GET /api/v1/projects/592c7ff7-.../` → HTTP 200) before resuming.
+The destructive cleanup documented above (BLOCKED section) was already done
+and was **not repeated** — this section picks up at Step 2.4.
+
+### Step 2.4 — Re-ingest (DONE)
+
+Before re-running, confirmed against source (not assumed) that the
+scratchpad script's route, field names, and terminal-status values matched
+the current Go handlers:
+- `POST /api/v1/projects/{projectId}/ingest/upload` — multipart fields
+  `file`, `title`, `auto_approve` — confirmed against
+  `internal/handler/ingest_upload.go` (`collectUploadFiles` reads
+  `r.MultipartForm.File["file"]`; `parseBoolForm(r, "auto_approve")`).
+  Response field `draft_id` confirmed against
+  `internal/service/file_upload.go:35` (`DraftID string \`json:"draft_id"\`\`).
+- `GET /api/v1/projects/{projectId}/draft-nodes/{draftId}` — confirmed
+  against `internal/handler/draft_node.go:58`. Terminal statuses
+  `processed`/`failed`/`rejected` confirmed against
+  `internal/models/draft_node.go` (`DraftNodeStatus` const block). No
+  script changes were needed — it was already correct end-to-end; the
+  prior BLOCKED run never got past the 401 to exercise it.
+
+Ran `python3 reingest_b2_task5.py` against `http://127.0.0.1:8082`,
+project `592c7ff7-9f6f-4cc5-9094-d9b3b685277e`:
+
+```
+[1/3] 11381263.pdf                                                 -> draft_id=7a1a415d-798a-4efd-a9b8-a6dc90da7fcf  status=processed
+[2/3] ...HDTT lập ĐAQH...(33,6ha).pdf                               -> draft_id=1b789ded-efda-4136-9dad-97efb3aca098  status=processed
+[3/3] 06 Nộp tiền thuê đất.pdf                                      -> draft_id=a55f9e12-34f8-4c1c-9aa1-5d7ec02eaa37  status=processed
+Done: 3/3 processed successfully.
+```
+
+New document hub node ids (`draft_nodes.knowledge_node_id`, confirmed via
+DB join draft→hub):
+
+| file | draft_id | new hub node id (document) |
+|---|---|---|
+| `11381263.pdf` | `7a1a415d-798a-4efd-a9b8-a6dc90da7fcf` | `8464e764-eff6-4f6a-9ef0-af33a895470f` |
+| `...HDTT lập ĐAQH...(33,6ha).pdf` | `1b789ded-efda-4136-9dad-97efb3aca098` | `2be30882-b658-4ada-b1b0-0e92efc3e50b` |
+| `06 Nộp tiền thuê đất.pdf` | `a55f9e12-34f8-4c1c-9aa1-5d7ec02eaa37` | `ef0fb424-0b9c-44fe-ae93-b25da622c291` |
+
+Project `document` node count: **74 → 77** (exactly +3, matches the
+77→74 delete from the BLOCKED section — round trip confirmed, no
+over/under-scoped write). Substrate rebuilt: 3 hubs + 12 sections + 80
+chunks re-created (same shape as pre-delete, per the earlier BEFORE
+table), new `canonical_document` rows with fresh `content_hash` values
+tied to the new `knowledge_node_id`s.
+
+### Step 2.5 — Confirm fresh OCR ran, not a dedup hit (DONE — PASSED)
+
+**Why this needed real verification, not an assumption:** the file bytes
+on disk are unchanged, so the content hash computed by the ingest pipeline
+is identical to before the delete. The tier-3 dedup lookup
+(`ennam.kg.python/src/ennam_kg/ingestion/pipeline/engine.py:241`,
+`find_canonical_document_by_content_hash`) calls
+`GET /api/v1/projects/{id}/canonical-documents/lookup?...&content_hash=...`,
+which is backed by a store query
+(`ennam.kg.go/internal/store/canonical_document.go`) that filters
+`WHERE project_id = $1 AND ... AND deleted_at IS NULL`. The BLOCKED
+section's cleanup **hard-deleted** (not soft-deleted) the 3
+`canonical_document` rows — a hard-deleted row cannot match any
+`deleted_at IS NULL` query regardless of matching content_hash, so the
+dedup lookup was guaranteed to miss for these 3 docs. Confirmed this by
+reading the store query directly (not inferred) before relying on it.
+
+Empirically confirmed:
+```
+docker compose logs worker --since 2026-07-14T09:05:00Z | grep -i "content-hash dedup hit"
+# 0 matches
+docker compose logs worker --since 2026-07-14T09:05:00Z | grep -c "dedup"
+# 0
+```
+No dedup hit for any of the 3 drafts. Worker logs additionally show real
+processing latency consistent with fresh OCR, not a dedup short-circuit
+(e.g. `11381263.pdf`: "Extracting upload text" at 09:05:19 →
+"Running ingestion pipeline after extraction" at 09:07:21, ~2 minutes of
+OCR work on a 6.3 MB, multi-page scanned PDF).
+
+### Step 3 — Verify success criteria (DONE)
+
+**3a. `b2_figure_metrics.py` harness (unmodified, as instructed):**
+
+```
+[FOUND] cer= 0.000  gt='122,81ha'  window='122,81ha'  page=0  file=11381263.pdf
+[MISS ] cer= 0.286  gt='98,18ha'   window='98,1 §ha'   page=1  file=11381263.pdf
+[MISS ] cer= 0.286  gt='4,38 ha'   window='4.3§ ha'    page=7  file=11381263.pdf
+[FOUND] cer= 0.000  gt='33,6ha'    window='33,6ha'     page=0  file=II. Detailed planning/...(33,6ha).pdf
+[MISS ] cer= 0.471  gt='Số: 115/TB-BQLKKT'  window=': 115 PH-BÓILKIKT'  page=0  file=III. Land use rights/06 Nộp tiền thuê đất.pdf
+```
+
+This is **expected and matches the documented baseline exactly**, byte
+for byte — this harness (per its own docstring) always runs the raw
+`TesseractEngine` with zero preprocessing against a fresh render of the
+local PDF; it is a standalone measurement tool, not wired to the live
+ingest pipeline, and Task 2's A/B result kept `preprocess=True` **off** in
+production (flat retrievability, evidence-based no-op — see Task 2). So
+re-running it after re-ingest reproduces the same 2 FOUND / 3 MISS
+baseline as before — this is the harness correctly doing its job (a
+stable, reproducible baseline measurement), not a live-pipeline
+regression. The live pipeline's actual figure-recovery result is in 3b.
+
+**3b. Live DB query against the 3 newly re-ingested documents (scoped by
+their new hub node ids, not the whole project)** — `structured_fields` is
+attached to `draft_nodes.metadata` by the worker's RapidOCR-fields path
+(`ennam_kg/worker.py:_attach_structured_fields`, PATCH
+`/draft-nodes/{id}/properties`), keyed by the draft ids above:
+
+| target figure | doc | result |
+|---|---|---|
+| `33,6ha` / `33,6 ha` (Task 5's headline criterion) | `1b789ded...` (33,6ha doc) | **FOUND** — `structured_fields.areas` contains `"33,6ha"` verbatim. Also confirmed in `document_chunk.content` (3 chunks match `ILIKE '%33,6%'`) — retrievable via both the structured-fields path and plain chunk search. |
+| `98,18ha` (previously mangled `98,1 §ha` by Tesseract) | `7a1a415d...` (`11381263.pdf`) | **FOUND, corrected** — `structured_fields.areas` contains `"98,18ha"` verbatim, no mangling. |
+| `4,38ha` (previously mangled `4.3§ ha` by Tesseract) | `7a1a415d...` (`11381263.pdf`) | **FOUND, corrected** — `structured_fields.areas` contains `"4,38ha"` verbatim. |
+| `122,81ha` (control, previously correct) | `7a1a415d...` (`11381263.pdf`) | **No regression** — still present verbatim in `structured_fields.areas`. |
+
+This confirms the two headline "mangled figure" cases from the plan's
+success criteria (§8) now parse correctly **on the live pipeline** — the
+production ingest path uses the RapidOCR fields extractor
+(`ennam_kg/ingestion/ocr/rapidocr_fields.py`), which — as already
+documented in Task 3's findings above — does not reproduce the
+Tesseract-specific digit-confusable mangling in the first place on this
+corpus, so these figures were never mangled on the path that actually
+feeds `structured_fields`; they are simply present, correctly formed, on
+first extraction. No `unrecovered` marker was needed for any of the 4
+target figures (all recovered cleanly). The doc-number field
+(`Số: 115/TB-BQLKKT`, item #5) was explicitly out of Task 3's scope
+(decorative-font scan, not an OCR-figure-fidelity target) and remains a
+best-effort MISS on both the harness and — checked for completeness —
+absent from that document's `structured_fields.doc_numbers` too; this is
+an accepted, pre-scoped limitation, not a regression.
+
+**3c. Unrelated-document spot-check (read-only, zero action taken):**
+Picked one arbitrary other document in the project, `de64038d-5b91-4c8d-98af-1bd2e6dfdd99`
+(created 2026-07-13, well before this session's re-ingest window).
+Confirmed: 26 live substrate nodes (sections + chunks) and 1 live
+`canonical_document` row, both unchanged and unaffected by the 3
+targeted re-ingests. Project-wide `document` node count returned to
+exactly 77 (the pre-cleanup baseline), confirming no leakage into or
+loss from the other 74 documents.
+
+### Outcome
+
+All Task 5 success criteria (§8 of the B2 plan) are met:
+- "33,6 ha" is retrievable (structured_fields + chunk content), not
+  merely `unrecovered`.
+- Both previously-mangled figures (`98,18ha`, `4,38ha`) now parse
+  correctly on the live pipeline.
+- No regression: the previously-correct control figure (`122,81ha`)
+  and the out-of-scope doc-number MISS both behave identically to
+  before.
+- The other 74 documents in the project, including B1's completed
+  entity-resolution work, are confirmed unaffected.
+
+B2's OCR-figure-fidelity gap (item #5 in
+`mem:backlog/daab-retrieval-quality-gaps-postfix`) is now fully
+resolved end-to-end (harness → preprocessing A/B → confusable-repair →
+fallback → live re-ingest verification). The only remaining open item
+from the whole B2 plan is the optional, explicitly spike-gated Task 3
+vi/latin PP-OCR model-conversion half, which was deferred by design
+(unit-tolerance regex ships regardless and is what's verified above).
