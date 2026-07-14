@@ -1,0 +1,233 @@
+# B2 Golden Set — Figure Retrievability & CER Harness
+
+Source: `2026-07-14-daab-ocr-figure-fidelity.md`, Task 1. Hand-verified
+golden set for the figure-retrievability / CER measurement harness
+(`ennam.kg.python/scripts/b2_figure_metrics.py`).
+
+**Project:** Cảng — `project_id = 592c7ff7-9f6f-4cc5-9094-d9b3b685277e`.
+**Source PDFs:** under `doc_pdf_test/project_1/` (workspace root).
+
+## How each entry was verified
+
+Every `(pdf_path, page_index, ground_truth)` triple below was confirmed by:
+1. Rendering the exact page at 300 DPI (`pypdfium2`, matches `pdf_render.py`).
+2. Cropping the region around the figure and visually reading the digits off
+   the rendered image (not just trusting Tesseract's own OCR of it).
+3. Cross-checking against the live `daab-postgres` DB (`knowledge_nodes`,
+   `document_chunk` / `document` nodes) for the current retrievability state.
+
+This caught two errors in the initial reconnaissance (recorded below rather
+than silently corrected — see "Reconnaissance corrections").
+
+## Golden set
+
+| # | File | Page | Ground truth | Current-pipeline OCR result | Found? | CER |
+|---|------|------|---------------|------------------------------|--------|-----|
+| 1 | `11381263.pdf` | 0 | `122,81ha` | `122,81ha` (verbatim, multiple correct instances on the page) | **FOUND** | 0.000 |
+| 2 | `11381263.pdf` | 1 | `98,18ha` | `98,1 §ha` (digit `8` split off + misread as `§`) | **MISS** | 0.286 |
+| 3 | `11381263.pdf` | 7 | `4,38 ha` | `4.3§ ha` (comma→period, digit `8`→`§`) | **MISS** | 0.286 |
+| 4 | `II. Detailed planning/2019 CV 1517-SXD 03-12-2019 HDTT lập ĐAQH CTXD Khu bến tổng hợp Định An-GĐ 2 (33,6ha).pdf` | 0 | `33,6ha` | `33,6ha` (verbatim, multiple correct instances) | **FOUND** | 0.000 |
+| 5 | `III. Land use rights/06 Nộp tiền thuê đất.pdf` | 0 | `Số: 115/TB-BQLKKT` | `: 115 PH-BÓI.KIXT` (decorative-font header, heavily garbled) | **MISS** | 0.471 |
+
+"Found?" / "CER" columns above are the **BEFORE baseline** — see below.
+
+### Item detail
+
+**#1 — `122,81ha` (project scale).** Appears correctly on page 0 (the QĐ
+approval decision header/preamble) four times: `"...Định An (quy mô
+122,81ha)"`. One same-page OCR instance renders as `122,&1ha)"` (glyph swap
+`8→&`), but since the other three instances are correct, the page-level
+retrievability check passes. Included as a **control** — this figure was
+never broken; it demonstrates the harness correctly reports FOUND/CER=0 when
+OCR is clean, and shows per-instance noise can coexist with an overall FOUND
+result.
+
+**#2 — `98,18ha` (kho bãi hậu phương, cầu cảng diện tích).** Ground truth
+confirmed by eyeballing the rendered page-1 crop: `"...cảng diện tích
+98,18ha;"`. Current Tesseract output splits the second `8` off and misreads
+it as `§`, producing `"98,1 §ha"` — the exact string reconnaissance found in
+`knowledge_nodes.properties->>'content'` for this project. **DB-verified**
+(this session, not inherited from recon): the `document_chunk` belonging to
+*this* document (`document_id=89a0ea6a-...`, i.e. `11381263.pdf`) contains
+the mangled `"98,1 §ha"` — chunk `ece864a1-96bf-4498-8cee-872f30e637ef`. A
+**different** document in the same project (`document_id=a7ee9a4c-...`)
+happens to contain the clean `"98,18ha"` string. This matters for the plan's
+retrievability SQL as literally written: it is scoped by `project_id` only,
+not `document_id`, so `LIKE '%98,18%'` against the whole project returns a
+false-positive FOUND (count=1) driven by the unrelated document, while the
+document actually under test is still mangled. The harness in this repo
+(`b2_figure_metrics.py`) avoids this by rendering the specific
+`(pdf_path, page_index)` directly rather than searching the DB — **MISS** on
+raw ground truth, confirmed at the correct scope.
+
+**#3 — `4,38 ha` (Bãi hàng 3 / BH3 diện tích).** Ground truth confirmed by
+eyeballing the rendered page-7 crop: `"...Bãi hàng 3 (BH3) diện tích 4,38
+ha;..."`. Current Tesseract output: `"Bãi hàng 3 (BH3) diện tích 4.3§ ha"` —
+matches the `"diện tích 4.3§ ha"` string reconnaissance found in the DB
+(the recon's illustrative `4.35 ha` ground truth was approximate; `4,38 ha`
+is the verified true value for this specific field). **DB-verified**: the
+`document_chunk` for `document_id=89a0ea6a-...` (`11381263.pdf`) contains the
+mangled `"4.3§ ha"` — chunk `9daace07-aa00-46ad-9972-a3f109aafd98`. Six other
+`document_chunk` rows in the same project match the clean `"4,38 ha"`
+substring, but they belong to five *different* documents (project-level
+`LIKE` again produces a false-positive FOUND) — same scoping caveat as #2.
+**MISS** on raw ground truth, confirmed at the correct scope.
+
+**#4 — `33,6ha`.** **Reconnaissance correction:** the recon flagged this as
+the "unretrievable — hard-detection miss" example, hypothesizing OCR fails
+to capture it anywhere in the body text (evidenced only by the figure
+appearing in the filename). Verified false: fresh `TesseractEngine.ocr_image`
+on page 0 (rendered directly from this PDF, no preprocessing) reads
+`"...giai đoạn 2, quy mô khoảng 33,6ha như sau"` correctly, and a direct DB
+query (`unaccent(lower(content)) LIKE '%33,6%'`) returns **4** matching
+`document_chunk` rows already ingested for this project. This item is kept
+in the golden set as a **second control** (documents the corrected finding
+so Task 2/3 don't re-chase a miss that isn't there) rather than removed
+silently, per the instruction to surface reconnaissance conflicts rather
+than average over them. **No genuine "hard-miss" example was found** during
+this task — Tasks 2/3 should treat that scenario as hypothetical/unverified
+unless a real one surfaces during broader re-extraction.
+
+```sql
+-- Retrievability check used to verify #4 against the live DB:
+SELECT count(*) FROM knowledge_nodes
+WHERE project_id='592c7ff7-9f6f-4cc5-9094-d9b3b685277e'
+  AND node_type='document_chunk'
+  AND unaccent(lower(properties->>'content')) LIKE '%33,6%';
+-- returned: 4 (NOT 0 — contradicts the recon's "unretrievable" claim)
+```
+
+**#5 — `a3856d16` garbage chunk.** **Reconnaissance correction:** the recon
+could not find chunk id `a3856d16...` among `document_chunk` nodes and
+treated it as optional/best-effort. It exists, but as a **`document`** node
+(not `document_chunk`): id `a3856d16-4ce4-4c0a-812b-5fe0a00724e5`, title `06
+Nộp tiền thuê đất`, `stored_path` ending in `.../36abd5d2.../06 Nộp tiền thuê
+đất.pdf`. Its `properties->>'summary'` field is severely garbled Vietnamese
+OCR text (e.g. `"UIHND TINH TLÁ VINH CỘNG HO NÃ HỘI CHỦ NGHĨA VIET BÉM"` for
+`"UBND TỈNH TRÀ VINH CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"`). Local source file:
+`doc_pdf_test/project_1/III. Land use rights/06 Nộp tiền thuê đất.pdf`, page
+0. Root cause differs from #2/#3: this scan uses a decorative/stylized font
+for the header (`Số: 115/TB-BQLKKT`, `THÔNG BÁO`), which Tesseract's `vie`
+model reads very poorly regardless of digit-confusable patterns — a
+different failure mode than the `8`→`§` substitution class. Kept as a
+best-effort qualitative document-level garbling example (matches the plan's
+"do not block, treat as optional" guidance); ground truth is the document
+number line, not a figure.
+
+```sql
+-- Retrievability query template from the plan (Step 1), run this session
+-- against #2/#3. NOTE the project-scoping caveat above: run it scoped by
+-- document_id, not just project_id, or it will false-positive on unrelated
+-- documents that happen to share the same figure text.
+SELECT count(*) FROM knowledge_nodes
+WHERE project_id='592c7ff7-9f6f-4cc5-9094-d9b3b685277e'
+  AND properties->>'document_id'='89a0ea6a-8605-4408-b765-a7598464cc40'
+  AND node_type='document_chunk'
+  AND unaccent(lower(properties->>'content')) LIKE '%98,18%';   -- verified: 0 (document-scoped)
+SELECT count(*) FROM knowledge_nodes
+WHERE project_id='592c7ff7-9f6f-4cc5-9094-d9b3b685277e'
+  AND properties->>'document_id'='89a0ea6a-8605-4408-b765-a7598464cc40'
+  AND node_type='document_chunk'
+  AND unaccent(lower(properties->>'content')) LIKE '%4,38 ha%';  -- verified: 0 (document-scoped)
+-- also check structured_fields on the document node (currently NULL for
+-- both 11381263.pdf and the 33,6ha doc — extraction has not populated
+-- structured_fields->'areas' yet for this project, independent of B2):
+SELECT properties->'structured_fields' FROM knowledge_nodes
+WHERE project_id='592c7ff7-9f6f-4cc5-9094-d9b3b685277e' AND node_type='document'
+  AND id='89a0ea6a-8605-4408-b765-a7598464cc40';
+```
+
+### `Số 09` doc-number confusable — out of scope for this task
+
+Per the plan's own Task 3 Step 2 scope note, doc-number confusables (`Số
+09` ↔ `Số O9`-style letter/digit swaps) are explicitly out of scope for the
+regex fix in Task 3. No time was spent searching for a standalone example;
+not included in the golden set.
+
+## Reconnaissance corrections (summary)
+
+Two of the five reconnaissance claims did not hold up under direct
+verification and are recorded here rather than silently fixed, per Rule 7
+(surface conflicts, don't average them):
+
+1. **`33,6ha` is NOT an unretrievable hard-miss.** It OCRs correctly from a
+   fresh render with zero preprocessing, and is already present in 4 DB
+   chunks. Reconnaissance's inference (drawn only from the figure appearing
+   in the filename) was wrong.
+2. **The `a3856d16` chunk DOES exist** in the current DB — as a `document`
+   node (not `document_chunk`), with the garbling in its `summary` property.
+   Reconnaissance's search apparently didn't check `document`-type nodes.
+
+Both corrections are reflected in the golden set table and detail sections
+above; neither blocked this task per the standing instruction to treat #4/#5
+as optional/best-effort.
+
+## Harness
+
+`ennam.kg.python/scripts/b2_figure_metrics.py` — pure measurement wrapper,
+no production OCR/preprocessing logic. Takes an injectable OCR callable
+(`Callable[[PIL.Image.Image], str]`) so later B2 tasks can score
+preprocessed / vi-model variants without modifying this file.
+
+- `found`: ground-truth substring present anywhere in the page's OCR text,
+  both sides normalized via unaccent+lower **and whitespace-stripped** (same
+  accent/case rule as the plan's SQL — Vietnamese diacritics survive plain
+  `.lower()` — plus whitespace-stripping added after finding the same spacing
+  brittleness in the plan's own SQL template, see #2/#3 above: ground truth
+  is inconsistently spaced even when OCR is clean, e.g. `98,18ha` vs
+  `4,38 ha`, so `found` must not depend on getting the space right).
+- `cer`: character error rate = `min_over_windows(levenshtein(window, gt)) /
+  len(gt)`, where `window` ranges over substrings of each OCR line with
+  length within ±2 chars of `len(ground_truth)`. Diagnostic only — for
+  relative comparison across preprocessing configs, not an absolute
+  OCR-quality claim. **Deviation from the plan's Step 2 wording** ("a 10-line
+  Levenshtein vs ground truth on the matched line"): that phrasing is
+  ambiguous (no aligned reference transcript exists to define "the matched
+  line" against), so this harness instead does a sliding-window best-match
+  search across all OCR lines. Flagging explicitly in case a different CER
+  definition was intended — straightforward to swap out `best_window_cer`
+  if so.
+
+### Runbook
+
+```bash
+cd ennam.kg.python
+
+# BEFORE / AFTER baseline against the current pipeline (raw TesseractEngine,
+# zero preprocessing):
+uv run python scripts/b2_figure_metrics.py
+
+# against a non-default pdf_root:
+uv run python scripts/b2_figure_metrics.py --pdf-root /path/to/doc_pdf_test/project_1
+```
+
+No environment variables required — the harness renders PDFs directly and
+calls Tesseract locally; it does not touch the DB.
+
+## BEFORE baseline (Task 1 Step 3 — CAPTURED, this task)
+
+Actual run output, `uv run python scripts/b2_figure_metrics.py`, current
+pipeline (`TesseractEngine(lang="vie", psm=1)`, zero preprocessing):
+
+```
+[FOUND] cer= 0.000  gt='122,81ha'  window='122,81ha'  page=0  file=11381263.pdf
+[MISS ] cer= 0.286  gt='98,18ha'  window='98,1 §ha'  page=1  file=11381263.pdf
+[MISS ] cer= 0.286  gt='4,38 ha'  window='4.3§ ha'  page=7  file=11381263.pdf
+[FOUND] cer= 0.000  gt='33,6ha'  window='33,6ha'  page=0  file=II. Detailed planning/2019 CV 1517-SXD 03-12-2019 HDTT lập ĐAQH CTXD Khu bến tổng hợp Định An-GĐ 2 (33,6ha).pdf
+[MISS ] cer= 0.471  gt='Số: 115/TB-BQLKKT'  window=': 115 PH-BÓILKIKT'  page=0  file=III. Land use rights/06 Nộp tiền thuê đất.pdf
+```
+
+Summary: 2/5 FOUND (both controls — #1 and #4, which were never broken),
+3/5 MISS (#2, #3: the digit-confusable mangling class Task 3's regex/config
+fix should target; #5: decorative-font garbling, a different failure mode
+that preprocessing/config tuning in Task 2 is more likely to help than a
+regex fix). Mean CER across the 3 MISS items: 0.348.
+
+## AFTER baseline (Tasks 2/3 — NOT YET CAPTURED)
+
+- Re-run `uv run python scripts/b2_figure_metrics.py` with the
+  preprocessed-image / vi-model OCR callable substituted in, once Task 2
+  (preprocessing) and/or Task 3 (RapidOCR + regex fixes) land.
+- Gate: #2 and #3 should flip to FOUND with CER trending toward 0; #1 and
+  #4 must remain FOUND (no regression on already-correct figures); #5 is
+  best-effort and not a hard gate.
