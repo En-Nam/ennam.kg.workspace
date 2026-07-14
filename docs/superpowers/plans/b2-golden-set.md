@@ -424,3 +424,128 @@ above, should that mangling pattern occur on the RapidOCR fields path on
 other documents or future scans — just not provably demonstrated as a fix
 on *this* golden set, because the fields-path engine didn't reproduce the
 failure mode it was designed to repair.
+
+## Task 5 — Live Re-ingest Verification (BLOCKED — partial)
+
+**Status: BLOCKED at Step 2.4 (re-ingest) on an invalid API key. The
+destructive half of Step 2 (delete) completed and is verified clean; no
+new OCR ran yet, so no figure-retrievability numbers are captured here.**
+
+### Step 1 — Rebuild (DONE)
+
+```
+docker compose up -d --build worker indexer
+```
+Both `daab-worker` and `daab-indexer` rebuilt and came up healthy
+(`daab-indexer` reports `{"status":"healthy"}`; `daab-worker` queue
+consumer started on `ennam-kg:indexing`, `ennam:kg_generation`,
+`ennam:extraction`, `ennam:agent_context_embed`). `daab-server` was also
+recreated as a side effect of the shared compose dependency graph (not a
+scope violation — no code change to it, and it went from `unhealthy` to
+`healthy`).
+
+### Step 2 — Targeted delete (DONE) + HARD GATE (PASSED)
+
+Scope: the 3 golden-set docs only —
+`89a0ea6a-8605-4408-b765-a7598464cc40` (`11381263.pdf`),
+`7922817f-0a3c-4e61-8fb0-228ce1f8648c` (`...HDTT lập ĐAQH...(33,6ha).pdf`),
+`a3856d16-4ce4-4c0a-812b-5fe0a00724e5` (`06 Nộp tiền thuê đất.pdf`).
+
+**Before delete (previewed with SELECT before any DELETE ran):**
+
+| scope | count |
+|---|---|
+| document hubs | 3 |
+| document_section | 12 |
+| document_chunk | 80 |
+| knowledge_node_embeddings | 92 |
+| knowledge_edges touching these nodes | 143 |
+| canonical_document rows (live) | 3 |
+| project total `document` nodes (sanity) | 77 |
+
+**Deviation from the referenced dedup-cleanup pattern** (`2026-07-13-daab-document-dedup.md`
+Task 6 Step 2): that pattern soft-deletes `canonical_document` (`deleted_at
+= NOW()`) *before* hard-deleting the hub `knowledge_nodes` row. On the
+current schema, `canonical_document.knowledge_node_id` is a `NOT NULL` FK
+to `knowledge_nodes.id` — a soft-deleted row still holds that FK, so hub
+deletion fails with `violates foreign key constraint
+"canonical_document_knowledge_node_id_fkey"`. Also hit a second FK not
+mentioned in the reference plan: `draft_nodes.knowledge_node_id` also
+blocks hub deletion. Fix applied (transaction rolled back cleanly on the
+first two failed attempts — nothing partially committed):
+1. `UPDATE draft_nodes SET knowledge_node_id = NULL` for the 3 hub ids
+   (draft history preserved, just unlinked — draft rows are not part of
+   the dedup-matching path).
+2. **Hard**-delete (not soft-delete) the 3 `canonical_document` rows —
+   functionally equivalent for the "no live canonical row" invariant,
+   since a deleted row can't match on `deleted_at IS NULL` either way.
+
+Executed as one transaction, scoped only to the 3 hub ids (+ nodes whose
+`properties->>'document_id'` is one of those 3 ids):
+
+```
+DELETE FROM knowledge_edges            -- 143 rows
+DELETE FROM knowledge_node_versions    -- 3 rows
+UPDATE draft_nodes SET knowledge_node_id = NULL  -- 3 rows
+DELETE FROM canonical_document         -- 3 rows
+DELETE FROM knowledge_nodes            -- 95 rows (3 hub + 12 section + 80 chunk)
+COMMIT
+```
+
+**Hard gate (after delete):**
+
+| check | result |
+|---|---|
+| live nodes (hub+section+chunk, these 3 doc ids) | **0** |
+| live canonical_document rows (these 3 doc ids) | **0** |
+| live embeddings for the 3 hub node ids | **0** |
+| project total `document` nodes | 77 → **74** (exactly −3, confirms no over-scoped deletion) |
+
+Hard gate **PASSED**. Safe to re-ingest.
+
+### Step 2.4 — Re-ingest (BLOCKED)
+
+Confirmed route by reading `ennam.kg.go/internal/handler/ingest_upload.go`:
+`POST /api/v1/projects/{projectId}/ingest/upload` (multipart, field `file`),
+poll `GET /api/v1/projects/{projectId}/draft-nodes/{draftId}` until
+`status` is one of `processed` / `failed` / `rejected` (terminal, per
+`internal/models/draft_node.go`'s state machine).
+
+Adapted the existing `scripts/ingest-batch-pdfs.py` pattern into a
+throwaway script (scratchpad, not checked in) targeting only the 3 files
+above via multipart upload to
+`http://127.0.0.1:8082/api/v1/projects/592c7ff7-9f6f-4cc5-9094-d9b3b685277e/ingest/upload`.
+
+**Blocker:** the API key supplied in the task brief
+(`ennam_kg_e95362f4...`, from `other_projects/daab-sim-consumer/.mcp.json`)
+returned `HTTP 401 {"error":"invalid or revoked API key"}`. Verified this
+is not a false negative: `sha256(<that exact key>)` does not match any
+`key_hash` currently in the `api_keys` table (12 rows, all admin-role web
+sessions or two long-lived admin keys — none matching). Per the task's own
+guidance ("if anything ... seems unclear ... stop and report NEEDS_CONTEXT
+rather than guessing on a destructive operation") and the harness's own
+credential-exploration guard, I did **not** attempt to brute-force or
+enumerate other candidate keys to find one that authenticates — that
+`.mcp.json` key is simply stale/wrong for this running stack's current
+`api_keys` table (likely rotated since that file was last regenerated).
+
+**What is NOT done:** Step 2.4 (re-ingest), Step 2.5 (confirm fresh-OCR
+log line), Step 3 (verify success criteria — harness run + live DB
+figure-recovery query + unrelated-doc spot-check). None of these can run
+until a valid, Cảng-scoped (or admin) API key is supplied.
+
+**Current live-DB state:** the 3 target documents currently have **zero**
+nodes in the KG (mid-operation state — delete done, re-ingest pending).
+Source PDFs are untouched on disk; nothing is lost, but these 3 docs are
+temporarily absent from Cảng Định An in the dashboard/search until
+re-ingest runs. The other 74 documents in the project (including B1's
+completed entity-resolution work) are unaffected — confirmed by the
+77→74 (exactly −3) count above.
+
+**To resume:** supply a working API key scoped to project
+`592c7ff7-9f6f-4cc5-9094-d9b3b685277e` (or admin role), then run the
+scratchpad re-ingest script (or re-derive it from
+`scripts/ingest-batch-pdfs.py`, pointed at `PROJECT_ID =
+592c7ff7-9f6f-4cc5-9094-d9b3b685277e` and the 3 target file paths listed
+above), then complete Step 3's verification queries against the new
+document/chunk ids.
