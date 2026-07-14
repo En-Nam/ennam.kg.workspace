@@ -103,7 +103,9 @@ from ennam_kg.resolution.rules import _normalize
 _ABBREV = {
     "thnn": "tnhh",
     "cty": "cong ty",
-    "c.ty": "cong ty",
+    # NOTE: do NOT add dotted/spaced forms like "c.ty" here — _normalize() already
+    # splits on [.\s\-_] BEFORE fold runs, so "c.ty" arrives as two tokens "c ty"
+    # and a dotted key would be dead. Keys must be single post-normalize tokens.
     # extend as the corpus reveals more; keep deterministic and reversible-safe.
 }
 
@@ -291,15 +293,22 @@ Create `docs/superpowers/plans/b1-golden-set.md` listing the Hàm-Giang variant 
 
 ```sql
 -- Un-merged concept heads whose folded name is the investor. Target: 1.
+-- CRITICAL: unaccent() is required — lower('Hàm Giang')='hàm giang' does NOT match
+-- '%ham giang%' (Vietnamese diacritics survive lower()). The unaccent extension is
+-- installed (verified). Without it, all diacritic "Hàm"/"Xây" variants are missed.
 SELECT count(*) AS heads
 FROM knowledge_nodes
 WHERE project_id='592c7ff7-9f6f-4cc5-9094-d9b3b685277e'
   AND node_type='concept'
   AND COALESCE(properties->>'merged_into','')=''
-  AND lower(title) LIKE '%ham giang%'
-  AND (lower(title) LIKE '%xay d%' OR lower(title) LIKE '%nay d%' OR lower(title) LIKE '%xd %' OR lower(title) LIKE '%tnhh%' OR lower(title) LIKE '%thnn%');
+  AND unaccent(lower(title)) LIKE '%ham giang%'
+  AND (unaccent(lower(title)) LIKE '%xay d%'
+       OR unaccent(lower(title)) LIKE '%nay d%'
+       OR unaccent(lower(title)) LIKE '%xd %'
+       OR unaccent(lower(title)) LIKE '%tnhh%'
+       OR unaccent(lower(title)) LIKE '%thnn%');
 ```
-(Company variants only — exclude the `ấp/xã Hàm Giang` location by requiring a company token.)
+(Company variants only — the trailing company-token clause excludes the `ấp/xã Hàm Giang` *location* node, which has no company token.)
 
 - [ ] **Step 2: Write `b1_entity_metrics.py`**
 
@@ -332,9 +341,9 @@ git commit -m "test(resolution): B1 entity-head-count + precision measurement ha
 Against Cảng (`KG_DATABASE_URL` + `KG_API_URL=:8082` + a valid key), in order:
 1. `uv run python -m ennam_kg.resolution.classify_corpus_cli --project 592c7ff7-...` (re-classify with fold).
 2. `uv run python -m ennam_kg.resolution.emit_hub_candidates_cli --project 592c7ff7-...` (emit folded-group suggestions).
-3. Trigger `fuzzy_llm_adjudicate` for the project (the LLM precision gate) — via its CLI (`fuzzy_llm_adjudicate_cli.py`) or the worker path; adjudicated merges apply, borderline → `needs_review`.
+3. Run the LLM adjudication precision gate. The CLI is `fuzzy_llm_adjudicate_cli.py` — its args are `--project <id> --out <verdicts.csv>` (+ an adjudicate flag; run `uv run python -m ennam_kg.resolution.fuzzy_llm_adjudicate_cli --help` first to confirm the exact flag). This adjudicates the emitted suggestions: confident merges apply, borderline → `needs_review`. Alternatively the worker applies `run_fuzzy_llm_adjudication` automatically after resolve jobs; if using the worker path, confirm it processed this project's new suggestions.
 
-Record counts (candidates emitted, merged, needs_review).
+Record counts (candidates emitted, merged, needs_review) from the CLI output / DB.
 
 - [ ] **Step 2: Verify success criteria**
 
