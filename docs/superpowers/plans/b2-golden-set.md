@@ -302,3 +302,125 @@ Next step if this is revisited: combine Task 2's preprocessing with Task 3's
 digit-confusable regex repair — #2/#3 are now one character off, which is
 exactly the class of error Task 3 targets, so the combination may clear the
 FOUND bar where preprocessing alone did not.
+
+## Task 3 — RapidOCR fields-path language + confusable repair (CAPTURED)
+
+Targets `extract_structured_fields` in `rapidocr_fields.py` (the RapidOCR
+*fields* path — doc numbers/dates/areas/amounts/ids — a different path from
+Task 1/2's Tesseract *body-text* CER harness above).
+
+### Step 1 spike — vi/latin PP-OCR rec ONNX model (deferred)
+
+Researched (~30 min budget) whether a Vietnamese or "latin" PP-OCR
+recognition ONNX model + dict is directly downloadable without conversion:
+
+- **Official model hub** (`huggingface.co/SWHL/RapidOCR`, the RapidAI
+  project's own release channel) ships only `ch`/`en` PP-OCRv1-v4 rec
+  models — no Vietnamese or multilingual artifact.
+- PaddleOCR's own Vietnamese rec model exists only as Paddle inference
+  weights; producing an ONNX artifact requires `paddle2onnx` conversion —
+  out of scope per the plan's own gate ("do NOT block on model
+  conversion").
+- A "latin" rec ONNX model + `dict.txt` **is** directly downloadable
+  without conversion, but only from an **unofficial third-party mirror**
+  (`huggingface.co/monkt/paddleocr-onnx/languages/latin`). Its `dict.txt`
+  was fetched and inspected directly: it contains Latin-extended, currency,
+  Greek, and math/symbol glyphs, but **no Vietnamese diacritic characters**
+  (no ạ/ệ/ữ/ơ/ư/ộ/ẫ/... checked explicitly). Wiring it in would swap the
+  current `ch` (Chinese+English) rec model for one with equal-or-worse
+  Vietnamese coverage, sourced from an unverified re-upload — not a fix for
+  this project's Vietnamese-language documents.
+
+**Decision: DEFER.** No readily-obtainable, verified vi/latin ONNX artifact
+that actually improves Vietnamese OCR exists within the spike budget. The
+`_engine` in `_get_engine()` is unchanged (still `RapidOCR()`, ch+en). This
+is documented as a NOTE comment at the call site in `rapidocr_fields.py` for
+future revisit. Proceeded with the regex-only fix (Steps 2-6), the
+independent/reliable half of Task 3.
+
+### Steps 2-4 — `_repair_confusables_near_units` (implemented, TDD)
+
+Added to `rapidocr_fields.py`: `_CONFUSABLE` translation table
+(`I`/`l`→`1`, `§`→`5`, `O`/`o`→`0`; `S`→`5` deliberately excluded per the
+plan's own caveat) and `_NUM_UNIT` (a digit-led run tolerant of those
+confusable chars, ending in a unit token: `ha`/`m²`/`m2`/`m³`/`m3`).
+`_repair_confusables_near_units` translates matched spans only. Wired into
+`extract_structured_fields` right after `_normalize_ocr_text`.
+
+Tests (`tests/ingestion/test_rapidocr_fields.py`, both from the plan's own
+illustrative examples):
+- `test_confusable_repair_recovers_area` — `"122,8Iha"` → `_AREA` now
+  matches; `"4.3§ ha"` → `"4.35 ha"`.
+- `test_repair_does_not_touch_normal_text` — `"Hàm Giang 122,81 ha"`
+  unchanged; `"So O9 tai lieu"` unchanged (no unit → no span → no rewrite,
+  the explicit no-over-reach case from the plan).
+
+Both tests FAILED before implementation (`ImportError`: name undefined),
+PASSED after. Full `ingestion/` suite: `uv run pytest tests/ingestion/ -v`
+→ **89 passed**, no regressions.
+
+**Edge case found during review** (not in the plan's illustrative code):
+`_NUM_UNIT`, copied faithfully from the plan, has **no trailing `\b`** after
+the unit alternation (unlike `_AREA`, which does: `...(?:...)\b`). In
+principle this lets `_NUM_UNIT` match a digit run bleeding into the start of
+an unrelated word beginning with "ha" (e.g. a hypothetical "24hang" if
+diacritics are dropped by OCR, which does happen in this corpus — "hàng"
+sometimes renders as "hang"). In practice this is harmless: (1) the
+translation table only rewrites `I`/`l`/`O`/`o`/`§`, so a plain digit run
+like "24" produces a no-op substitution regardless of what follows; (2) even
+if a confusable letter were adjacent (e.g. "2Ohang" → "20hang" after
+repair), the character-for-character translation doesn't change string
+length or boundaries, and the downstream `_AREA` regex still has its own
+`\b` guard, so no new false-positive "area" field is ever *extracted* — the
+risk is confined to the repair step touching a byte or two of a word it
+technically shouldn't have inspected, never to a bad field ending up in the
+output. No real instance of this was observed in the golden-set corpus.
+Documented rather than silently "improved" (the plan's illustrative regex
+is the load-bearing spec here) — a `\b` could be added if a real corpus
+case ever surfaces it.
+
+### Step 5 — golden-set A/B on the fields path (real run, not estimated)
+
+Task 1's `b2_figure_metrics.py` measures the Tesseract *body-text* path
+(`ocr_fn: Image -> str`) and was **not modified**. A separate one-off script
+(not checked in — ad hoc scratch script) reused `GOLDEN_SET`,
+`render_page`, and `_unaccent_lower` from `b2_figure_metrics.py` unchanged,
+and scored the *fields* path instead: `found` = ground truth (after
+unaccent+space-strip) appears in one of `extract_structured_fields(render)
+["areas"]`, run once with `_repair_confusables_near_units` monkeypatched to
+identity (BEFORE) and once with the real function (AFTER).
+
+```
+--- BEFORE (no confusable repair) ---
+[FOUND] gt='122,81ha'          areas contain '122,81ha'                 (item 1, control)
+[FOUND] gt='98,18ha'           areas contain '98,18ha'                  (item 2)
+[FOUND] gt='4,38 ha'           areas contain '4,38ha'                   (item 3)
+[FOUND] gt='33,6ha'            areas contain '33,6ha'                   (item 4, control)
+[MISS ] gt='Số: 115/TB-BQLKKT' areas=[area-only list, no doc-number match] (item 5, out of scope)
+--- AFTER (with confusable repair) ---
+(identical to BEFORE, item-for-item, byte-for-byte)
+```
+
+**Finding: no MISS→FOUND flip on this golden set for the fields path** —
+4/5 FOUND both before and after (both controls #1/#4, plus #2/#3), 1/5 MISS
+unchanged (#5, doc-number pattern, explicitly out of Task 3's scope per the
+plan). This is a real, honest negative result, not a tooling gap: the
+RapidOCR `ch+en` engine used by the fields path (a different model/engine
+than Task 1/2's Tesseract body-text harness) does **not reproduce** the
+`98,1 §ha` / `4.3§ ha` digit-confusable mangling on these two pages that
+Tesseract produced — it already transcribes `98,18ha` and `4,38ha`
+correctly on this corpus. A broader scan of all pages of `11381263.pdf` for
+any `\d[\d.,IlOo§]*\s?(?:ha|m²|m2|m³|m3)` span containing a confusable
+character found no genuine digit-corruption instance (a few stray lowercase
+`o` matches were leading vowels of adjacent Vietnamese words, e.g. `"quy mô
+122,81ha"` → `"o122,81ha"`, not digit corruption).
+
+Net effect: `_repair_confusables_near_units` is implemented, unit-tested
+against the plan's own illustrative confusable patterns, and verified to be
+a true no-op on this specific golden-set corpus (no regression, confirmed
+byte-identical BEFORE/AFTER). It remains valuable defense-in-depth for the
+`98,1 §ha`-style mangling class documented in Task 1/2's Tesseract findings
+above, should that mangling pattern occur on the RapidOCR fields path on
+other documents or future scans — just not provably demonstrated as a fix
+on *this* golden set, because the fields-path engine didn't reproduce the
+failure mode it was designed to repair.
