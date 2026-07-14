@@ -278,6 +278,15 @@ above — CER is explicitly "not an absolute OCR-quality claim"):
   Flagging rather than fixing — item 5 is out of this task's gate scope, and
   a targeted fix belongs with Task 3's regex/config work if revisited, since
   #2/#3 are now only a character away from FOUND.
+  **Update (post-review deskew tie-break fix):** the deskew half of this
+  hypothesis is ruled out — instrumenting `_deskew` on this page shows
+  `best_angle=0.0` with a high, non-tied score (~1.9e8), i.e. deskew never
+  rotates this page and was never a tie-break default in either the old or
+  fixed iteration order. Re-running the full A/B after the tie-break fix
+  (see `ennam.kg.python` `preprocess.py` `_deskew`) reproduces the exact same
+  `found`/`cer`/`window` for all 5 golden-set items, byte-for-byte — the fix
+  is real (covered by a unit test) but was never active on this golden set.
+  Item 5's regression is attributable to binarization, not deskew.
 - Per Rule 7 (surface conflicts, don't average them): the plan text has two
   slightly different phrasings of the "no regression" condition — Task 2's
   brief says "no regression on currently-correct figures" (item 5 exempt,
