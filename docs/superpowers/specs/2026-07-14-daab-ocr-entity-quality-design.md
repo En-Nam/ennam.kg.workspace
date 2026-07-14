@@ -112,7 +112,26 @@ The debate proposed "add a rapidfuzz token-set candidate channel." Source verifi
 - **Precision is the hard constraint for E:** every merge still passes `name_class` generic-reject, `danger_guards`, and Haiku adjudication; the BA-031 benchmark + over-merge audit gate the ship. Fragmentation-down must not buy false-merge-up.
 - **No `sim_threshold` change** — recall comes from normalization + the existing fuzzy channel.
 
-## 8. Success criteria
+## 8. Performance & resource impact
+
+Baseline measured from the Cảng 79-doc re-ingest (worker logs, 2026-07-13): per-doc cycle ~14 s (small) to ~102 s (large 32-section doc), typically **~30 s/doc**, **dominated by Haiku extraction + OCR** — chunk/embed (local e5-small) is a minor term.
+
+| Stage | Which intervention touches it | Estimated delta |
+|-------|-------------------------------|-----------------|
+| **RAG / query** (`kg_graph_retrieve`) | none | **0% — latency unchanged.** Queries hit already-indexed chunks/embeddings; no OCR at query time. Only **quality** improves (fewer garbage chunks, better entity edges). |
+| **Chunk + embed** | none | **~0%** — same text → same chunk/embedding count and speed. |
+| **OCR — Tesseract** | #2 preprocessing | +~50–100 ms/page for binarize/deskew/denoise, **often offset** by a cleaner binary image making Tesseract faster → net ≈ neutral; tiny vs the ~30 s/doc baseline. |
+| **OCR — RapidOCR fields** | #4 vi model | marginal (+~10–20% on the fields sub-step only, itself a small fraction of per-doc time). |
+| **Resolution** | #1 `_normalize` fold | +µs per name → **~0 per-doc**. |
+
+**Bottom line:**
+- **RAG/query throughput & latency: zero impact** — the solution does not slow retrieval; it only raises quality.
+- **New-doc ingest: ~neutral to +5–10%** — preprocessing is tens of ms/page, negligible under the Haiku-extraction-dominated ~30 s/doc baseline.
+- **The only real cost is one-time & offline** (not per-ingest): the **#1 resolution re-run** over the existing ~8k nodes ≈ **5–10% of a full re-ingest** (Haiku adjudication on candidate pairs; **no re-OCR/embed/extract**), plus **targeted** re-OCR of the subset of pages behind fragmented entities / low-yield fields — never a full 77-doc re-OCR.
+
+The #0 harness should instrument per-page OCR timing (pre/post #2) to confirm these estimates on the target hardware before committing #2.
+
+## 9. Success criteria
 
 1. **Primary (E):** the Hàm-Giang investor collapses from ≥4 concept heads to **1**, restoring its shared-entity / related-documents / centrality signal — with **BA-031 precision flat** and a clean over-merge audit.
 2. **F:** "33,6 ha" becomes **retrievable** (via #2/#4) or is explicitly **`needs_review`** (via #3) — never silently lost; mangled figures (`122,8Iha`→`122,81 ha`) parse correctly.
