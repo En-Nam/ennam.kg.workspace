@@ -867,3 +867,81 @@ was already extracting correctly — no LLM/vision, no chunking/
 embedding/resolution changes, no Go-side changes. Controls
 (`122,81ha`, `33,6ha`) and an unrelated document are confirmed
 unaffected.
+
+---
+
+## Task 6 follow-up fix — dropped the ambiguous `§→5` confusable mapping (2026-07-15)
+
+A whole-branch review of Tasks 6+7 together (dispatched after Task 7
+landed) found a real, previously-unnoticed regression **introduced by
+Task 6 specifically**: `_CONFUSABLE`'s `"§": "5"` mapping (inherited
+unchanged from the original Task 3) does not just fail to fix the
+target figures — on the real corpus it **manufactures a confidently
+wrong number**. `"4.3§ ha"` was silently rewritten to `"4.35 ha"` in
+`document_chunk.content` (verified live), when the true value is
+`"4,38 ha"` (RapidOCR's own correct native read of the same figure,
+per Task 7's recovered-fields section). Pre-Task-6 this mapping only
+ever reached `structured_fields` (a field nothing reads for
+retrieval, per the second final review) — Task 6 was the first time
+it hit the actual searched/chunked text, turning a *visibly* mangled
+figure into a *confidently wrong* one. For a figure-fidelity feature,
+that is strictly worse than the original mangling: mangled text at
+least signals "something's off here."
+
+Root cause: `§` is a genuinely ambiguous OCR-corruption glyph — unlike
+`I`/`l`/`O`/`o` (which unambiguously mean `1`/`1`/`0`/`0`), `§` can
+stand in for different real digits (5, 8, others) depending on the
+source image, and there is no way to recover which one from the
+character alone without visual context (LLM-vision, out of scope).
+
+**Fix**: removed `"§": "5"` from `_CONFUSABLE`
+(`ennam.kg.python/src/ennam_kg/ingestion/ocr/rapidocr_fields.py`).
+`§` still matches inside a number+unit span (`_NUM_UNIT`'s character
+class is unchanged, so the rest of a span's digits still get
+repaired) but now passes through **untranslated** — the honest
+outcome, since a visibly-garbled `§` correctly signals a bad OCR read
+instead of fabricating a plausible-looking wrong number. `I`/`l`/`O`/`o`
+repairs (unambiguous, real fixes) are untouched on both the RapidOCR
+and Tesseract paths.
+
+Two existing tests that had baked the wrong `"4.35 ha"` outcome in as
+"correct" (`test_rapidocr_fields.py`, `test_ocr.py`) were updated to
+use an unambiguous `O→0` example instead, and two new regression
+guards were added confirming `§` is now left untranslated
+(`test_confusable_repair_leaves_ambiguous_glyph_untranslated`,
+`test_extract_pdf_leaves_ambiguous_glyph_untranslated`).
+
+**Live re-verification** (rebuilt `worker`, scoped delete + re-ingest
+of the same 3 target documents — new hub ids: `11381263.pdf` →
+`4f33270b-2692-4101-8cc6-2f7267a8f868`, `33,6ha` doc →
+`8f866f33-0717-4a62-b2cd-619a86775030`, `06 Nộp tiền thuê đất.pdf` →
+`fe18f252-fbc3-4448-968b-087ab2562e19`; project doc count round-tripped
+77→74→77):
+
+| query on `document_chunk.content` (hub `4f33270b-...`) | result |
+|---|---|
+| `LIKE '%4.35 ha%'` (the wrong, fabricated value) | **0 matches** — gone |
+| `LIKE '%4.3§%'` (honest, untranslated) | **1 match** — present, unchanged, no longer mistranslated |
+| `LIKE '%4,38ha%' OR '%4,38 ha%'` (correct value, from Task 7's recovered-fields section) | **1 match** — still present, unaffected by this fix |
+| `LIKE '%98,18ha%'` (correct value, Task 7) | **1 match** — still present |
+| `LIKE '%122,81ha%'` (control) | **2 matches** — no regression |
+| `LIKE '%33,6ha%'` (control, hub `8f866f33-...`) | **1 match** — no regression |
+
+Unrelated document `de64038d-5b91-4c8d-98af-1bd2e6dfdd99` spot-checked
+unaffected (25 chunks, unchanged).
+
+### Final honest status
+
+With this fix, the genuinely-retrievable, genuinely-correct state is:
+`document_chunk.content` for the target document contains the CORRECT
+recovered values (`98,18ha`, `4,38ha`, via Task 7's appended section,
+sourced from RapidOCR's native read) and no longer contains any
+FABRICATED wrong value (Task 6's `§→5` guess, removed). The originally
+Tesseract-mangled body-text occurrence of the figure (e.g. `"...diện
+tích 4.3§ ha..."`) remains visibly garbled in its original sentence
+context — this is honest (no LLM-vision available to recover the true
+digit from the image), and Task 4's `unrecovered` fail-loud marker
+plus Task 7's appended correct-value section together ensure the
+correct figure is genuinely reachable by full-text search even though
+the in-context body sentence itself is not silently "fixed" with a
+guess.
