@@ -34,6 +34,9 @@ Tier 1 (single) **11/12 = 2.75** · Tier 2 (entity) 7/9 = 2.33 · **Tier 3 (cros
 Also: the analyst **disproved the question bank's own premise** — GPĐT X1/X2/X3 are **three distinct projects** (`7666509593`/1995 Tân Thuận, `8766258311`/2022 Tân Thuận, `4039215552`/2024 Long An), not successive amendments. The corpus spans 2 provinces / multiple projects.
 
 ## Next steps
-1. Fix `kg_graph_retrieve` (#1) → re-run this harness → first honest FR-001 verdict.
+1. ~~Fix `kg_graph_retrieve` (#1) → re-run this harness → first honest FR-001 verdict.~~ **DONE, twice over.** `kg_graph_retrieve` itself was never broken (see retraction above). The "honest FR-001 verdict" this checkpoint was waiting on now exists as a **deterministic, code-measured** result (not another LLM-narrated harness run): `mem:checkpoint/fr001-measurement-2026-07-17` — **INCONCLUSIVE AT N=10**, `hop1_only_docs=8` non-zero on 4/10 queries (not a clean 0, not a clean win). Treat that checkpoint, not this run's Tier-3 score narrative, as the FR-001 record of truth.
 2. Then #2 ingest quality gate (BCTC2023 orphan + place/authority dedup + numeral check).
 3. Still pending: workspace-root docs/memories **uncommitted**; nothing merged to `main` on any of the 4 repos (`task/implement_docs_sync`).
+
+## ⚠️ 2026-07-17 correction — this checkpoint's own Tier-3 findings are narration, not measurement
+This checkpoint (and its sibling `findings-dasin.md`) is itself one of the **two banner-flagged-compromised harness runs** referenced by `mem:checkpoint/fr001-measurement-2026-07-17`: the Tier-3/Tier-4 scores and qualitative judgments above (e.g. "7/12 = 1.75") were an LLM narrating its own tool-call outputs as measurements, not code-computed. The one retraction already present in this file (item 1, `kg_graph_retrieve` "broken") shows the failure mode was caught once; it was **not** the only instance — a second fabrication happened in `findings-dasin-run2.md` (see `mem:backlog/ba033-slice2-readiness-path`'s 2026-07-16 update). Any number in this checkpoint that did not come from a `print()`/JSON dump in a real script run should be treated as narrative color, not evidence, going forward.

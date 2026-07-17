@@ -80,6 +80,17 @@ The harness re-run above (`findings-dasin-run2.md`) surfaced a NEW real bug, dis
 
 Full detail: `mem:checkpoint/harness-findings-fixes-2026-07-16`. Dasin-scale still cannot settle OQ-033-8/coverage/95-needs_review on the M&A corpus — that needs the 145-doc Cảng Định An corpus, unchanged from before.
 
+## ⚡ UPDATE 2026-07-17 — first deterministic FR-001 verdict (code-measured, not LLM-narrated)
+
+`findings-dasin-run2.md` and `findings-dasin.md` (referenced throughout the 2026-07-16 updates above) are **both banner-flagged compromised**: an LLM narrated its own tool-call outputs as measurements and fabricated numbers, twice. Task 3 of the doc-sync/DAAB-fix plan replaced that process with a deterministic Python script (`other_projects/daab-sim-consumer/fr001_measure.py`, gitignored local artefact) that computes every metric by code — set differences, row counts — and only dumps raw snippets for a human to separately judge relevance. Full detail: `mem:checkpoint/fr001-measurement-2026-07-17`.
+
+**Verdict: INCONCLUSIVE AT N=10 — not the clean 0 (`ADDS NOTHING`) the prior narrated runs implied, and not a clean win either.** On the Dasin project (9 docs, `similar_to` edges=399), 10 queries (5 homogeneous financial-statement / 5 heterogeneous licence-narrative, predicted class stated before running):
+- `hop1_only_docs` (documents reached ONLY via a `similar_to` edge, not by `kg_search_chunks`, not by graph_retrieve's own seeds) = **8 total**, non-zero on 4/10 queries (H1, X2, X4, X5) — spans **both** predicted classes, not just heterogeneous as hypothesized.
+- `true_cross_doc_hop1` (edge-verified via `kg_get_node`) = 25 — the graph-traversal mechanism itself is confirmed real and working; it just often lands on documents already reachable another way, which is why `hop1_only_docs` (8) is much smaller than `true_cross_doc_hop1` (25).
+- Heterogeneous queries lean on hop-1 expansion ~3x more than homogeneous ones by row fraction (0.332 vs 0.103 mean) — directionally consistent with the FR-001 thesis even though the binary class split didn't cleanly separate `hop1_only_docs` to zero on the homogeneous side.
+- **This still cannot settle OQ-033-8/coverage/the 145-doc scale question** — Dasin's 9 docs test the mechanism, not whether it matters in aggregate. A repeat of this same deterministic script against Cảng Định An (592c7ff7) is the next concrete step if the Slice 2 scale decision is revisited.
+- Bonus: one specific numeric claim from `findings-dasin-run3.md` (dropped_count/expanded_count/seed_count/hop1-doc-IDs for the `"doanh thu thuần 2023 2024 2025"` query) was spot-checked against the real script output and matched exactly — a genuine (if narrow) point of agreement, not grounds to trust that report's other unverified claims.
+
 ## See also
 - `mem:decisions/ba033-slice2-deferred` (retraction 2026-07-08) · `mem:docs` `docs/daab-memory-consumer-contract.md`
 - `mem:backlog/daab-kg-search-sessions-followups` · `mem:backlog/agent-context-retention-followups`
