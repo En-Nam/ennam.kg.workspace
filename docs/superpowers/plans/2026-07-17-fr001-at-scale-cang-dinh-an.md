@@ -1,4 +1,27 @@
-# FR-001 at Scale — Cảng Định An (145 docs) Measurement Plan
+# FR-001 at Scale — Cảng Định An Measurement Plan
+
+> ## ✅ Task 1 (substrate gate) ALREADY RUN — 2026-07-17. Read this before starting.
+> **Project:** `Cảng Định An M&A` = `592c7ff7-9f6f-4cc5-9094-d9b3b685277e` — **stable, not re-ingested** (unlike Dasin, whose UUID churns). Still resolve by name if you re-run, but this ID held all session.
+>
+> **Corpus size — the "234 docs" figure is drafts, not documents.** `draft_nodes` = **234, all `processed`**; `canonical_document` = **77**; `document` nodes = **77**. The 234/77 ≈ **3.0×** ratio matches the recorded *"same PDF ingested 2–5× with divergent OCR"* — **dedup is working; 77 is the real unique-document count.** (Earlier notes saying "145 documents" are stale.)
+>
+> | Gate | Result | |
+> |---|---|---|
+> | chunks / embedded | **1005 / 1005** | ✅ |
+> | OCR health (diacritics) | **93%** (938/1005) | ✅ predates the OCR bug's victims |
+> | `similar_to` **before** | **133** (0.13 edges/chunk — 20× sparser than Dasin's 2.7) | 🔴 |
+> | **linker run** → `similar_to` **after** | **3,258** (`edges_upserted: 4119`; histogram 0.85-0.90: 5248, 0.90-0.95: 4150) | ✅ **3.2 edges/chunk, matches Dasin** |
+> | orphaned documents (no concept edge) | **13 / 77 = 17%** | ⚠️ see below |
+>
+> **The linker gate fired exactly as predicted** — `similar_to` had collapsed to 133 (memory records 1864 on 2026-07-13 at 626 chunks; chunks grew to 1005, edges fell). Measuring FR-001 before this would have "proven" expansion useless for entirely the wrong reason. **Post-linker smoke test:** `kg_graph_retrieve` → 20 rows, `expanded_count` 70, `hop_count` `[0,1]`, **13 distinct documents**, 20/20 with snippet text — far richer than Dasin's 6 docs, as expected at scale.
+>
+> **Two findings that change the plan below — do not skip:**
+> 1. **This corpus is entity-rich, unlike Dasin.** `concept` 3694 · `organization` 1743 · `location` 1015 · `person` 693 · `artifact` 580 · `event` 268 · `document_chunk` 1005 · `document_section` 231. Dasin had **only `concept` (22)**. ⟹ the **6 resolved types exist here, so B1 entity resolution applies** — and the 95 `needs_review` dup hubs (`Công ty` deg 96, `Trị Vinh`=Trà Vinh, …) are live in this data and will distort any entity-based comparison. FR-001 is chunk-similarity, so it is not directly affected — but do not carry Dasin's "concept-only" assumptions across.
+> 2. **The known contradiction is retrievable — in Vietnamese number format.** `14,71` → **4 chunks**, `33,6` → **2 chunks** (the B2 OCR fix). Searching `14.71`/`33.6` with a **dot** returns **0** — a decimal-separator trap that nearly produced a false "one side is missing" conclusion. **Worse, and directly relevant to the `contradiction-adjacent` class:** the same figure exists in **both** formats in the corpus — `122,81 ha`/`122,81ha`, `125,04 ha`/`125.04 ha`, `13,17 ha`/`13.17 ha`. That comma↔dot OCR noise is exactly the false-positive class a contradiction detector must suppress. Any query or matcher in this plan must handle both separators.
+>
+> **Remaining gate decision (Task 1 Step 4):** 13/77 documents have no concept edge. This corpus predates the extraction fail-loud fix, so those are likely the silent-empty-extraction class. **FR-001 is chunk-based and can proceed** — but the measurement's entity-adjacent claims are bounded by this, and it must be stated in the verdict.
+
+*(Original plan below; header retained for the record — it said "145 docs", now measured at 77 unique / 234 drafts.)*
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`).
 
