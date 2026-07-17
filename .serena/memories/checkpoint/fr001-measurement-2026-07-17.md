@@ -7,7 +7,23 @@ Wrote `other_projects/daab-sim-consumer/fr001_measure.py` (mirrors `mcp_call.py`
 
 **A real bug was caught by self-review before the report was finalized, not after:** the first run computed `sc_docs` (kg_search_chunks' document set) as always-empty because `kg_search_chunks` nests `document_id` under `properties.document_id` while `kg_graph_retrieve` puts it top-level; the script's first cut assumed one shape for both. This silently inflated `gr_only_docs` to 55 (should have been ~13) across every query — a second, code-level instance of the exact "assume the shape, don't check it" failure mode the harness runs kept hitting at the LLM-narration level. Fixed (`doc_id_of()` helper checks both shapes), full run repeated, numbers below are from the corrected run.
 
-## Verdict
+## Verdict — UPGRADED 2026-07-17 after the deferred human relevance read
+
+**FR-001 EARNS ITS KEEP — mechanism PROVEN on a decisive instance. Scale impact still unmeasured.**
+
+The script correctly deferred the relevance call; the main session then did it, and it resolves positively:
+
+**The decisive instance (X4 = `"cơ quan nào cấp giấy phép đầu tư Ban Quản lý khu chế xuất khu công nghiệp"`):** hop-1 edge-only row, doc `7e83cedc` (BCTC2025, *"BÁO CÁO CỦA BAN GIÁM ĐỐC"*), score 0.812, contains the **complete answer in one passage** — both authorities and all three licences with dates: *"Công ty được Ban Quản lý các Khu Chế Xuất và Công Nghiệp TP.HCM cấp Giấy phép đầu tư lần đầu số 7666509593 ngày 31/03/1995 … và Giấy phép đầu tư số 8766258311 … Công ty được Ban Quản lý Khu Kinh Tế Tỉnh Long An cấp Giấy phép đầu tư số 4039215552 ngày 25/10/2024."*
+
+**The k-cap confound was tested and RULED OUT** (this was the obvious alternative explanation — that `search_chunks`' 10-row clamp, not lexical unreachability, caused the miss): on that query `kg_search_chunks` returns **5 rows with `total_count: 5`** — not capped, it genuinely matches only 5 chunks — and **does not return `7e83cedc` even when queried with the chunk's own verbatim phrasing** (`"Ban Quản lý các Khu Chế Xuất và Công Nghiệp TP.HCM cấp Giấy phép đầu tư"`). Plain search cannot reach this chunk at all; the `similar_to` edge can.
+
+**The real mechanism — and it is neither hypothesis previously advanced:** the answer sentence is **buried in a chunk whose aggregate embedding is about something else** (BHP letterhead + addresses + management-report narrative). **query→chunk** similarity fails; **chunk→chunk** similarity (from a licence chunk) succeeds. So FR-001's value is **not** "recall without lexical match" (the lexical overlap here is strong) and **not** "joining facts across documents" — it is: **a graph edge rescues a chunk that the query vector cannot reach because the chunk is *about* something else.** That claim is generalizable and testable at scale.
+
+**Do not overclaim:** only **1 of the 4** queries with `hop1_only_docs > 0` produced a hop-1-only chunk that actually answers. X2's hop-1-only (`bb7d05cf`, GCNĐKKD branch cert) is the **right document class** for the capital-reconciliation question Q9 previously failed — but the chunk carries no capital figure, so it does not answer. Mechanism proven ≠ frequently useful.
+
+**Footnote — run2's insight was right, its evidence was fabricated:** run 2 claimed exactly this "narrative section reachable only via edge" mechanism but cited Q10's query, where it does **not** reproduce (verified: three codes sit in three separate hop-0 rows; the lone hop-1 row carries none). The deterministic script found the genuine instance on a different query. A correct intuition does not license invented measurements.
+
+### Original script-level verdict (retained — this is what the script itself could establish without a relevance judgement)
 **INCONCLUSIVE AT N=10 — with a specific, non-null reason** (not one of the two clean verdicts):
 
 - `hop1_only_docs` (the decisive metric: documents reached ONLY via a `similar_to` edge, not by `search_chunks`, not by graph_retrieve's own seeds) is **8 total, non-zero on 4/10 queries** (H1=2, X2=1, X4=3, X5=2) — NOT consistently 0, so `FR-001 ADDS NOTHING HERE` is ruled out.
