@@ -34,11 +34,18 @@ Two consecutive sim-consumer harness runs produced **fabricated evidence in oppo
 - **Scope honesty that must survive into the output:** Dasin is **9 documents**. Task 3 answers the *mechanism* question (does hop-1 add reach?), **not** the BA-033 Slice 2 go/no-go, which needs the 145-document Cảng Định An corpus.
 
 ## File Structure
+
+> ⚠️ **`/other_projects/` is gitignored** (`.gitignore:32`) — `daab-sim-consumer` is a **local test harness, deliberately not version-controlled**. Everything under it below is a **local artefact**: edit it, but do not try to `git add` it (that will fail). The only durable output of Task 3 is the **Serena checkpoint** (Task 3 Step 6) — `.serena/memories/` *is* tracked.
+
+**Local (gitignored, not committed):**
 - `other_projects/daab-sim-consumer/findings-dasin.md` (modify) — COMPROMISED banner.
 - `other_projects/daab-sim-consumer/findings-dasin-run2.md` (modify) — COMPROMISED banner.
 - `other_projects/daab-sim-consumer/questions-dasin.md` (modify) — fix the stale project ID + the two disproven premises.
 - `other_projects/daab-sim-consumer/fr001_measure.py` (create) — the deterministic measurement.
 - `other_projects/daab-sim-consumer/fr001-measurement.md` (create) — its output + interpretation.
+
+**Tracked:**
+- `.serena/memories/checkpoint/fr001-measurement-<date>` (create, via Serena MCP) — the verdict + numbers + method. **This is the deliverable that survives.**
 
 ---
 
@@ -83,10 +90,10 @@ Two consecutive sim-consumer harness runs produced **fabricated evidence in oppo
   - **Q10's premise is false.** X1/X2/X3 are **three distinct projects** (`7666509593`/1995 Tân Thuận · `8766258311`/2022 Tân Thuận · `4039215552`/2024 Long An), not successive amendments of one licence. Reword to ask what the tools can establish about the licence set.
   - **Q8's premise is partly false.** *"No single chunk holds it"* ignores that Vietnamese statutory income statements carry a **prior-year comparative column** — BCTC2025's chunk holds 2025+2024, BCTC2024's holds 2024+2023, so **two documents cover three years**. Note this inline; it makes Q8 a weak FR-001 test.
 
-- [ ] **Step 4: Commit.**
+- [ ] **Step 4: Nothing to commit — and that is correct.** `/other_projects/` is **gitignored** (`.gitignore:32`); `daab-sim-consumer` is a **local test harness**, deliberately not version-controlled. The banners still matter — the files are read from disk, and a reader acting on run 1's #1 recommendation would chase a bug that does not exist. Just verify the banners landed:
 ```bash
-git -C . add other_projects/daab-sim-consumer/findings-dasin.md other_projects/daab-sim-consumer/findings-dasin-run2.md other_projects/daab-sim-consumer/questions-dasin.md
-git -C . commit -m "docs(harness): flag both sim-consumer runs as compromised; correct stale project id and disproven premises"
+head -12 other_projects/daab-sim-consumer/findings-dasin.md
+head -12 other_projects/daab-sim-consumer/findings-dasin-run2.md
 ```
 
 ---
@@ -163,11 +170,8 @@ python3 fr001_measure.py | tee fr001-measurement-raw.txt
   - **INCONCLUSIVE AT N=9** — with the specific reason.
   State the numbers plainly. **Do not round a null result up into a positive one** — a clean negative is a valid, valuable outcome that saves the FR-002/003/005 build from resting on a false premise.
 
-- [ ] **Step 5: Commit.**
-```bash
-git -C . add other_projects/daab-sim-consumer/fr001_measure.py other_projects/daab-sim-consumer/fr001-measurement.md
-git -C . commit -m "test(harness): deterministic FR-001 retrieval-delta measurement replacing self-reported LLM scores"
-```
+- [ ] **Step 5: Do NOT commit the script or its raw output.** `/other_projects/` is gitignored (`.gitignore:32`) — `daab-sim-consumer` is a local test harness by design. The script and `fr001-measurement.md` stay **local artefacts**.
+> **But the verdict must survive.** It is a real input to the BA-033 Slice 2 decision and would otherwise be lost with the sandbox. Carry it into version control via **Step 6's Serena checkpoint** (`.serena/memories/` **is** tracked): record the verdict, the per-class numbers (`hop1_only_docs`, `true_cross_doc_hop1`, precision cost), the query set used, and enough method detail to re-run. Treat the checkpoint — not the ignored file — as the durable deliverable.
 
 - [ ] **Step 6: Checkpoint.** `mcp__serena__write_memory("checkpoint/fr001-measurement-<YYYY-MM-DD>", …)`: the verdict + numbers; that **both harness runs are compromised and banner-flagged**; and the process lesson — *a measurable question was handed to an LLM, which fabricated the measurements twice; use code for counting, LLMs only for judgement.* Correct `mem:checkpoint/daab-mcp-harness-dasin-2026-07-16` (already partly retracted) and update `mem:backlog/ba033-slice2-readiness-path` with the FR-001 verdict.
 
