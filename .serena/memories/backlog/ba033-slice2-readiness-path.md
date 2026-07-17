@@ -1,5 +1,7 @@
 # Backlog — BA-033 Slice 2 readiness path
 
+**UPDATE 2026-07-16 — `concept`-type exact/case/legal-form duplication is FIXED** (was a contributor to the dup-entity top-hub problem described below). See `mem:backlog/ingestion-ocr-content-loss-bugs` and `mem:checkpoint/concept-dedup-fix-2026-07-16`. `decompose.py` now reuses project-scoped `concept` nodes via a `fold_name`-based key instead of minting one per mention; measured on Dasin: concepts 41→26, 0 exact dupes, cross-document bridge query went from 0 rows to 11 shared concepts. This does NOT resolve semantic near-duplicates (only deterministic case/whitespace/legal-form folding) — the 95 `needs_review` dup-entity hubs described below are a distinct, still-open problem for the 6 resolution-pipeline types (`concept` is explicitly outside that pipeline's scope).
+
 **UPDATED 2026-07-10: OQ-033-8 SETTLED by direct measurement → Gate A GREEN on the CORRECT (concept-excluded) graph.** Supersedes the 2026-07-03 "green" which measured the wrong graph. **Branch:** `task/implement_docs_sync`.
 
 ## ⚡ OQ-033-8 SPIKE 2026-07-10 (project 592c7ff7 "Cảng Định An M&A", :5433, Louvain seed 42)
@@ -57,6 +59,26 @@ Steps 1–3 run. **626/626 chunks embedded** (reembed/backfill are no-ops on alr
 
 ## Build path (if FR-002/003/005 committed)
 `community` node type + `member_of`/`summarised_as` edges (OQ-033-1 migration + config edge rule) + batch Leiden/Louvain jobengine job (prune generic hubs first) + one summary/cluster via BA-009 + `kg_global_retrieve` REST+MCP.
+
+## ⚡ UPDATE 2026-07-16 — harness-findings-fixes plan complete; FR-001's "kg_graph_retrieve is broken" claim RETRACTED, ingest-quality gate closed
+
+Full detail: `mem:checkpoint/harness-findings-fixes-2026-07-16`. Summary for this backlog:
+
+- **The 2026-07-16 sim-consumer run's finding #1 ("`kg_graph_retrieve` broken — no passage text, `limit` ignored, hop-1 discarded") was a false diagnosis** from analyst parameter misuse (there is no `limit` field; real params are `result_k`/`seed_k`/`include_snippet`). Measured with correct params both before and after this fix: 9 rows, 9/9 snippets, `hop_count [0,1]`, multi-document. **`kg_graph_retrieve` was never broken.**
+- **Closed the real defect that caused the false diagnosis:** `graph_retrieve.go` now rejects unknown JSON fields with 400 (`DisallowUnknownFields`) — verified live: `limit:60` → 400 naming the field + valid list; valid request → 200.
+- **Closed the Dasin ingest-quality gaps this backlog's Gate-B/C section flags as blocking an honest verdict:** `BCTC KIEM TOAN 2023` was silently orphaned (0 concept edges) from a swallowed LLM JSON-parse failure in `extract.py` — now retries once then fails loud; re-ingested and measured at 3 concept edges (was 0), 9/9 docs processed with 0 failures, zero silent errors in the worker log.
+- **Place/authority concept duplication (a distinct issue from the already-fixed company-legal-form dedup) is now closed too:** `decompose.py`'s `_LEGAL_FORMS` extended to place/authority abbreviations; measured live — Tân Thuận EPZ, Phú An Thạnh IP, and the HEPZA authority each collapsed to exactly one node (was 2+ each), total Dasin concepts 26→22.
+- **This is Dasin-scale evidence (9 docs), not Cảng Định An-scale** — it closes the *ingest-quality* prerequisite this doc's Gate-B/C section names, but does not itself settle OQ-033-8/coverage/95-needs_review on the M&A corpus.
+
+## ⚡ UPDATE (same day) — honest FR-001 verdict now in hand at Dasin scale, PLUS a second real bug found+fixed live
+
+The harness re-run above (`findings-dasin-run2.md`) surfaced a NEW real bug, distinct from the retracted "graph_retrieve is broken" claim: DAAB's MCP bridge (`ennam.kg.go/internal/bridge/serve.go`) unconditionally injected an extra unrequested `projectId` field into every default-project `kg_graph_retrieve` call — harmless until this same plan's `DisallowUnknownFields()` fix started rejecting it. **Invisible to two independent whole-branch code reviews** because they checked the bridge's declared schema, not its runtime request-building logic. Fixed live (`ennam.kg.go` commit `467fd91`, TDD, independently reviewed Approved 0 Critical/Important), `kg-bridge` rebuilt.
+
+**`findings-dasin-run3.md` (run 3, bridge now genuinely fixed) is the first trustworthy FR-001 measurement in 3 attempts:** score 33/42 (2.36 avg, up from 32/42 both prior runs). **`kg_graph_retrieve` CONFIRMED genuinely working** — 5/5 calls succeeded through the real MCP bridge path a real consumer (AAAA) would use, including real `hop_count:1` cross-document expansion in 3/5 calls.
+
+**New backlog item surfaced (not retrieval, not covered by any FR-00x above):** even with retrieval genuinely working, Q9 (equity delta), Q11 (contradictions), Q12/Q13 (corpus synthesis) still score ≤2 — because the gap is a **comparison/arithmetic/synthesis layer**, not missing retrieval. Worth its own brainstorm + plan; do not fold into FR-001/FR-004 scope.
+
+Full detail: `mem:checkpoint/harness-findings-fixes-2026-07-16`. Dasin-scale still cannot settle OQ-033-8/coverage/95-needs_review on the M&A corpus — that needs the 145-doc Cảng Định An corpus, unchanged from before.
 
 ## See also
 - `mem:decisions/ba033-slice2-deferred` (retraction 2026-07-08) · `mem:docs` `docs/daab-memory-consumer-contract.md`

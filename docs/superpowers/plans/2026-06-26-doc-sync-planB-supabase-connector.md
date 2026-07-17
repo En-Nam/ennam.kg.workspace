@@ -1,5 +1,7 @@
 # Doc-Sync Plan B — Supabase Storage Connector (reuse source_connections) Implementation Plan
 
+> **⚠️ SUPERSEDED — 2026-07-15.** Never started. Replaced by `docs/superpowers/plans/2026-07-15-daab-doc-sync-planA.md` (spec `…/specs/2026-07-15-daab-doc-sync-planA-aaaa-endpoint-design.md`). Reason: verified AAAA's document **metadata** lives in AAAA's own Postgres (`am_ai_db`), NOT on Supabase (only the Storage bucket is) — so DAAB pulls metadata via an **AAAA integrations endpoint** (Option A), not a Supabase VIEW/connector. Migration number here (000071) is also stale (latest is 000075 → new is 000076). Future shared-Supabase path: Serena `backlog/daab-doc-sync-planB-future`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`).
 
 **Goal:** Thêm `source_type='supabase'` vào hệ **`source_connections` SẴN CÓ**: admin connect (nhập scoped read-only key, lưu mã hoá) → nút **Sync** (implement route 501 sẵn có) → worker kéo PDF `documents/` từ Supabase Storage → OCR (Plan A) → draft-node → graph + back-link. Idempotent (etag), no-persist, vào corpus-project khoá admin.

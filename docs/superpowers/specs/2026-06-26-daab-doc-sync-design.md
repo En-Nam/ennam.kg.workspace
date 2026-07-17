@@ -1,5 +1,7 @@
 # DAAB Doc-Sync (Supabase Storage → RAG) — Design Spec (2026-06-26, rev2 post-review)
 
+> **⚠️ SUPERSEDED (connector half) — 2026-07-15.** The **Plan A OCR pipeline** in this spec is DONE and still valid. The **connector half** (Plan B: DAAB reads Supabase Storage directly via broker/scoped-key, single locked "corpus-project", enumerate-by-prefix) is **REPLACED** by `docs/superpowers/specs/2026-07-15-daab-doc-sync-planA-aaaa-endpoint-design.md`. Reason: verified that AAAA's document **metadata** lives in AAAA's own Postgres (not Supabase — only the Storage bucket is), so DAAB pulls metadata via an **AAAA integrations endpoint** + Storage **signed URLs**, mapped **per-project** (not one locked corpus). Future shared-Supabase path tracked in Serena `backlog/daab-doc-sync-planB-future`.
+>
 > **Status:** DRAFT rev3 — post 2-agent review + user decision. v1 = **combine Tesseract (text) + RapidOCR-latin (structured fields as metadata)**, sample-gated, signed-URL credential, locked corpus project. Awaiting approval before plan.
 > **Goal:** Nút **Sync** ở Knowledge Sources kéo PDF scan từ Supabase Storage → OCR local (Tesseract) → VN-normalize → chunk → draft-node → graph + back-link. **Seed corpus** để đánh giá BA-033.
 > **Implements:** `decisions/ecosystem-direction-cto-approved-2026-06-24` (DAAB = knowledge layer; sync text + back-link, không lưu document).
