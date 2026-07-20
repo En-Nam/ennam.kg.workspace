@@ -3,7 +3,7 @@
 **Date:** 2026-07-20
 **Status:** Approved (design) — pending spec review
 **Scope:** Cross-repo — `ennam.kg.go` (endpoint), `ennam.kg.python` (sync worker), `other_projects/am-ai-agents` (read endpoint).
-**Supersedes two things in IMP-010** (`ennam.kg.requirements/documents/improvements/IMP-010-aaa-masterrecord-writeback-tools.md`):
+**Supersedes three things in IMP-010** (`ennam.kg.requirements/documents/improvements/IMP-010-aaa-masterrecord-writeback-tools.md`):
 1. **Transfer direction** — IMP-010 and `thiet-ke-ecosystem-laam-daab-aaa.md:104` specify AAA *pushing*; this design pulls. See [Direction reversal](#direction-reversal).
 2. **Content location** — IMP-010 **BR-003** and FR-1 state the full record content stays in the source system ("KG is graph/index, not a duplicate document store"); this design stores it in DAAB. See [Content-location reversal](#content-location-reversal).
 3. **Edge writing** — IMP-010 **BR-004** defers provenance edges to separate `kg_link` calls and **BR-007** requires rebuilds to *merge* rather than replace provenance; D2 makes edges atomic with the upsert and D9 makes them replace-semantics. See [Edge-write reversal](#edge-write-reversal).
@@ -255,9 +255,9 @@ Source payload: `MasterRecordSection.sourceDocIds` and `citations`
   being ingested; drop-and-log unresolvable evidence refs rather than failing
   the whole upsert.
 - **Committed sections only.** AAAA's read endpoint filters to
-  `MasterRecordSection.status = READY` (`schema.prisma:954`,
+  `MasterRecordSection.status = COMPLETED` (`schema.prisma:954`,
   `EntityProfile.status` :878) so DAAB never ingests a half-built MR. See D10
-  for what happens when only *some* sections are READY.
+  for what happens when only *some* sections are COMPLETED.
 
 ### D9 — Edges are REPLACE semantics, not additive
 
@@ -307,9 +307,9 @@ why D8 forbids incidental summary blanking. But applying merge semantics to
 replace.** Both are safe only because pull guarantees every upsert carries the
 record's complete current state.
 
-### D10 — Partially-READY Master Records: sync, but mark the gap
+### D10 — Partially-complete Master Records: sync, but mark the gap
 
-When some sections are `READY` and others are mid-rebuild, **sync the READY
+When some sections are `COMPLETED` and others are mid-rebuild, **sync the COMPLETED
 sections and record which sections were absent or stale** in the node (e.g. a
 `sections_present` / `sections_stale` property alongside `generated_at`).
 
@@ -386,7 +386,7 @@ of a partial fetch.
 | `ennam.kg.go` — `config/config.yaml` | `summary` max_length 2000 → 8000; full-content field (non-indexed); confirm edge whitelist (D4) |
 | `ennam.kg.go` | Retrieval surface returning full MR content for a `derived_record` (D4) |
 | `ennam.kg.python` — `ingestion/` | New independent MR sync track: cursor, contentHash skip, edge resolution, reconcile sweep (D6, D7) |
-| `am-ai-agents` | `GET /api/integrations/daab/master-records` — `daabTokenOk` auth, `status=READY` only, returns sections + `sourceDocIds` + `citations` + `contentHash` + tombstones (D1, D6, D7) |
+| `am-ai-agents` | `GET /api/integrations/daab/master-records` — `daabTokenOk` auth, `status=COMPLETED` only, returns sections + `sourceDocIds` + `citations` + `contentHash` + tombstones (D1, D6, D7) |
 | `ennam.kg.go` — `config/config.yaml:701` | Rewrite the `derived_record` description — "Content lives in the source system" becomes false once D4 ships |
 | `ennam.kg.requirements` / ecosystem doc | Update IMP-010 (direction **and** BR-003/FR-1 content-location) + ecosystem :104 to reference this spec's two reversals (D1, D4) |
 
@@ -420,10 +420,10 @@ of a partial fetch.
 3. `record_ref` stable across an `EntityProfile` rebuild → updates the same node, never creates a second (F3 regression guard).
 4. Partial fetch without summary does **not** blank an existing summary (D8).
 5. Evidence refs to un-ingested documents are dropped-and-logged; the upsert still succeeds (D6).
-6. AAAA endpoint returns only `status = READY` sections; a half-built MR is never served (D6).
+6. AAAA endpoint returns only `status = COMPLETED` sections; a half-built MR is never served (D6).
 7. Deleted project → tombstone → reconcile sweep marks the `derived_record` revoked; LAAM no longer retrieves it (D7).
 8. `subtype = "aaaa_master_record"` does not collide with BA-031 `master_record` node-type queries (F6).
 9. AAAA read endpoint rejects requests without a valid `DaabSyncKey` (fail closed).
 10. **Edge replacement (D9):** upsert with a payload citing fewer documents than the previous build leaves *only* the new edges — dropped citations do not survive. Assert the stale edge is gone, not merely that the new one exists.
-11. **Partial readiness (D10):** with some sections not READY, the node records which sections are absent/stale; a consumer can distinguish partial from complete.
+11. **Partial completeness (D10):** with some sections not COMPLETED, the node records which sections are absent/stale; a consumer can distinguish partial from complete.
 12. **One trigger, ordered (D11):** a single sync run executes doc sync before MR sync; MR evidence refs resolve against documents ingested in the same run.
