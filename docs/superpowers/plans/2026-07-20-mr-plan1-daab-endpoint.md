@@ -27,9 +27,8 @@
 ### Task 0: Wire transactional node+edge support (PREREQUISITE — atomicity does not exist today)
 
 **Files:**
-- Modify: `ennam.kg.go/internal/store/node.go`, `internal/store/edge.go` (Tx method signatures)
-- Modify: `ennam.kg.go/cmd/kg-server/main.go:397-399` (wiring)
-- Test: `ennam.kg.go/internal/service/inline_links_test.go` (extend), plus a wiring assertion
+- Modify: `ennam.kg.go/cmd/kg-server/main.go:397-399` (wiring only — **no store signature changes**)
+- Test: `ennam.kg.go/internal/service/inline_links_test.go` (extend)
 
 **Why this task exists.** Verified in code — **do not skip it assuming atomicity already works**:
 
@@ -41,99 +40,86 @@
   returns only its own definition).
 - Therefore `hasTxSupport()` is **false in production**, and inline `Links` take
   the non-transactional fallback: node first, edges after, **no rollback**.
-- The reason it was never wired: the concrete stores do not satisfy the
-  interfaces. `EdgeStore.CreateEdgeTx` takes `tx *sql.Tx`
-  (`internal/store/edge.go:128`) while `service.EdgeRepositoryTx` declares
-  `tx store.Tx` (`internal/service/node.go:45`). Go requires an exact signature
-  match, so `*EdgeStore` does **not** implement `EdgeRepositoryTx` — which is why
-  only mocks are used in `inline_links_test.go`.
+- The bare stores cannot satisfy the interfaces directly: `EdgeStore.CreateEdgeTx`
+  takes `tx *sql.Tx` (`internal/store/edge.go:128`) while
+  `service.EdgeRepositoryTx` declares `tx store.Tx`
+  (`internal/service/node.go:45`), and Go requires an exact signature match.
+- **But the adapters for exactly this already exist and are correct**:
+  `store.TxNodeStore` (`internal/store/tx.go:42`, implements `TxBeginner` +
+  `NodeRepositoryTx`) and `store.TxEdgeStore` (:70, implements
+  `EdgeRepositoryTx`). Both take `Tx`, assert `*sqlTx`, and delegate to the bare
+  store with the unwrapped `*sql.Tx`.
+- **They are simply never instantiated.** `grep -rn "NewTxNodeStore" --include="*.go" .`
+  matches only its own definition.
+
+So this is a **wiring gap, not a refactor**. Do not change store signatures — the
+adapter layer is already the intended design and works.
 
 Spec D2 requires node+edges to be atomic. Without this task, Plan 1 ships the
 exact failure D2 exists to prevent: a crash between node write and edge write
 leaves new content with old provenance.
 
 **Interfaces:**
-- Produces: `*NodeStore` and `*EdgeStore` satisfying `NodeRepositoryTx` / `EdgeRepositoryTx`, and `WithTxSupport(...)` wired at the composition root.
+- Consumes: existing `store.NewTxNodeStore(db, nodeStore)` and `store.NewTxEdgeStore(edgeStore)` (`internal/store/tx.go:49, :77`).
+- Produces: `WithTxSupport(...)` wired at the composition root so `hasTxSupport()` is true in production.
 
 - [ ] **Step 1: Write the failing test**
 
-```go
-// internal/store/tx_interface_test.go
-package store_test
-
-// WHY: these assertions are the whole point of Task 0. Production silently ran
-// without transactions because nothing checked that the concrete stores satisfy
-// the transactional interfaces — the mocks in inline_links_test.go passed while
-// the real wiring could not compile.
-var (
-	_ service.NodeRepositoryTx = (*store.NodeStore)(nil)
-	_ service.EdgeRepositoryTx = (*store.EdgeStore)(nil)
-	_ service.TxBeginner       = (*store.NodeStore)(nil) // or whichever type owns BeginTx
-)
-```
-
-Plus a service-level test that a failing edge write rolls back the node:
+A behavioural test — the interface assertions would already pass for the adapters,
+so they would prove nothing. What is broken is the *wiring*.
 
 ```go
 func TestStoreNode_EdgeFailureRollsBackNode(t *testing.T) {
-	// Against a real DB with WithTxSupport wired: request a node with one valid and
-	// one invalid link. Assert BOTH are absent afterwards — today the node survives.
+	// WHY: this is Task 0's entire point. Build the NodeService exactly as
+	// cmd/kg-server/main.go does, then request a node with one valid link and one
+	// pointing at a nonexistent target.
+	//
+	// Today the node survives with a partial edge set — hasTxSupport() is false, so
+	// StoreNode falls back to node-then-edges with no rollback. Spec D2 requires
+	// both to vanish.
+	//
+	// Assert: the request errors AND no derived_record row exists afterwards.
 }
 ```
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd ennam.kg.go && go build ./... && go test ./internal/store/ -run TxInterface`
-Expected: **compile error** — `*EdgeStore` does not implement `EdgeRepositoryTx` (wrong `tx` parameter type). That compile failure is the bug.
+Run: `cd ennam.kg.go && go test ./internal/service/ -run TestStoreNode_EdgeFailureRollsBackNode -v`
+Expected: FAIL — the node is still present after the failed edge write.
 
-- [ ] **Step 3: Make the stores satisfy the interfaces**
+- [ ] **Step 3: Wire the existing adapters at the composition root**
 
-`internal/store/tx.go:20-39` already provides the intended mechanism — `sqlTx`
-wraps `*sql.Tx` and exposes `SQLTx() *sql.Tx`, and the doc comment states
-*"store adapters unwrap it internally."* Complete that: change the Tx-taking
-store methods to accept `store.Tx` and unwrap at the top.
-
-```go
-// unwrapTx extracts the underlying *sql.Tx from a store.Tx. Store methods take the
-// interface (so the service layer stays decoupled) and unwrap here, as tx.go intends.
-func unwrapTx(tx Tx) (*sql.Tx, error) {
-	switch v := tx.(type) {
-	case *sqlTx:
-		return v.SQLTx(), nil
-	case *sql.Tx:
-		return v, nil
-	default:
-		return nil, fmt.Errorf("unsupported transaction type %T", tx)
-	}
-}
-```
-
-Then change `CreateEdgeTx` / `CreateNodeTx` to `tx Tx` and call `unwrapTx` first.
-Keep behaviour otherwise identical.
-
-- [ ] **Step 4: Wire it at the composition root**
+**Do not change any store method signature.** `TxNodeStore`/`TxEdgeStore` already
+take `Tx`, assert `*sqlTx`, and delegate with the unwrapped `*sql.Tx`. They were
+simply never constructed.
 
 `cmd/kg-server/main.go:397-399`:
 
 ```go
+	txNodeStore := store.NewTxNodeStore(db, nodeStore)
+	txEdgeStore := store.NewTxEdgeStore(edgeStore)
+
 	nodeSvc := service.NewNodeService(nodeStore, appCfg,
 		service.WithEdgeRepository(edgeStore),
-		service.WithTxSupport(nodeStore, nodeStore, edgeStore),
+		// Without this, hasTxSupport() is false and inline Links are written after
+		// the node with no rollback (spec D2).
+		service.WithTxSupport(txNodeStore, txNodeStore, txEdgeStore),
 	)
 ```
 
-(Confirm which type provides `BeginTx` and pass that as the first argument.)
+`txNodeStore` is passed twice deliberately: it implements **both** `TxBeginner`
+and `NodeRepositoryTx` (`internal/store/tx.go:41`).
 
-- [ ] **Step 5: Run to verify it passes**
+- [ ] **Step 4: Run to verify it passes**
 
-Run: `cd ennam.kg.go && go build ./... && go test ./internal/store/ ./internal/service/ -race`
-Expected: compiles; interface assertions pass; the rollback test passes.
+Run: `cd ennam.kg.go && go build ./... && go test ./internal/service/ ./internal/store/ -race`
+Expected: the rollback test passes; nothing else regresses.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git -C ennam.kg.go add internal/store/ internal/service/ cmd/kg-server/main.go
-git -C ennam.kg.go commit -m "fix(kg): wire transactional node+edge support — inline links had no rollback in production"
+git -C ennam.kg.go add cmd/kg-server/main.go internal/service/
+git -C ennam.kg.go commit -m "fix(kg): wire TxNodeStore/TxEdgeStore — inline links had no rollback in production"
 ```
 
 > **Note for the reviewer:** this fixes a latent bug affecting **every** caller
@@ -145,12 +131,14 @@ git -C ennam.kg.go commit -m "fix(kg): wire transactional node+edge support — 
 ### Task 1: Store — delete edges by source node
 
 **Files:**
-- Modify: `ennam.kg.go/internal/store/edge.go`
+- Modify: `ennam.kg.go/internal/store/edge.go` (bare method) and `internal/store/tx.go` (adapter method)
 - Test: `ennam.kg.go/internal/store/edge_delete_test.go` (create)
 
 **Interfaces:**
-- Consumes: the `store.Tx` signature established in **Task 0** (methods take `store.Tx` and unwrap via `unwrapTx`).
-- Produces: `func (s *EdgeStore) DeleteEdgesBySourceTx(ctx context.Context, tx Tx, sourceID string, edgeTypes []string) (int64, error)` — deletes edges originating at `sourceID` whose `edge_type` is in `edgeTypes`; returns rows deleted. Empty `edgeTypes` deletes nothing (guard against accidental wipe).
+- Consumes: the existing two-layer pattern — bare store takes `*sql.Tx`, the `TxEdgeStore` adapter takes `Tx` and delegates (`internal/store/tx.go:83-90`).
+- Produces: **two** methods mirroring `CreateEdgeTx`/`TxEdgeStore.CreateEdgeTx`:
+  `func (s *EdgeStore) DeleteEdgesBySourceTx(ctx context.Context, tx *sql.Tx, sourceID string, edgeTypes []string) (int64, error)` and
+  `func (t *TxEdgeStore) DeleteEdgesBySourceTx(ctx context.Context, tx Tx, sourceID string, edgeTypes []string) (int64, error)` — deletes edges originating at `sourceID` whose `edge_type` is in `edgeTypes`; returns rows deleted. Empty `edgeTypes` deletes nothing (guard against accidental wipe).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -192,17 +180,12 @@ Expected: FAIL — `DeleteEdgesBySourceTx` undefined.
 // An empty edgeTypes is a deliberate no-op, never "delete everything".
 func (s *EdgeStore) DeleteEdgesBySourceTx(
 	ctx context.Context,
-	tx Tx,
+	tx *sql.Tx,
 	sourceID string,
 	edgeTypes []string,
 ) (int64, error) {
 	if sourceID == "" || len(edgeTypes) == 0 {
 		return 0, nil
-	}
-
-	sqlTx, err := unwrapTx(tx) // Task 0
-	if err != nil {
-		return 0, err
 	}
 
 	placeholders := make([]string, len(edgeTypes))
@@ -218,11 +201,30 @@ func (s *EdgeStore) DeleteEdgesBySourceTx(
 		strings.Join(placeholders, ", "),
 	)
 
-	res, err := sqlTx.ExecContext(ctx, query, args...)
+	res, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("delete edges by source: %w", err)
 	}
 	return res.RowsAffected()
+}
+```
+
+And the adapter, mirroring `TxEdgeStore.CreateEdgeTx` exactly:
+
+```go
+// DeleteEdgesBySourceTx delegates to the bare store with the unwrapped *sql.Tx.
+// The Tx must have been created by TxNodeStore.BeginTx.
+func (t *TxEdgeStore) DeleteEdgesBySourceTx(
+	ctx context.Context,
+	tx Tx,
+	sourceID string,
+	edgeTypes []string,
+) (int64, error) {
+	stx, ok := tx.(*sqlTx)
+	if !ok {
+		return 0, fmt.Errorf("invalid transaction type: expected *sqlTx")
+	}
+	return t.es.DeleteEdgesBySourceTx(ctx, stx.SQLTx(), sourceID, edgeTypes)
 }
 ```
 
@@ -234,7 +236,7 @@ Expected: PASS (3 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C ennam.kg.go add internal/store/edge.go internal/store/edge_delete_test.go
+git -C ennam.kg.go add internal/store/edge.go internal/store/tx.go internal/store/edge_delete_test.go
 git -C ennam.kg.go commit -m "feat(store): delete edges by source node for REPLACE-semantics provenance"
 ```
 
