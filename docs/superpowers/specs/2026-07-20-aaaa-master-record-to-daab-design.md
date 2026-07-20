@@ -216,7 +216,74 @@ Source payload: `MasterRecordSection.sourceDocIds` and `citations`
   the whole upsert.
 - **Committed sections only.** AAAA's read endpoint filters to
   `MasterRecordSection.status = READY` (`schema.prisma:954`,
-  `EntityProfile.status` :878) so DAAB never ingests a half-built MR.
+  `EntityProfile.status` :878) so DAAB never ingests a half-built MR. See D10
+  for what happens when only *some* sections are READY.
+
+### D9 — Edges are REPLACE semantics, not additive
+
+On every upsert, delete the `derived_from` / `evidence` edges owned by this
+`derived_record` and recreate them from the incoming payload. The upsert
+represents the complete current state of the record, mirroring the
+"always sends the full record" principle already asserted in
+`derived_record.go:60-62`.
+
+**Failure mode this prevents.** The MR is rebuilt constantly, and a rebuild can
+change *which documents feed which section* — a Legal section that cited
+`contract-A.pdf` in build 1 may cite only `contract-B.pdf` in build 4. With
+additive edges, after five rebuilds the graph asserts the MR is evidenced by
+every document it has *ever* cited, including ones it has since dropped.
+Provenance then answers "which documents back this conclusion?" with documents
+that do not. That is a silent correctness failure — the graph looks richer while
+being wrong, and nothing in the data reveals which edges are stale.
+
+Implementation note: edge deletion must be scoped to edges whose source is this
+node, and must run in the same transaction as the node update (D2), so a crash
+cannot leave the record with new content and old provenance.
+
+### D10 — Partially-READY Master Records: sync, but mark the gap
+
+When some sections are `READY` and others are mid-rebuild, **sync the READY
+sections and record which sections were absent or stale** in the node (e.g. a
+`sections_present` / `sections_stale` property alongside `generated_at`).
+
+Rejected alternative — all-or-nothing: a project whose MR rebuilds frequently
+(which is the normal case, since every document analysis triggers a scoped
+rebuild — `analyze-document.ts:1723`) could go indefinitely without ever
+syncing.
+
+Rejected alternative — sync silently: if the Risk section is missing and nothing
+says so, LAAM answers "no risks identified" for a company whose risk analysis
+was simply still building. A confident wrong answer is worse than an
+acknowledged gap.
+
+The rule: **incompleteness is acceptable; undisclosed incompleteness is not.**
+Any consumer surface that renders the record must be able to tell that it is
+partial.
+
+### D11 — Trigger and UI: one button, two tracks
+
+DAAB's existing AAAA connection dialog
+(`ennam.kg.next/src/components/sources/aaaa-connect-dialog.tsx:118`) has a single
+**"Sync now"** button hitting
+`POST /api/v1/projects/{projectId}/connections/{connId}/sync`
+(`source_connection.go:62`). **Extend that one action to cover both tracks. Do
+not add a second button.**
+
+- "Independent track" (D6) is a *backend cadence* property — MR needs its own
+  cursor and change detection because it changes when documents do not. It is
+  **not** a statement about user-facing actions.
+- Two buttons would let a user run MR sync before doc sync, violating D6's
+  ordering constraint and producing dangling evidence refs — a failure mode
+  created purely by the UI.
+- Two buttons also invite half-synced state: the user presses one, believes they
+  synced, and does not notice the other is stale.
+
+**UI change required:** replace the single "Last synced" line with **per-track
+timestamps** (e.g. `Documents: 5 min ago` / `Master Record: 2 hours ago`). With
+one combined timestamp, an MR-sync failure is invisible whenever doc sync
+succeeded.
+
+**Scheduled sync is the primary path**; the button is a manual override.
 
 ### D7 — Retraction
 
@@ -247,7 +314,8 @@ of a partial fetch.
 
 | Component | Change |
 |---|---|
-| `ennam.kg.go` — `internal/handler/derived_record.go` | Accept `provenance` + `links[]`; atomic node+edges; explicit summary-blanking (D2, D8) |
+| `ennam.kg.go` — `internal/handler/derived_record.go` | Accept `provenance` + `links[]`; atomic node+edges; edge REPLACE semantics; explicit summary-blanking (D2, D8, D9) |
+| `ennam.kg.next` — `components/sources/aaaa-connect-dialog.tsx` | Per-track last-synced timestamps; keep the single "Sync now" button (D11) |
 | `ennam.kg.go` — `config/config.yaml` | `summary` max_length 2000 → 8000; full-content field (non-indexed); confirm edge whitelist (D4) |
 | `ennam.kg.go` | Retrieval surface returning full MR content for a `derived_record` (D4) |
 | `ennam.kg.python` — `ingestion/` | New independent MR sync track: cursor, contentHash skip, edge resolution, reconcile sweep (D6, D7) |
@@ -281,3 +349,6 @@ of a partial fetch.
 7. Deleted project → tombstone → reconcile sweep marks the `derived_record` revoked; LAAM no longer retrieves it (D7).
 8. `subtype = "aaaa_master_record"` does not collide with BA-031 `master_record` node-type queries (F6).
 9. AAAA read endpoint rejects requests without a valid `DaabSyncKey` (fail closed).
+10. **Edge replacement (D9):** upsert with a payload citing fewer documents than the previous build leaves *only* the new edges — dropped citations do not survive. Assert the stale edge is gone, not merely that the new one exists.
+11. **Partial readiness (D10):** with some sections not READY, the node records which sections are absent/stale; a consumer can distinguish partial from complete.
+12. **One trigger, ordered (D11):** a single sync run executes doc sync before MR sync; MR evidence refs resolve against documents ingested in the same run.
