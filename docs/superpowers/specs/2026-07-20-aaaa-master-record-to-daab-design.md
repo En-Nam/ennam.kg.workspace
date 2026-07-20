@@ -6,8 +6,9 @@
 **Supersedes two things in IMP-010** (`ennam.kg.requirements/documents/improvements/IMP-010-aaa-masterrecord-writeback-tools.md`):
 1. **Transfer direction** — IMP-010 and `thiet-ke-ecosystem-laam-daab-aaa.md:104` specify AAA *pushing*; this design pulls. See [Direction reversal](#direction-reversal).
 2. **Content location** — IMP-010 **BR-003** and FR-1 state the full record content stays in the source system ("KG is graph/index, not a duplicate document store"); this design stores it in DAAB. See [Content-location reversal](#content-location-reversal).
+3. **Edge writing** — IMP-010 **BR-004** defers provenance edges to separate `kg_link` calls and **BR-007** requires rebuilds to *merge* rather than replace provenance; D2 makes edges atomic with the upsert and D9 makes them replace-semantics. See [Edge-write reversal](#edge-write-reversal).
 
-Both reversals require PO sign-off. IMP-010 is still "Proposed — pending PO sign-off", so neither overturns a ratified decision.
+All three reversals require PO sign-off. IMP-010 is still "Proposed — pending PO sign-off", so none overturns a ratified decision.
 
 ## Problem
 
@@ -29,20 +30,31 @@ AAAA already paid for, with different results.
 Two independent architecture reviews (data-integrity lens, retrieval lens)
 converged on these. All verified in code.
 
-**F1 — The `derived_record` endpoint creates an orphan node. BLOCKING.**
+**F1 — The `derived_record` endpoint writes no edges. BLOCKING — but by design, not by defect.**
 `ennam.kg.go/internal/handler/derived_record.go:27-33` accepts only
 `{title, subtype, source_system, record_ref, summary}`. It accepts **no
 `provenance`** (though the schema field exists at `config/config.yaml:729-731`)
 and calls `StoreNode` with **no `Links`** (:71-77). The whitelisted
 `derived_record --derived_from-->` and `--evidence-->` edges
-(`config/config.yaml:1091-1103`) have **no write path**. The MCP tool concedes
-it: *"Returns node_id; attach provenance with kg_link"* (`bridge/schema.go:1662`).
+(`config/config.yaml:1091-1103`) have **no write path** in this handler.
 
-Consequence: the ecosystem doc's central claim (:107) — *"traverse graph
-MasterRecord → derived_from → entities → evidence → chunks → doc_id, không cần
-tích hợp thêm"* — **does not work today**, because those edges are never
-created. Any plan of the form "receiving side is done, just build the sender"
-is wrong.
+This is intentional: **IMP-010 BR-004** states *"Provenance edges
+(`derived_from`/`evidence`) are written via the **existing `kg_link`** tool;
+this IMP only adds whitelist rules — no new edge tool."* The MCP tool
+description matches: *"Returns node_id; attach provenance with kg_link"*
+(`bridge/schema.go:1662`).
+
+So the accurate finding is **not** "someone forgot the edges" but "edge writing
+was deferred to N follow-up `kg_link` calls by the caller, and no caller exists."
+Two consequences stand regardless:
+- The ecosystem doc's central claim (:107) — *"traverse graph MasterRecord →
+  derived_from → entities → evidence → chunks → doc_id, không cần tích hợp
+  thêm"* — **does not work today**, because nothing performs those `kg_link`
+  calls.
+- Any plan of the form "receiving side is done, just build the sender" is wrong:
+  the sender must also own edge lifecycle, which BR-004 left unspecified.
+
+D2 and D9 revisit BR-004 — see [Edge-write reversal](#edge-write-reversal).
 
 **F2 — Every update writes a version row unconditionally.**
 `ennam.kg.go/internal/store/version.go:96-107`: the `trg_nodes_version` trigger
@@ -268,6 +280,33 @@ Implementation note: edge deletion must be scoped to edges whose source is this
 node, and must run in the same transaction as the node update (D2), so a crash
 cannot leave the record with new content and old provenance.
 
+<a id="edge-write-reversal"></a>
+**Edge-write reversal — recorded deliberately.** Two IMP-010 rules are overturned
+by D2 + D9:
+
+- **BR-004:** *"Provenance edges are written via the existing `kg_link` tool;
+  this IMP only adds whitelist rules — no new edge tool."*
+- **BR-007:** *"Property updates **merge** — an MC re-build does not wipe prior
+  fields/provenance."*
+
+Why BR-004 does not survive contact with a rebuild-heavy record:
+- **Non-atomic.** Upsert-then-N-`kg_link` has no transaction boundary. A crash
+  between them leaves a node whose content is the new build and whose provenance
+  is the old one — silently wrong, and indistinguishable from correct data.
+- **`kg_link` only creates.** It offers no way to remove an edge that a rebuild
+  dropped. BR-004 therefore has no mechanism to satisfy D9 at all; stale
+  provenance would accumulate forever.
+- BR-004 was written for a *push* design where AAA made its own MCP calls. Under
+  pull (D1), DAAB's worker constructs the payload and already knows the complete
+  edge set at upsert time — the N-call split buys nothing.
+
+Why BR-007 is narrowed rather than discarded: BR-007 guards against *accidental*
+data loss from partial property updates, and that concern remains valid — it is
+why D8 forbids incidental summary blanking. But applying merge semantics to
+**edges** produces the failure above. The resolution: **properties merge, edges
+replace.** Both are safe only because pull guarantees every upsert carries the
+record's complete current state.
+
 ### D10 — Partially-READY Master Records: sync, but mark the gap
 
 When some sections are `READY` and others are mid-rebuild, **sync the READY
@@ -364,10 +403,11 @@ of a partial fetch.
   instantly after rebuild. Accepted: MR takes 60-90s to build and is not
   real-time critical; doc-sync already has this property. Bounded by poll
   interval and made visible via a `generated_at` field.
-- **Two unratified requirements are overturned** — transfer direction (D1) and
-  content location (D4, IMP-010 BR-003). Mitigated by updating IMP-010, the
-  ecosystem doc, and the `config.yaml:701` node description in the same change.
-  Both need PO sign-off before implementation starts.
+- **Three unratified requirements are overturned** — transfer direction (D1),
+  content location (D4, BR-003), and edge writing (D2+D9, BR-004 + BR-007).
+  Mitigated by updating IMP-010, the ecosystem doc, and the `config.yaml:701`
+  node description in the same change. All three need PO sign-off before
+  implementation starts.
 - **DAAB holds a second copy of the synthesis.** Accepted consequence of D4 and
   the direct cost of overturning BR-003: the copy can lag AAAA between syncs.
   Bounded by contentHash-driven sync (D6) and disclosed via `generated_at`;
