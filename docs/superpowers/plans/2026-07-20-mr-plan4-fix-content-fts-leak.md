@@ -62,6 +62,8 @@ Verify this assumption in Task 1 Step 1 rather than trusting it.
 - Repos: `ennam.kg.go`, `ennam.kg.python` — each has its own `.git`; commit with `git -C <repo>`.
 - **Do not modify `update_search_vector()`.** Three other node types depend on `content` being indexed.
 - The rename is a **breaking change to the `derived-records` API contract**. Only DAAB's own worker calls it today (verified: no `record_ref` values other than `project:*` exist), so no external consumer breaks — but the bridge tool schema must be updated in the same change or MCP callers will send a field that is silently dropped.
+- **It also changes what readers see.** There is no dedicated read endpoint for the record body — D4's "retrieval surface" is the generic node read (`kg_get_node`), which returns all properties. So a consumer fetching the record will now find the body under `record_body`, not `content`. Nothing consumes it yet (LAAM is not wired to this), so nothing breaks today — but say so in the bridge tool description rather than leaving readers to discover it.
+- The dashboard is untouched: verified it has no `derived_record` references.
 - Adding/renaming a node-type field requires updating **all** config gates.
 - Run `make test` (Go) and `uv run pytest` (Python) before each commit.
 
@@ -243,7 +245,12 @@ git -C ennam.kg.go commit -m "fix(daab): rename derived_record content -> record
 ### Task 3: Migrate the existing row
 
 **Files:**
-- Create: `ennam.kg.go/migrations/<timestamp>_derived_record_content_to_record_body.up.sql` and `.down.sql`
+- Create: `ennam.kg.go/db/migrations/000079_derived_record_content_to_record_body.up.sql` and `.down.sql`
+
+> Path and naming verified against the repo: migrations live in **`db/migrations/`**
+> (not `migrations/`) and use a **zero-padded sequential** prefix, not a timestamp.
+> The latest is `000078_aaaa_mr_sync_status`, so this is `000079`. Confirm nothing
+> else has claimed `000079` before writing.
 
 **Interfaces:**
 - Produces: existing `derived_record` rows carry `record_body`; `content` removed; `search_vector` rebuilt.
@@ -277,10 +284,16 @@ WHERE node_type = 'derived_record'
 Note this migration therefore **writes one version row per migrated node** — with 1
 row today that is immaterial; on a larger dataset it would be worth batching.
 
+The archived version row keeps the old `content` key, but that is **not** a
+remaining leak: `knowledge_node_versions` has a `properties` column and **no
+`search_vector`**, and no full-text query reads that table (both verified against
+the live DB). The history stays accurate; only the live row is searchable.
+
 - [ ] **Step 3: Apply and verify**
 
-Run: `cd ennam.kg.go && migrate -path migrations -database "$DB_URL" up` (or the repo's
-`make migrate` equivalent).
+Run: `cd ennam.kg.go && make db-migrate`
+(which runs `go run ./cmd/kg-migrate/ up` — the repo does not use a bare
+`migrate` CLI; roll back with `make db-migrate-down`).
 
 Then verify the leak is closed with the exact probe that exposed it:
 ```bash
@@ -468,6 +481,8 @@ Expected: 9.
 **Spec coverage:** D4's non-indexed requirement is the whole plan — Task 1 (config),
 Task 2 (write path), Task 3 (existing data), Task 4 (regression at the right layer),
 Task 5 (producer), Task 6 (end-to-end). ✓
+
+**Corrected during review (2026-07-20):** the first draft had the migration in `migrations/` with a timestamp prefix and invoked a bare `migrate` CLI. All three were wrong — the repo uses `db/migrations/`, zero-padded sequential names (`000079`, next after `000078`), and `make db-migrate`. Also verified while reviewing: `props` is built once and shared by the create and update paths (so the rename is a single-site change), `knowledge_node_versions` has no `search_vector` (so archived rows are not a residual leak), and `cfg.NodeTypes[...].Fields` / `loadTestConfig` exist as used.
 
 **Placeholder scan:** Task 2 Step 1, Task 4 Step 1, and Task 5 Step 1 give test
 intent, arrange/act/assert and the exact sentinel token rather than full bodies,
