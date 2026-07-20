@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-20-aaaa-master-record-to-daab-design.md` (D2, D4, D7, D8, D9)
 
-**Prerequisite:** This plan is a **blocker for Plans 2 and 3**. Nothing else starts until it lands.
+**Prerequisite:** This plan is a **blocker for Plans 2 and 3**. Nothing else starts until it lands. **Task 0 must be done first** — transactional node+edge writes are not wired in production today, so D2's atomicity guarantee does not currently exist.
 
 ## Global Constraints
 
@@ -24,6 +24,124 @@
 
 ---
 
+### Task 0: Wire transactional node+edge support (PREREQUISITE — atomicity does not exist today)
+
+**Files:**
+- Modify: `ennam.kg.go/internal/store/node.go`, `internal/store/edge.go` (Tx method signatures)
+- Modify: `ennam.kg.go/cmd/kg-server/main.go:397-399` (wiring)
+- Test: `ennam.kg.go/internal/service/inline_links_test.go` (extend), plus a wiring assertion
+
+**Why this task exists.** Verified in code — **do not skip it assuming atomicity already works**:
+
+- `NodeService.hasTxSupport()` (`internal/service/node.go:297-299`) requires
+  `txBeginner`, `nodeRepoTx`, **and** `edgeRepoTx` to be non-nil.
+- Production wires only `service.WithEdgeRepository(edgeStore)`
+  (`cmd/kg-server/main.go:397-399`). **`WithTxSupport` is never called outside
+  tests** (`grep -rn "WithTxSupport" --include="*.go" . | grep -v _test.go`
+  returns only its own definition).
+- Therefore `hasTxSupport()` is **false in production**, and inline `Links` take
+  the non-transactional fallback: node first, edges after, **no rollback**.
+- The reason it was never wired: the concrete stores do not satisfy the
+  interfaces. `EdgeStore.CreateEdgeTx` takes `tx *sql.Tx`
+  (`internal/store/edge.go:128`) while `service.EdgeRepositoryTx` declares
+  `tx store.Tx` (`internal/service/node.go:45`). Go requires an exact signature
+  match, so `*EdgeStore` does **not** implement `EdgeRepositoryTx` — which is why
+  only mocks are used in `inline_links_test.go`.
+
+Spec D2 requires node+edges to be atomic. Without this task, Plan 1 ships the
+exact failure D2 exists to prevent: a crash between node write and edge write
+leaves new content with old provenance.
+
+**Interfaces:**
+- Produces: `*NodeStore` and `*EdgeStore` satisfying `NodeRepositoryTx` / `EdgeRepositoryTx`, and `WithTxSupport(...)` wired at the composition root.
+
+- [ ] **Step 1: Write the failing test**
+
+```go
+// internal/store/tx_interface_test.go
+package store_test
+
+// WHY: these assertions are the whole point of Task 0. Production silently ran
+// without transactions because nothing checked that the concrete stores satisfy
+// the transactional interfaces — the mocks in inline_links_test.go passed while
+// the real wiring could not compile.
+var (
+	_ service.NodeRepositoryTx = (*store.NodeStore)(nil)
+	_ service.EdgeRepositoryTx = (*store.EdgeStore)(nil)
+	_ service.TxBeginner       = (*store.NodeStore)(nil) // or whichever type owns BeginTx
+)
+```
+
+Plus a service-level test that a failing edge write rolls back the node:
+
+```go
+func TestStoreNode_EdgeFailureRollsBackNode(t *testing.T) {
+	// Against a real DB with WithTxSupport wired: request a node with one valid and
+	// one invalid link. Assert BOTH are absent afterwards — today the node survives.
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `cd ennam.kg.go && go build ./... && go test ./internal/store/ -run TxInterface`
+Expected: **compile error** — `*EdgeStore` does not implement `EdgeRepositoryTx` (wrong `tx` parameter type). That compile failure is the bug.
+
+- [ ] **Step 3: Make the stores satisfy the interfaces**
+
+`internal/store/tx.go:20-39` already provides the intended mechanism — `sqlTx`
+wraps `*sql.Tx` and exposes `SQLTx() *sql.Tx`, and the doc comment states
+*"store adapters unwrap it internally."* Complete that: change the Tx-taking
+store methods to accept `store.Tx` and unwrap at the top.
+
+```go
+// unwrapTx extracts the underlying *sql.Tx from a store.Tx. Store methods take the
+// interface (so the service layer stays decoupled) and unwrap here, as tx.go intends.
+func unwrapTx(tx Tx) (*sql.Tx, error) {
+	switch v := tx.(type) {
+	case *sqlTx:
+		return v.SQLTx(), nil
+	case *sql.Tx:
+		return v, nil
+	default:
+		return nil, fmt.Errorf("unsupported transaction type %T", tx)
+	}
+}
+```
+
+Then change `CreateEdgeTx` / `CreateNodeTx` to `tx Tx` and call `unwrapTx` first.
+Keep behaviour otherwise identical.
+
+- [ ] **Step 4: Wire it at the composition root**
+
+`cmd/kg-server/main.go:397-399`:
+
+```go
+	nodeSvc := service.NewNodeService(nodeStore, appCfg,
+		service.WithEdgeRepository(edgeStore),
+		service.WithTxSupport(nodeStore, nodeStore, edgeStore),
+	)
+```
+
+(Confirm which type provides `BeginTx` and pass that as the first argument.)
+
+- [ ] **Step 5: Run to verify it passes**
+
+Run: `cd ennam.kg.go && go build ./... && go test ./internal/store/ ./internal/service/ -race`
+Expected: compiles; interface assertions pass; the rollback test passes.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git -C ennam.kg.go add internal/store/ internal/service/ cmd/kg-server/main.go
+git -C ennam.kg.go commit -m "fix(kg): wire transactional node+edge support — inline links had no rollback in production"
+```
+
+> **Note for the reviewer:** this fixes a latent bug affecting **every** caller
+> that passes inline `Links`, not just `derived_record`. Worth flagging separately
+> — it means past inline-link writes were never atomic.
+
+---
+
 ### Task 1: Store — delete edges by source node
 
 **Files:**
@@ -31,8 +149,8 @@
 - Test: `ennam.kg.go/internal/store/edge_delete_test.go` (create)
 
 **Interfaces:**
-- Consumes: existing `CreateEdgeTx` transaction pattern (`internal/store/edge.go:128`).
-- Produces: `func (s *EdgeStore) DeleteEdgesBySourceTx(ctx context.Context, tx *sql.Tx, sourceID string, edgeTypes []string) (int64, error)` — deletes edges originating at `sourceID` whose `edge_type` is in `edgeTypes`; returns rows deleted. Empty `edgeTypes` deletes nothing (guard against accidental wipe).
+- Consumes: the `store.Tx` signature established in **Task 0** (methods take `store.Tx` and unwrap via `unwrapTx`).
+- Produces: `func (s *EdgeStore) DeleteEdgesBySourceTx(ctx context.Context, tx Tx, sourceID string, edgeTypes []string) (int64, error)` — deletes edges originating at `sourceID` whose `edge_type` is in `edgeTypes`; returns rows deleted. Empty `edgeTypes` deletes nothing (guard against accidental wipe).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -74,12 +192,17 @@ Expected: FAIL — `DeleteEdgesBySourceTx` undefined.
 // An empty edgeTypes is a deliberate no-op, never "delete everything".
 func (s *EdgeStore) DeleteEdgesBySourceTx(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx Tx,
 	sourceID string,
 	edgeTypes []string,
 ) (int64, error) {
 	if sourceID == "" || len(edgeTypes) == 0 {
 		return 0, nil
+	}
+
+	sqlTx, err := unwrapTx(tx) // Task 0
+	if err != nil {
+		return 0, err
 	}
 
 	placeholders := make([]string, len(edgeTypes))
@@ -95,7 +218,7 @@ func (s *EdgeStore) DeleteEdgesBySourceTx(
 		strings.Join(placeholders, ", "),
 	)
 
-	res, err := tx.ExecContext(ctx, query, args...)
+	res, err := sqlTx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("delete edges by source: %w", err)
 	}
@@ -154,6 +277,46 @@ The current description at `config/config.yaml:701` says *"Content lives in the 
 ```yaml
     description: "A satellite-computed record about a Project/entity (e.g. AAA Master Record). KG holds anchor + summary + full non-indexed content + provenance edges. The source system remains the system of record for edits (IMP-010, revised by the 2026-07-20 MR sync design)."
 ```
+
+- [ ] **Step 2b: Allow `document` as an `evidence` target (BLOCKING for Plan 3)**
+
+The current whitelist (`config/config.yaml:1098-1103`) is:
+
+```yaml
+  - source: derived_record
+    relationship: evidence
+    targets: [document_chunk, document_ref, artifact]
+```
+
+**`document` is missing, and every other target is wrong for this data.** Verified
+against the live DB and the sync path:
+
+- AAAA cites at **document level** only — `MasterRecordSection.sourceDocIds` and
+  `citations[].document_id`. It has no knowledge of DAAB's chunking.
+- An AAAA document resolves to a **`document`** node
+  (`draft_nodes.source_id` → `draft_nodes.knowledge_node_id`; confirmed in the
+  live DB: `source_type='aaaa'` rows map to `node_type='document'`).
+- Targeting `document_chunk` would mean linking **every chunk** of a cited
+  document — a 50-page statement produces hundreds of edges each asserting
+  "this section is evidenced by chunk #187", which AAAA never said. That
+  fabricates chunk-level precision the source data does not have, and is exactly
+  the unfalsifiable-claim failure mode this design set out to avoid.
+- `document_ref` is BA-031's *extracted mention* of a document, not the document.
+- `derived_from` has the same gap (`targets:` line at :1093) and needs `document`
+  too if a section is ever attributed to a whole document.
+
+Change to:
+
+```yaml
+  - source: derived_record
+    relationship: evidence
+    targets: [document, document_chunk, document_ref, artifact]
+    description: "A derived record is directly evidenced by these documents/chunks/references. Document-level targets match satellite systems that cite whole documents (e.g. AAA Master Record); chunk-level targets remain available for finer-grained producers."
+```
+
+Add a config test asserting `document` is an allowed `evidence` target for
+`derived_record`, so a future whitelist edit cannot silently break Plan 3's edge
+resolution.
 
 - [ ] **Step 3: Leave the search block unchanged — and assert it**
 
@@ -334,7 +497,7 @@ if req.Provenance != nil {
 
 - [ ] **Step 6: Create path — pass links inline**
 
-`StoreNodeRequest` already supports `Links []InlineLink` (`internal/service/node.go:51`), created in the same transaction as the node. Map and pass them:
+`StoreNodeRequest` supports `Links []InlineLink` (`internal/service/node.go:51`). **These are only atomic once Task 0 is done** — without it `hasTxSupport()` is false and edges are written after the node with no rollback. Map and pass them:
 
 ```go
 links := make([]service.InlineLink, 0, len(req.Links))
@@ -512,7 +675,7 @@ git -C ennam.kg.go commit -m "feat(bridge): kg_upsert_derived_record carries inl
 
 ## Self-Review
 
-**Spec coverage:** D2 (atomic node+edges) → Tasks 1,3. D4 (8000 summary + non-indexed content) → Task 2. D7 (revoke route, consumed by Plan 3's tombstone + reconcile paths) → Task 4. D8 (explicit blanking) → Task 3 steps 3,5. D9 (edge replace) → Tasks 1,3,4. D10 fields (`sections_present`/`sections_stale`) → Task 2, populated by Plan 3. Config doc-drift fix → Task 2 step 2. ✓
+**Spec coverage:** D2 (atomic node+edges) → Tasks **0**,1,3 — Task 0 is what makes atomicity real; it was assumed present in the first draft and is not. D4 (8000 summary + non-indexed content) → Task 2. D7 (revoke route, consumed by Plan 3's tombstone + reconcile paths) → Task 4. D8 (explicit blanking) → Task 3 steps 3,5. D9 (edge replace) → Tasks 1,3,4. D10 fields (`sections_present`/`sections_stale`) → Task 2, populated by Plan 3. Config doc-drift fix → Task 2 step 2. ✓
 
 **Not covered here (by design):** D1/D3/D6/D11 are Plans 2-3. Phase 2 embedding is out of scope entirely.
 

@@ -4,18 +4,18 @@
 
 **Goal:** Pull each connected project's Master Record after its document sync, upsert it into DAAB with resolved provenance edges, revoke records for deleted projects, and surface per-track sync status in the dashboard.
 
-**Architecture:** Extend the existing `handle_aaaa_sync` worker handler. After the document loop finishes, run an MR stage on the same connection credential: fetch → skip if `content_hash` unchanged → resolve `source_doc_ids`/`citations` to DAAB `document_chunk` nodes → upsert with inline links. Tombstones revoke. One "Sync now" button drives both stages.
+**Architecture:** Extend the existing `handle_aaaa_sync` worker handler. After the document loop finishes, run an MR stage on the same connection credential: fetch → skip if `content_hash` unchanged → resolve `source_doc_ids`/`citations` to DAAB **`document`** nodes (via `draft_nodes.source_id`) → upsert with inline links. Tombstones revoke. One "Sync now" button drives both stages.
 
 **Tech Stack:** Python 3.12 (asyncio, httpx), pytest, `uv`; Go (status fields); NextJS 16 + TanStack Query (dashboard).
 
 **Spec:** `docs/superpowers/specs/2026-07-20-aaaa-master-record-to-daab-design.md` (D5, D6, D7, D9, D10, D11)
 
-**Depends on:** **Plan 1** (endpoint accepting `links[]`/`content`) and **Plan 2** (AAAA read endpoint). Both must be merged first — this plan calls both.
+**Depends on:** **Plan 1** (endpoint accepting `links[]`/`content`, **and Task 2 Step 2b's `document` evidence-whitelist entry**) and **Plan 2** (AAAA read endpoint). Both must be merged first — this plan calls both.
 
 ## Global Constraints
 
 - Repos: `ennam.kg.python` (worker), `ennam.kg.go` (status fields), `ennam.kg.next` (UI). Each has its own `.git`.
-- **Ordering is a correctness constraint, not a preference:** the MR stage runs **after** the document loop in the same run. MR `evidence` edges point at `document_chunk` nodes; running MR first produces unresolvable refs (spec D6).
+- **Ordering is a correctness constraint, not a preference:** the MR stage runs **after** the document loop in the same run. MR `evidence` edges point at `document` nodes that only exist once their draft has been promoted; running MR first produces unresolvable refs (spec D6).
 - **Never fail the whole sync because of MR.** Document sync succeeding must not be rolled back by an MR error — mirror the existing per-doc isolation style in `handle_aaaa_sync`.
 - **No entity extraction over MR content** (spec D5). Link to existing nodes only; if a target does not resolve, drop-and-log.
 - `subtype` is `aaaa_master_record`; `record_ref` comes verbatim from AAAA (`project:<id>`) — the worker must not construct it.
@@ -176,7 +176,7 @@ git -C ennam.kg.python commit -m "feat(ingestion): fetch AAAA master record with
 
 ---
 
-### Task 2: Edge resolution — map AAAA document ids to DAAB chunk nodes
+### Task 2: Edge resolution — map AAAA document ids to DAAB `document` nodes
 
 **Files:**
 - Create: `ennam.kg.python/src/ennam_kg/ingestion/master_record_links.py`
@@ -184,8 +184,30 @@ git -C ennam.kg.python commit -m "feat(ingestion): fetch AAAA master record with
 
 **Interfaces:**
 - Produces: `resolve_links(payload, *, lookup) -> tuple[list[dict], list[str]]` → `(links, dropped)`.
-  `links` entries are `{"relationship": "evidence"|"derived_from", "target_id": "<daab node uuid>"}`.
-  `lookup(aaaa_document_id) -> list[str]` returns DAAB `document_chunk` node ids (injected, so this is testable without a DB).
+  `links` entries are `{"relationship": "evidence", "target_id": "<daab document node uuid>"}`.
+  `lookup(aaaa_document_id) -> str | None` returns the DAAB **`document`** node id (injected, so this is testable without a DB).
+
+**How the mapping actually works — verified against the live DB.** AAAA document
+ids are **not** stored on graph nodes. The worker sets
+`properties.aaaa_document_id` on the *draft* only, and that property does not
+survive promotion (`select count(*) from knowledge_nodes where properties ?
+'aaaa_document_id'` → **0**). The real chain is:
+
+```
+AAAA document_id
+  → draft_nodes.source_id      (with source_type = 'aaaa')
+  → draft_nodes.knowledge_node_id
+  → knowledge_nodes            (node_type = 'document')
+```
+
+Confirmed live: `source_type='aaaa'` draft rows resolve to `node_type='document'`
+nodes titled e.g. `BCTC KIEM TOAN 2024 DASIN-VND.pdf`.
+
+**Target granularity is `document`, not `document_chunk`.** AAAA cites whole
+documents; it knows nothing about DAAB's chunking. Linking to every chunk of a
+cited document would assert chunk-level precision the source never provided.
+This requires the whitelist change in **Plan 1 Task 2 Step 2b** — without it every
+edge is rejected at Gate 1 and this task silently produces nothing.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -199,22 +221,22 @@ def _payload(**over):
     return type("P", (), base)()
 
 def test_builds_evidence_links_for_resolvable_documents():
-    links, dropped = resolve_links(_payload(), lookup=lambda d: [f"{d}-chunk"] if d == "doc-1" else [])
-    assert {"relationship": "evidence", "target_id": "doc-1-chunk"} in links
+    links, dropped = resolve_links(_payload(), lookup=lambda d: f"{d}-node" if d == "doc-1" else None)
+    assert {"relationship": "evidence", "target_id": "doc-1-node"} in links
     assert dropped == ["doc-2"]
 
 def test_unresolvable_refs_are_dropped_not_fatal():
     # WHY (spec D6): a document not yet ingested must not fail the whole upsert —
     # the MR is still worth storing, and the next run will resolve the missing ref.
-    links, dropped = resolve_links(_payload(), lookup=lambda d: [])
+    links, dropped = resolve_links(_payload(), lookup=lambda d: None)
     assert links == []
     assert sorted(dropped) == ["doc-1", "doc-2"]
 
 def test_links_are_deduped():
-    # The same document can back several sections; one edge per target, not one per citation.
+    # The same document can back several sections; one edge per document, not one per citation.
     p = _payload(citations=[{"document_id": "doc-1"}, {"document_id": "doc-1"}], source_doc_ids=["doc-1"])
-    links, _ = resolve_links(p, lookup=lambda d: ["c1"])
-    assert len([l for l in links if l["target_id"] == "c1"]) == 1
+    links, _ = resolve_links(p, lookup=lambda d: "n1")
+    assert len([l for l in links if l["target_id"] == "n1"]) == 1
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -235,10 +257,15 @@ that already exist instead.
 from typing import Any, Callable, Iterable
 
 
+Targets are `document` nodes, resolved via
+`draft_nodes.source_id -> draft_nodes.knowledge_node_id` (AAAA document ids are
+NOT on graph nodes — see the Interfaces block above).
+
+```python
 def resolve_links(
     payload: Any,
     *,
-    lookup: Callable[[str], Iterable[str]],
+    lookup: Callable[[str], str | None],
 ) -> tuple[list[dict[str, str]], list[str]]:
     doc_ids: list[str] = []
     for d in getattr(payload, "source_doc_ids", []) or []:
@@ -254,17 +281,27 @@ def resolve_links(
     seen: set[str] = set()
 
     for doc_id in doc_ids:
-        targets = list(lookup(doc_id) or [])
-        if not targets:
+        node_id = lookup(doc_id)
+        if not node_id:
+            # Not ingested yet (or ingestion failed). Drop and let the caller log it —
+            # a missing chunk must never sink the whole upsert (spec D6).
             dropped.append(doc_id)
             continue
-        for t in targets:
-            if t in seen:
-                continue
-            seen.add(t)
-            links.append({"relationship": "evidence", "target_id": t})
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        links.append({"relationship": "evidence", "target_id": node_id})
 
     return links, dropped
+```
+
+The `lookup` implementation (built in Task 3) is a single query, not a traversal:
+
+```sql
+SELECT knowledge_node_id
+FROM draft_nodes
+WHERE source_type = 'aaaa' AND source_id = $1 AND knowledge_node_id IS NOT NULL
+```
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -568,8 +605,10 @@ git -C ennam.kg.next commit -m "feat(sources): show per-track sync timestamps fo
 
 **Spec coverage:** D6 (ordering, hash skip, drop-and-log) → Tasks 1-3. D5 (link, never extract) → Task 2. D7 (tombstone + reconcile) → Tasks 1, 3, 4. D9 (send complete link set) → Task 3 Step 3 contract note. D10 (`sections_present`/`sections_stale` forwarded) → Task 3. D11 (one button, two timestamps) → Task 5. ✓
 
-**Placeholder scan:** Task 3 Step 1 and Task 4 give test *names, intent, and assertions* with `...` for fixture wiring, because the existing `handle_aaaa_sync` test fixtures were not read while writing this plan. Task 4 Step 3 is an outline. These are the three steps requiring the implementer to read surrounding code first; every other step carries complete code. `chunk_lookup` (Task 3) is referenced but not implemented here — it must be built against DAAB's chunk store as part of Task 3, backed by the `lookup` contract Task 2 already tests against.
+**Placeholder scan:** Task 3 Step 1 and Task 4 give test *names, intent, and assertions* with `...` for fixture wiring, because the existing `handle_aaaa_sync` test fixtures were not read while writing this plan. Task 4 Step 3 is an outline. These are the three steps requiring the implementer to read surrounding code first; every other step carries complete code. `chunk_lookup` (Task 3) is referenced but not implemented here — build it as the single `draft_nodes` query shown in Task 2, behind the `lookup` contract Task 2 already tests against.
 
 **Type consistency:** `record_ref` flows verbatim AAAA → `MasterRecordPayload.record_ref` → upsert body → Plan 1's idempotency key. `content_hash` (AAAA response) → `payload.content_hash` → `mr_content_hash` (connection row). `links[]` entries `{relationship, target_id}` match Plan 1's `derivedRecordLink` exactly. `sections_present`/`sections_stale` match the Plan 1 config field names. ✓
 
-**Known open item:** Task 3 Step 3 notes that a revoke route may not exist after Plan 1. Resolve it in Plan 1 rather than hard-deleting the node here — revocation must preserve the audit trail of what LAAM previously answered from.
+**Resolved since first draft:** the revoke route is now **Plan 1 Task 4** — no longer an open item.
+
+**Corrected after verifying against the live DB:** the first draft assumed `lookup` could find `document_chunk` nodes by AAAA document id. Both halves were wrong. (a) No graph node carries `aaaa_document_id` — the property is set on the draft and does not survive promotion (`properties ? 'aaaa_document_id'` matches 0 rows). The real path is `draft_nodes.source_id -> knowledge_node_id`. (b) The target is a **`document`** node, not chunks: AAAA cites whole documents, so chunk-level edges would fabricate precision the source never provided. This also forced a new prerequisite — **Plan 1 Task 2 Step 2b** must add `document` to the `evidence` whitelist, or every edge here is rejected at Gate 1 and this task silently produces nothing.
