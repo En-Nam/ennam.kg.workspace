@@ -3,7 +3,11 @@
 **Date:** 2026-07-20
 **Status:** Approved (design) — pending spec review
 **Scope:** Cross-repo — `ennam.kg.go` (endpoint), `ennam.kg.python` (sync worker), `other_projects/am-ai-agents` (read endpoint).
-**Supersedes the direction in:** IMP-010 (`ennam.kg.requirements/documents/improvements/IMP-010-aaa-masterrecord-writeback-tools.md`) and `thiet-ke-ecosystem-laam-daab-aaa.md:104` — see [Direction reversal](#direction-reversal).
+**Supersedes two things in IMP-010** (`ennam.kg.requirements/documents/improvements/IMP-010-aaa-masterrecord-writeback-tools.md`):
+1. **Transfer direction** — IMP-010 and `thiet-ke-ecosystem-laam-daab-aaa.md:104` specify AAA *pushing*; this design pulls. See [Direction reversal](#direction-reversal).
+2. **Content location** — IMP-010 **BR-003** and FR-1 state the full record content stays in the source system ("KG is graph/index, not a duplicate document store"); this design stores it in DAAB. See [Content-location reversal](#content-location-reversal).
+
+Both reversals require PO sign-off. IMP-010 is still "Proposed — pending PO sign-off", so neither overturns a ratified decision.
 
 ## Problem
 
@@ -156,6 +160,30 @@ Format: `project:<aaaa_project_id>`.
 - Store the **full Master Record content** in DAAB as a **non-indexed** field so
   LAAM gets 100% fidelity without depending on AAAA being reachable at query
   time.
+
+<a id="content-location-reversal"></a>
+**Content-location reversal — recorded deliberately.** IMP-010 **BR-003** states:
+*"The full record content stays in the source system (AAA
+`EntityProfile.masterRecord`); KG stores anchor + `summary` + `record_ref` +
+provenance edges. KG is graph/index, not a duplicate document store."* The
+shipped node-type description repeats it (`config/config.yaml:701`). **This
+design overturns that rule.**
+
+Why the rule's premise does not hold here:
+- BR-003 guards against DAAB duplicating documents it already indexes. The
+  Master Record is **not** such a document — it is a synthesis that exists in no
+  chunk, produced by 60-90s of Claude reasoning over all of them.
+- BR-003 implicitly assumes the consumer can reach the source system on demand.
+  **LAAM cannot** — no MCP server on AAAA, and principle :33 forbids LAAM
+  maintaining its own AAAA path. An unreachable source of truth is not a source
+  of truth for the consumer.
+- What remains valid in BR-003 is the *index* concern, and this design honours
+  it: the content is stored **non-indexed**, and embedding is deferred and gated
+  (Phase 2). DAAB does not become a competing retrieval corpus.
+
+**Consequence to fix in the same change:** `config/config.yaml:701`'s description
+("Content lives in the source system") becomes factually wrong once this ships.
+Update it, or the schema will document the opposite of the behaviour.
 - Expose it via a retrieval tool that returns the full record for a
   `derived_record` node. Discovery happens through the anchor (keyword `summary`
   + graph edges); the full body is fetched once the anchor is found.
@@ -320,7 +348,8 @@ of a partial fetch.
 | `ennam.kg.go` | Retrieval surface returning full MR content for a `derived_record` (D4) |
 | `ennam.kg.python` — `ingestion/` | New independent MR sync track: cursor, contentHash skip, edge resolution, reconcile sweep (D6, D7) |
 | `am-ai-agents` | `GET /api/integrations/daab/master-records` — `daabTokenOk` auth, `status=READY` only, returns sections + `sourceDocIds` + `citations` + `contentHash` + tombstones (D1, D6, D7) |
-| `ennam.kg.requirements` / ecosystem doc | Update IMP-010 + :104 to reference this spec's reversal (D1) |
+| `ennam.kg.go` — `config/config.yaml:701` | Rewrite the `derived_record` description — "Content lives in the source system" becomes false once D4 ships |
+| `ennam.kg.requirements` / ecosystem doc | Update IMP-010 (direction **and** BR-003/FR-1 content-location) + ecosystem :104 to reference this spec's two reversals (D1, D4) |
 
 ## Out of scope
 
@@ -335,8 +364,14 @@ of a partial fetch.
   instantly after rebuild. Accepted: MR takes 60-90s to build and is not
   real-time critical; doc-sync already has this property. Bounded by poll
   interval and made visible via a `generated_at` field.
-- **Direction contradicts unratified requirements** (D1). Mitigated by updating
-  IMP-010 and the ecosystem doc in the same change.
+- **Two unratified requirements are overturned** — transfer direction (D1) and
+  content location (D4, IMP-010 BR-003). Mitigated by updating IMP-010, the
+  ecosystem doc, and the `config.yaml:701` node description in the same change.
+  Both need PO sign-off before implementation starts.
+- **DAAB holds a second copy of the synthesis.** Accepted consequence of D4 and
+  the direct cost of overturning BR-003: the copy can lag AAAA between syncs.
+  Bounded by contentHash-driven sync (D6) and disclosed via `generated_at`;
+  AAAA remains the system of record for edits.
 
 ## Testing
 
