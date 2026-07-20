@@ -237,6 +237,15 @@ Instead populate the already-whitelisted edges from AAAA's own data:
 Source payload: `MasterRecordSection.sourceDocIds` and `citations`
 (`schema.prisma:956-957`).
 
+**Correction (2026-07-20, measured on the live dev DB):** `citations` is **not
+populated** — 0 of 9 sections have it (the column is `null`), and only 6 of 9
+have `sourceDocIds`. **`sourceDocIds` is the only field that carries provenance
+today.** Consumers should still read `citations` (cheap, and AAAA may populate it
+later) but must not depend on it. A practical consequence: sections without
+`sourceDocIds` get **no provenance edges**, so expect roughly one edge per
+distinct source document rather than one per section — that is correct
+behaviour, not a resolution failure.
+
 ### D6 — Sync: independent track, contentHash-coalesced
 
 - **Independent of doc-sync.** MR changes when no document changed (manual

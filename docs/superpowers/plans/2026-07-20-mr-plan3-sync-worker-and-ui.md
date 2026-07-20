@@ -30,6 +30,51 @@
 >   rather than being silently skipped, so Task 2's drop-and-log must happen
 >   **before** the call, not be relied on server-side.
 
+> **Plan 2 is DONE (2026-07-20)** — `am-ai-agents` commits `5a5e476`..`f155a16`.
+> Verified live against project `dc9f0cee-…` (Dasin), so this is the real payload
+> shape, not a guess:
+>
+> ```
+> GET /api/integrations/daab/master-records?projectId=<uuid>
+> Authorization: Bearer <DaabSyncKey>
+>
+> record_ref:        "project:dc9f0cee-..."     ← use verbatim; never construct it
+> title:             "Master Record — Dasin"    ← project name, not the id
+> profile_status:    "COMPLETED"
+> generated_at:      "2026-07-17T08:11:14.089Z"
+> content_hash:      "052d3526..."              ← the D6 skip key
+> sections_present:  [business, conflicts, financial, identity, legal,
+>                     opportunity, ownership, risk, thesis]   (9)
+> sections_stale:    []
+> source_doc_ids:    9 entries
+> citations:         []                          ← SEE WARNING BELOW
+> summary:           7998 chars                  ← capped under 8000
+> content:           34862 chars
+> tombstone:         false
+> ```
+>
+> Auth verified: no key → 401, wrong key → 401, and the request **reaches the
+> route** (returns the route's own `{"error":"unauthorized"}`, not a proxy
+> redirect) — the public-path entry works.
+
+> ### ⚠ `citations` is empty in practice — plan around `source_doc_ids`
+>
+> Measured on the live dev DB: **0 of 9 sections have `citations`** (the column is
+> `null`); only **6 of 9** have `sourceDocIds`. AAAA does not populate `citations`
+> today.
+>
+> Consequences for this plan — none of these are bugs, but do not be surprised:
+> - `resolve_links` (Task 2) reads both fields, but **`source_doc_ids` is the only
+>   one that actually contributes**. Keep the `citations` branch (it is cheap and
+>   AAAA may populate it later), just do not depend on it.
+> - Sections with no `sourceDocIds` produce **no provenance edges at all**. Expect
+>   roughly one edge per distinct source document — for Dasin that is ~9 edges for
+>   9 sections, not one per section.
+> - Do **not** treat "fewer edges than sections" as a failure in Task 3's logging;
+>   log the dropped/unresolved ids, not the ratio.
+> - The spec's D5 line "Source payload: `sourceDocIds` and `citations`" overstates
+>   what exists. Corrected in the spec on 2026-07-20.
+
 ## Global Constraints
 
 - Repos: `ennam.kg.python` (worker), `ennam.kg.go` (status fields), `ennam.kg.next` (UI). Each has its own `.git`.
@@ -242,6 +287,23 @@ def test_builds_evidence_links_for_resolvable_documents():
     links, dropped = resolve_links(_payload(), lookup=lambda d: f"{d}-node" if d == "doc-1" else None)
     assert {"relationship": "evidence", "target_id": "doc-1-node"} in links
     assert dropped == ["doc-2"]
+
+def test_works_with_citations_absent():
+    # WHY: measured on the live dev DB — AAAA populates `citations` for 0 of 9
+    # sections (the column is null); only source_doc_ids carries real data. This
+    # must not degrade to zero links just because citations is missing.
+    p = _payload(citations=None, source_doc_ids=["doc-1"])
+    links, dropped = resolve_links(p, lookup=lambda d: "n1")
+    assert links == [{"relationship": "evidence", "target_id": "n1"}]
+    assert dropped == []
+
+def test_section_with_no_source_docs_yields_no_links():
+    # 3 of 9 live sections have no sourceDocIds at all. Producing no provenance
+    # edge for them is correct behaviour, not a failure to report.
+    p = _payload(citations=None, source_doc_ids=[])
+    links, dropped = resolve_links(p, lookup=lambda d: "n1")
+    assert links == []
+    assert dropped == []
 
 def test_unresolvable_refs_are_dropped_not_fatal():
     # WHY (spec D6): a document not yet ingested must not fail the whole upsert —
@@ -628,5 +690,7 @@ git -C ennam.kg.next commit -m "feat(sources): show per-track sync timestamps fo
 **Type consistency:** `record_ref` flows verbatim AAAA → `MasterRecordPayload.record_ref` → upsert body → Plan 1's idempotency key. `content_hash` (AAAA response) → `payload.content_hash` → `mr_content_hash` (connection row). `links[]` entries `{relationship, target_id}` match Plan 1's `derivedRecordLink` exactly. `sections_present`/`sections_stale` match the Plan 1 config field names. ✓
 
 **Resolved since first draft:** the revoke route is now **Plan 1 Task 4** — no longer an open item.
+
+**Corrected after Plan 2 shipped:** `citations` is empty in practice (0/9 sections), so `source_doc_ids` is the sole provenance source; sections without it legitimately produce no edges. Tests added for both.
 
 **Corrected after verifying against the live DB:** the first draft assumed `lookup` could find `document_chunk` nodes by AAAA document id. Both halves were wrong. (a) No graph node carries `aaaa_document_id` — the property is set on the draft and does not survive promotion (`properties ? 'aaaa_document_id'` matches 0 rows). The real path is `draft_nodes.source_id -> knowledge_node_id`. (b) The target is a **`document`** node, not chunks: AAAA cites whole documents, so chunk-level edges would fabricate precision the source never provided. This also forced a new prerequisite — **Plan 1 Task 2 Step 2b** must add `document` to the `evidence` whitelist, or every edge here is rejected at Gate 1 and this task silently produces nothing.
