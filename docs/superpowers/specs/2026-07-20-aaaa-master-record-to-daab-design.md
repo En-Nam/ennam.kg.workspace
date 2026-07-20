@@ -368,6 +368,29 @@ revoked/archived in DAAB.
 This must ship with Phase 1, not after. An un-retractable stale company profile
 is a correctness failure, not a cleanup task.
 
+**Two gaps this decision left open, closed during Plan 1 implementation
+(2026-07-20). Recorded here because "mark revoked" was underspecified:**
+
+1. **Revoking must actually remove the record from retrieval.** Setting
+   `revoked_at` alone changes nothing for `GetNode`/search — the record keeps
+   answering, so D7's stated purpose is not met. Revoke therefore **also sets
+   `Status = "deprecated"`**, reusing the lifecycle-status convention
+   `DeprecateService` already uses (`internal/service/deprecate.go:102-107`), so
+   existing `status = 'active'` filters exclude it. Both writes happen in the
+   same atomic update. (Implemented: `ennam.kg.go` commit `1e6d3af`.)
+
+2. **Revocation must be reversible.** A `record_ref` can legitimately come back —
+   a project deleted and recreated with the same id, a tombstone served during an
+   AAAA outage, or an operator error. Without a way back, one bad revoke would
+   deprecate a company permanently. A later upsert for the same
+   `(source_system, record_ref)` therefore **resets `Status` to `"active"` and
+   clears `revoked_at`**. Setting `active` on an already-active record is a
+   harmless no-op. (Implemented: `ennam.kg.go` commit `7599d70`.)
+
+Plan 3's reconcile sweep must respect both: it revokes on a confirmed tombstone,
+and must **never** revoke on a failed request — an unreachable AAAA means
+*unknown*, not *deleted*.
+
 ### D8 — Summary blanking must be explicit
 
 `derived_record.go:60-62` blanks `summary` when omitted, justified by a comment

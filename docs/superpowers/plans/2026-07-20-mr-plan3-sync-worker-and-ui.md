@@ -12,6 +12,24 @@
 
 **Depends on:** **Plan 1** (endpoint accepting `links[]`/`content`, **and Task 2 Step 2b's `document` evidence-whitelist entry**) and **Plan 2** (AAAA read endpoint). Both must be merged first — this plan calls both.
 
+> **Plan 1 is DONE (2026-07-20).** What it actually shipped, that this plan must
+> match:
+> - `POST /api/v1/projects/{id}/derived-records` accepts
+>   `{title, subtype, source_system, record_ref, summary?, blank_summary?, content?, generated_at?, sections_present?, sections_stale?, provenance?, links?[]}`.
+> - `POST .../derived-records/revoke` takes `{source_system, record_ref}`, sets
+>   `revoked_at` **and** `Status = "deprecated"` so the record leaves normal
+>   retrieval. Idempotent.
+> - **A later upsert reactivates a revoked record** — it resets `Status` to
+>   `"active"` and clears `revoked_at`. So the sweep in Task 4 must not revoke on
+>   a failed request: the next successful sync would silently flip it back and
+>   forth, churning version rows.
+> - `links[]` accepts only `derived_from` / `evidence`, and **replaces** the
+>   node's existing edges of those types. Send the complete set every time.
+> - Edge targets are validated against the whitelist (tightened in Plan 1 commit
+>   `2bd14c3` — previously only nil-gated). An invalid target now fails the upsert
+>   rather than being silently skipped, so Task 2's drop-and-log must happen
+>   **before** the call, not be relied on server-side.
+
 ## Global Constraints
 
 - Repos: `ennam.kg.python` (worker), `ennam.kg.go` (status fields), `ennam.kg.next` (UI). Each has its own `.git`.
