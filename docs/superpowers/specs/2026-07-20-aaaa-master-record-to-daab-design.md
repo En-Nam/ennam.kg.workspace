@@ -173,6 +173,26 @@ Format: `project:<aaaa_project_id>`.
   LAAM gets 100% fidelity without depending on AAAA being reachable at query
   time.
 
+> **⚠ "Non-indexed" is not achieved by the `search:` config block — corrected
+> 2026-07-20 after the first live sync.** The DB trigger `update_search_vector()`
+> indexes a **hardcoded list of property keys**, `content` among them, and never
+> reads `config.yaml`. Storing the body under `content` therefore put it straight
+> into `search_vector` despite `text_search: [title, summary]`. Proven on the live
+> Dasin record: a token present only in `content` was full-text searchable.
+>
+> The body must live under a key absent from that trigger list — `record_body`.
+> The `content` key stays valid and searchable for `document_chunk`,
+> `document_section`, and `architecture` (1511 / 406 / 317 live rows), so the
+> shared trigger must **not** be changed. Fix: `docs/superpowers/plans/2026-07-20-mr-plan4-fix-content-fts-leak.md`.
+>
+> Vector embeddings were unaffected (0 rows for `derived_record`), so the Phase 2
+> concern below never materialised — only full-text search was polluted.
+>
+> **Testing lesson:** Plan 1's `TestDerivedRecordContentIsNotSearchable` asserted
+> against `config.yaml` and **passed for the entire time the defect was live**. It
+> checked the wrong layer. Any "X is not indexed" claim must be asserted against a
+> real database, with a control case proving the query can match at all.
+
 <a id="content-location-reversal"></a>
 **Content-location reversal — recorded deliberately.** IMP-010 **BR-003** states:
 *"The full record content stays in the source system (AAA
