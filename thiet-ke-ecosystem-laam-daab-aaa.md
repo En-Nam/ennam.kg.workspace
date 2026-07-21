@@ -101,10 +101,19 @@ Tài liệu PDF → Ingest Core (parse, OCR, chunking, dedup) → canonical chun
 User hỏi → LAAM render tool definitions theo model đang chọn (Claude format hoặc OpenAI function format cho Qwen/Ollama) → model phát sinh tool call → tool-call router chuyển về MCP client duy nhất → DAAB MCP server thực thi → kết quả trả về model → trả lời user. Mọi bước được log.
 
 **Luồng 3 — Generate Master Record:**
-AAA nhận trigger (từ LAAM hoặc lịch batch) → query DAAB qua MCP tools (entities, relations, chunks liên quan đến Project) → Claude synthesize MC có cấu trúc kèm citation → ghi ngược MC vào DAAB dưới dạng node `MasterRecord` với edges `derived_from` trỏ về evidence nodes.
+AAA nhận trigger (từ LAAM hoặc lịch batch) → query DAAB qua MCP tools (entities, relations, chunks liên quan đến Project) → Claude synthesize MC có cấu trúc kèm citation → ~~ghi ngược MC vào DAAB~~ → **DAAB kéo MC về** (xem ghi chú bên dưới) dưới dạng node `derived_record` với edges `derived_from` trỏ về evidence nodes.
+
+> ⚠ **Sửa đổi 2026-07-20** — xem `docs/superpowers/specs/2026-07-20-aaaa-master-record-to-daab-design.md` (cần PO duyệt):
+> - **Chiều truyền đổi từ push sang pull.** AAA **không đẩy**; DAAB kéo từ một endpoint đọc của AAA, dùng lại credential `DaabSyncKey` và ánh xạ `aaaa_project_id` sẵn có trong connection. Push sẽ cần một credential **chiều ngược** và một bảng ánh xạ thứ hai nằm trong AAA.
+> - **Node type là `derived_record`, không phải `MasterRecord`.** Tên `master_record` đã bị BA-031 dùng cho nghĩa khác (bản ghi entity đã khử trùng). Xem IMP-010 quyết định R2.
+> - **DAAB lưu cả nội dung đầy đủ** (không đánh index), vì LAAM không có đường nào đọc AAA.
 
 **Luồng 4 — Truy vết & giám sát:**
-Từ LAAM, user hỏi “MC của Project X dựa trên tài liệu nào?” → traverse graph: `MasterRecord` → `derived_from` → entities → `evidence` → chunks → `doc_id`. Không cần tích hợp thêm vì tất cả đã nằm trong graph.
+Từ LAAM, user hỏi “MC của Project X dựa trên tài liệu nào?” → traverse graph: `derived_record` → `derived_from` → entities → `evidence` → chunks → `doc_id`. ~~Không cần tích hợp thêm vì tất cả đã nằm trong graph.~~
+
+> ⚠ **Sửa đổi 2026-07-20** — câu “không cần tích hợp thêm” **không đúng**, ở hai mức:
+> 1. **Hiện tại chưa chạy được**: endpoint `derived-records` không tạo cạnh nào (IMP-010 BR-004 giao việc đó cho các lệnh `kg_link` riêng, mà chưa có ai gọi). Không có cạnh thì không traverse được.
+> 2. **Kể cả khi có cạnh**, traverse chỉ trả lời được câu hỏi *xuất xứ* (“dựa trên tài liệu nào”), **không** trả lời được câu hỏi *nội dung* (“rủi ro pháp lý là gì”). Nội dung tổng hợp phải được lưu, không suy ra được từ việc đi cạnh.
 
 -----
 
@@ -140,7 +149,7 @@ Từ LAAM, user hỏi “MC của Project X dựa trên tài liệu nào?” →
 - **Node types (đóng):** `Person`, `Organization`, `Concept`, `Event`, `Document`, `Location`, `Artifact`, `Project`, `MasterRecord`. Mỗi node có `canonical_name`, `aliases[]`, `subtype` (free-text), `description`, `provenance[]`.
 - **Relation types (đóng):** `works_for`, `part_of`, `mentions`, `causes`, `related_to`, `derived_from`, `evidence`. LLM không được tự sinh relation type mới — tránh hàng trăm type gần nghĩa làm graph không traverse được.
 - **Provenance bắt buộc trên mọi node/edge:** `source_doc_id`, `chunk_id`, câu gốc. Một fact có nhiều evidence từ nhiều docs = tín hiệu confidence.
-- **`MasterRecord` được định nghĩa trong schema ngay từ Phase 0** (kể cả khi AAA chưa ghi ngược) để tránh migrate graph sau này.
+- **`MasterRecord` được định nghĩa trong schema ngay từ Phase 0** (kể cả khi AAA chưa ghi ngược) để tránh migrate graph sau này. — ⚠ *Sửa 2026-07-20: node type thực tế tên là `derived_record` (IMP-010 R2); `master_record` đã thuộc về BA-031 với nghĩa khác.*
 
 #### 4.2.3. MCP Server
 
@@ -200,7 +209,7 @@ Phase sau bổ sung write tools (`upsert_master_record`…) với confirm flow p
 
 - **Phase A (hiện tại):** AAA đọc PDF thô → Claude phân tích → generate MC. Giữ nguyên.
 - **Phase B (sau khi Ingest Core + DAAB tools ổn định):** swap nguồn input — AAA query DAAB (entities, relations, chunks của Project) thay vì đọc PDF thô. Claude chuyển từ vai “đọc hiểu toàn bộ” sang “tổng hợp có cấu trúc”. Lợi ích: không trả tiền token lặp cho cùng tài liệu, MC có citation về node/chunk, nhất quán với graph.
-- **Phase C:** ghi ngược MC vào DAAB — node `MasterRecord` + edges `derived_from` trỏ về evidence. AAA expose một MCP tool (`generate_master_record`) để LAAM trigger được run.
+- **Phase C:** ~~ghi ngược MC vào DAAB~~ **DAAB kéo MC từ AAA** — node `derived_record` + edges `derived_from` trỏ về evidence. AAA expose một **endpoint đọc** (`GET /api/integrations/daab/master-records`, xác thực bằng `DaabSyncKey` như doc-sync) thay vì tự đẩy. AAA vẫn expose MCP tool `generate_master_record` để LAAM **trigger** việc dựng MC — trigger và truyền dữ liệu là hai việc khác nhau. ⚠ *Sửa 2026-07-20 — xem `docs/superpowers/specs/2026-07-20-aaaa-master-record-to-daab-design.md`.*
 
 Vì AAA đã tích hợp Claude sẵn, việc đổi nguồn context là thay đổi khoanh vùng được, không phải rewrite.
 

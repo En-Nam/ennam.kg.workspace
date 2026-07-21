@@ -1,5 +1,7 @@
 # Backlog — BA-033 Slice 2 readiness path
 
+**UPDATE 2026-07-16 — `concept`-type exact/case/legal-form duplication is FIXED** (was a contributor to the dup-entity top-hub problem described below). See `mem:backlog/ingestion-ocr-content-loss-bugs` and `mem:checkpoint/concept-dedup-fix-2026-07-16`. `decompose.py` now reuses project-scoped `concept` nodes via a `fold_name`-based key instead of minting one per mention; measured on Dasin: concepts 41→26, 0 exact dupes, cross-document bridge query went from 0 rows to 11 shared concepts. This does NOT resolve semantic near-duplicates (only deterministic case/whitespace/legal-form folding) — the 95 `needs_review` dup-entity hubs described below are a distinct, still-open problem for the 6 resolution-pipeline types (`concept` is explicitly outside that pipeline's scope).
+
 **UPDATED 2026-07-10: OQ-033-8 SETTLED by direct measurement → Gate A GREEN on the CORRECT (concept-excluded) graph.** Supersedes the 2026-07-03 "green" which measured the wrong graph. **Branch:** `task/implement_docs_sync`.
 
 ## ⚡ OQ-033-8 SPIKE 2026-07-10 (project 592c7ff7 "Cảng Định An M&A", :5433, Louvain seed 42)
@@ -32,7 +34,7 @@ DAAB KG is dominated by ONE real single-domain M&A corpus: project 592c7ff7 "C�
 ## Remaining gates (the honest ones)
 1. **Consumer not wired.** AAAA `.mcp.json` = supabase+inngest only; no DAAB. LAAM daab appears only in test fixtures. Architecture agreed, integration NOT built.
 2. **Falsifiability gate undefined** — need a runnable criterion ("community-global beats hybrid+entity-neighborhood on corpus-level questions") before building FR-002/003/005.
-3. **Coverage 28% + dup-entity hubs** — the 95 `needs_review` items are top hubs distorting clusters; resolving them raises coverage AND coherence for ALL retrieval.
+3. **Coverage 28% + dup-entity hubs** — the 95 `needs_review` items are top hubs distorting clusters; resolving them raises coverage AND coherence for ALL retrieval. **⚡ RESOLVED 2026-07-17 — FR-001-at-scale verdict is now in hand: MARGINAL, not a settled retrieval floor.** Full detail: `mem:checkpoint/fr001-at-scale-2026-07-17`, deliverable `.superpowers/sdd/fr001atscale-task-4-report.md`. Measured live on the real 77-doc Cảng Định An corpus (21 judgement-selected queries, deterministic script, zero LLM in the counting path, human relevance read with a k-cap confound check on every Yes — the same discipline that caught two prior fabricated-measurement runs). Result: `hop1_only_rate` rose sharply vs Dasin (1.0 vs 0.40 — the mechanism fires on literally every query at this density), but `answer_rate` fell sharply (≈0.048 vs Dasin's 0.25, confound-verified) — the mechanism fires constantly but almost never delivers a genuine novel answer (1 confirmed instance out of 88 judged hop-1-only snippets; 2 other plausible Yes candidates were tested and DISQUALIFIED by the confound check, confirming the check works as designed, not a formality). **Implication for gates 1/2 above: FR-002/003/005 (community summarization / global retrieval) must NOT assume `kg_graph_retrieve`'s 1-hop `similar_to` expansion as a settled retrieval floor — it is real but marginal, keep it, do not build on it as load-bearing infrastructure.** Also surfaced: the Task-2 `homogeneous`-class prediction ("expansion adds nothing") failed across all 8 predicted-homogeneous queries at this scale — reported as a finding, not buried.
 
 ## ⚡ HARNESS RUN 2026-07-13 + triage — FR-001 is BUILT but UNPOPULATED (operational gap, not build)
 Simulated M&A-consumer run (`other_projects/daab-sim-consumer/findings.md`, 15 DD questions on Cảng Định An via DAAB MCP). Scores: Tier-1 single-doc **2.25**, Tier-2 entity **2.5** (existing kg_search + kg_get_neighbors + entity resolution already good), Tier-3 cross-doc **0.5**, Tier-4 corpus **0.33**. Clearest cross-doc win the tools MISSED: Q10 found a real phase-2 area contradiction (14.71ha planning-decision vs 33.6ha 2019 Sở Xây dựng letter) only by manual cross-reading.
@@ -57,6 +59,37 @@ Steps 1–3 run. **626/626 chunks embedded** (reembed/backfill are no-ops on alr
 
 ## Build path (if FR-002/003/005 committed)
 `community` node type + `member_of`/`summarised_as` edges (OQ-033-1 migration + config edge rule) + batch Leiden/Louvain jobengine job (prune generic hubs first) + one summary/cluster via BA-009 + `kg_global_retrieve` REST+MCP.
+
+## ⚡ UPDATE 2026-07-16 — harness-findings-fixes plan complete; FR-001's "kg_graph_retrieve is broken" claim RETRACTED, ingest-quality gate closed
+
+Full detail: `mem:checkpoint/harness-findings-fixes-2026-07-16`. Summary for this backlog:
+
+- **The 2026-07-16 sim-consumer run's finding #1 ("`kg_graph_retrieve` broken — no passage text, `limit` ignored, hop-1 discarded") was a false diagnosis** from analyst parameter misuse (there is no `limit` field; real params are `result_k`/`seed_k`/`include_snippet`). Measured with correct params both before and after this fix: 9 rows, 9/9 snippets, `hop_count [0,1]`, multi-document. **`kg_graph_retrieve` was never broken.**
+- **Closed the real defect that caused the false diagnosis:** `graph_retrieve.go` now rejects unknown JSON fields with 400 (`DisallowUnknownFields`) — verified live: `limit:60` → 400 naming the field + valid list; valid request → 200.
+- **Closed the Dasin ingest-quality gaps this backlog's Gate-B/C section flags as blocking an honest verdict:** `BCTC KIEM TOAN 2023` was silently orphaned (0 concept edges) from a swallowed LLM JSON-parse failure in `extract.py` — now retries once then fails loud; re-ingested and measured at 3 concept edges (was 0), 9/9 docs processed with 0 failures, zero silent errors in the worker log.
+- **Place/authority concept duplication (a distinct issue from the already-fixed company-legal-form dedup) is now closed too:** `decompose.py`'s `_LEGAL_FORMS` extended to place/authority abbreviations; measured live — Tân Thuận EPZ, Phú An Thạnh IP, and the HEPZA authority each collapsed to exactly one node (was 2+ each), total Dasin concepts 26→22.
+- **This is Dasin-scale evidence (9 docs), not Cảng Định An-scale** — it closes the *ingest-quality* prerequisite this doc's Gate-B/C section names, but does not itself settle OQ-033-8/coverage/95-needs_review on the M&A corpus.
+
+## ⚡ UPDATE (same day) — honest FR-001 verdict now in hand at Dasin scale, PLUS a second real bug found+fixed live
+
+The harness re-run above (`findings-dasin-run2.md`) surfaced a NEW real bug, distinct from the retracted "graph_retrieve is broken" claim: DAAB's MCP bridge (`ennam.kg.go/internal/bridge/serve.go`) unconditionally injected an extra unrequested `projectId` field into every default-project `kg_graph_retrieve` call — harmless until this same plan's `DisallowUnknownFields()` fix started rejecting it. **Invisible to two independent whole-branch code reviews** because they checked the bridge's declared schema, not its runtime request-building logic. Fixed live (`ennam.kg.go` commit `467fd91`, TDD, independently reviewed Approved 0 Critical/Important), `kg-bridge` rebuilt.
+
+**`findings-dasin-run3.md` (run 3, bridge now genuinely fixed) is the first trustworthy FR-001 measurement in 3 attempts:** score 33/42 (2.36 avg, up from 32/42 both prior runs). **`kg_graph_retrieve` CONFIRMED genuinely working** — 5/5 calls succeeded through the real MCP bridge path a real consumer (AAAA) would use, including real `hop_count:1` cross-document expansion in 3/5 calls.
+
+**New backlog item surfaced (not retrieval, not covered by any FR-00x above):** even with retrieval genuinely working, Q9 (equity delta), Q11 (contradictions), Q12/Q13 (corpus synthesis) still score ≤2 — because the gap is a **comparison/arithmetic/synthesis layer**, not missing retrieval. Worth its own brainstorm + plan; do not fold into FR-001/FR-004 scope.
+
+Full detail: `mem:checkpoint/harness-findings-fixes-2026-07-16`. Dasin-scale still cannot settle OQ-033-8/coverage/95-needs_review on the M&A corpus — that needs the 145-doc Cảng Định An corpus, unchanged from before.
+
+## ⚡ UPDATE 2026-07-17 — first deterministic FR-001 verdict (code-measured, not LLM-narrated)
+
+`findings-dasin-run2.md` and `findings-dasin.md` (referenced throughout the 2026-07-16 updates above) are **both banner-flagged compromised**: an LLM narrated its own tool-call outputs as measurements and fabricated numbers, twice. Task 3 of the doc-sync/DAAB-fix plan replaced that process with a deterministic Python script (`other_projects/daab-sim-consumer/fr001_measure.py`, gitignored local artefact) that computes every metric by code — set differences, row counts — and only dumps raw snippets for a human to separately judge relevance. Full detail: `mem:checkpoint/fr001-measurement-2026-07-17`.
+
+**Verdict: INCONCLUSIVE AT N=10 — not the clean 0 (`ADDS NOTHING`) the prior narrated runs implied, and not a clean win either.** On the Dasin project (9 docs, `similar_to` edges=399), 10 queries (5 homogeneous financial-statement / 5 heterogeneous licence-narrative, predicted class stated before running):
+- `hop1_only_docs` (documents reached ONLY via a `similar_to` edge, not by `kg_search_chunks`, not by graph_retrieve's own seeds) = **8 total**, non-zero on 4/10 queries (H1, X2, X4, X5) — spans **both** predicted classes, not just heterogeneous as hypothesized.
+- `true_cross_doc_hop1` (edge-verified via `kg_get_node`) = 25 — the graph-traversal mechanism itself is confirmed real and working; it just often lands on documents already reachable another way, which is why `hop1_only_docs` (8) is much smaller than `true_cross_doc_hop1` (25).
+- Heterogeneous queries lean on hop-1 expansion ~3x more than homogeneous ones by row fraction (0.332 vs 0.103 mean) — directionally consistent with the FR-001 thesis even though the binary class split didn't cleanly separate `hop1_only_docs` to zero on the homogeneous side.
+- **This still cannot settle OQ-033-8/coverage/the 145-doc scale question** — Dasin's 9 docs test the mechanism, not whether it matters in aggregate. A repeat of this same deterministic script against Cảng Định An (592c7ff7) is the next concrete step if the Slice 2 scale decision is revisited.
+- Bonus: one specific numeric claim from `findings-dasin-run3.md` (dropped_count/expanded_count/seed_count/hop1-doc-IDs for the `"doanh thu thuần 2023 2024 2025"` query) was spot-checked against the real script output and matched exactly — a genuine (if narrow) point of agreement, not grounds to trust that report's other unverified claims.
 
 ## See also
 - `mem:decisions/ba033-slice2-deferred` (retraction 2026-07-08) · `mem:docs` `docs/daab-memory-consumer-contract.md`
