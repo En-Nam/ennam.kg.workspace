@@ -176,3 +176,12 @@ language_servers:
 - python
 - go
 - typescript
+
+# Legacy key name expected by the pinned `serena` CLI (v1.5.3) installed on this
+# machine — the newer `language_servers` key above is what a bleeding-edge Serena
+# (installed via `uvx --from git+https://github.com/oraios/serena`) expects instead.
+# Kept in sync with language_servers above for compatibility with both.
+languages:
+- python
+- go
+- typescript
