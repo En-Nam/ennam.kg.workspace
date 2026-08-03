@@ -36,6 +36,9 @@ env.zip
 /*.sql
 /*-deal-report.md
 
+# --- DB dumps (real data) — NEVER commit ---
+/db-export/
+
 # --- OS / local tooling junk ---
 .DS_Store
 /.mcp.json

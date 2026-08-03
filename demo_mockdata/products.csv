@@ -1,0 +1,801 @@
+product_id,sku,upc,product_name,category,subcategory,brand,prescription_required,controlled_category,unit_cost,retail_price,gross_margin_percent,reorder_point,vendor_id,status
+PRD-00001,SKU-10001,100000000001,Antacid Chewables,OTC Medication,Cold & Flu,ValueCare,False,None,34.5,52.08,33.8,14,VND-028,Active
+PRD-00002,SKU-10002,100000000002,Mock Rx Product BValue Pack,Prescription Medication,Maintenance Rx,BrightSmile,True,None,10.91,25.35,57.0,28,VND-035,Active
+PRD-00003,SKU-10003,100000000003,Pain Relief Tablets,OTC Medication,Allergy,FreshWay,False,None,20.76,35.54,41.6,10,VND-004,Active
+PRD-00004,SKU-10004,100000000004,Bottled Water,Beverages,Soda,CareFirst,False,None,21.13,40.08,47.3,17,VND-008,Active
+PRD-00005,SKU-10005,100000000005,School Supplies50 Count,Seasonal,Holiday,GlowUp,False,None,2.11,2.92,27.7,23,VND-034,Active
+PRD-00006,SKU-10006,100000000006,Laundry Detergent100 Count,Household,Laundry,PureHealth,False,None,25.28,37.66,32.9,9,VND-020,Active
+PRD-00007,SKU-10007,100000000007,Snickers Bar,Snacks,Cookies,HealthPlus,False,None,16.45,39.12,57.9,7,VND-035,Active
+PRD-00008,SKU-10008,100000000008,Antiseptic SprayLarge,First Aid,Wound Care,DailyChoice,False,None,30.92,67.24,54.0,14,VND-011,Active
+PRD-00009,SKU-10009,100000000009,Trail Mix100 Count,Snacks,Cookies,FreshWay,False,None,18.87,35.63,47.0,14,VND-007,Active
+PRD-00010,SKU-10010,100000000010,Crest Toothpaste,Personal Care,Skin Care,WellLife,False,None,26.18,37.47,30.1,24,VND-014,Active
+PRD-00011,SKU-10011,100000000011,Mock Rx Product B100 Count,Prescription Medication,Specialty Rx,ValueCare,True,None,22.47,33.9,33.7,13,VND-004,Active
+PRD-00012,SKU-10012,100000000012,Daily Multivitamin,Vitamins & Supplements,Minerals,GlowUp,False,None,0.87,1.76,50.4,13,VND-011,Active
+PRD-00013,SKU-10013,100000000013,Mock Rx Product E100 Count,Prescription Medication,Maintenance Rx,HealthPlus,True,None,15.4,20.62,25.3,35,VND-010,Active
+PRD-00014,SKU-10014,100000000014,Orange Juice50 Count,Beverages,Soda,UnityCare,False,None,19.67,32.34,39.2,14,VND-024,Active
+PRD-00015,SKU-10015,100000000015,Cold & Flu Capsules100 Count,OTC Medication,Allergy,FreshWay,False,None,9.3,12.99,28.4,33,VND-027,Active
+PRD-00016,SKU-10016,100000000016,Travel KitValue Pack,Seasonal,Holiday,PureHealth,False,None,34.19,70.87,51.8,5,VND-012,Active
+PRD-00017,SKU-10017,100000000017,Mock Rx Product D100 Count,Prescription Medication,Specialty Rx,WellLife,True,None,30.34,62.89,51.8,10,VND-007,Active
+PRD-00018,SKU-10018,100000000018,CrackersValue Pack,Grocery,Pantry,DailyChoice,False,None,7.59,16.98,55.3,14,VND-015,Active
+PRD-00019,SKU-10019,100000000019,Instant Cold PackValue Pack,First Aid,Bandages,HealthPlus,False,None,14.4,21.88,34.2,35,VND-018,Active
+PRD-00020,SKU-10020,100000000020,Disinfecting Wipes50 Count,Household,Batteries,WellLife,False,None,12.09,16.32,25.9,10,VND-017,Active
+PRD-00021,SKU-10021,100000000021,Cough SyrupTravel,OTC Medication,Pain Relief,PureHealth,False,None,12.59,25.67,51.0,24,VND-033,Active
+PRD-00022,SKU-10022,100000000022,Fish OilValue Pack,Vitamins & Supplements,Minerals,UnityCare,False,None,9.47,18.35,48.4,21,VND-035,Active
+PRD-00023,SKU-10023,100000000023,Face MasksTravel,Medical Supplies,Thermometers,DailyChoice,False,None,3.15,5.93,46.9,24,VND-021,Active
+PRD-00024,SKU-10024,100000000024,LancetsLarge,Medical Supplies,Glucose Monitoring,DailyChoice,False,None,18.12,34.19,47.0,17,VND-019,Active
+PRD-00025,SKU-10025,100000000025,Bottled WaterTravel,Beverages,Water,HomeEase,False,None,23.52,37.64,37.5,33,VND-012,Active
+PRD-00026,SKU-10026,100000000026,Umbrella50 Count,Seasonal,Back to School,CareFirst,False,None,29.31,45.11,35.0,18,VND-021,Active
+PRD-00027,SKU-10027,100000000027,Protein Bar100 Count,Snacks,Protein Bars,HomeEase,False,None,8.07,13.59,40.6,10,VND-006,Active
+PRD-00028,SKU-10028,100000000028,Face CleanserValue Pack,Beauty,Nail Care,CareFirst,False,None,23.79,35.2,32.4,9,VND-002,Active
+PRD-00029,SKU-10029,100000000029,Antacid Chewables50 Count,OTC Medication,Cold & Flu,PureHealth,False,None,29.85,41.12,27.4,33,VND-013,Active
+PRD-00030,SKU-10030,100000000030,Mock Rx Product DTravel,Prescription Medication,Maintenance Rx,UnityCare,True,None,9.11,17.08,46.6,33,VND-007,Active
+PRD-00031,SKU-10031,100000000031,Peanut Butter100 Count,Grocery,Breakfast,CareFirst,False,None,18.49,25.21,26.7,34,VND-008,Active
+PRD-00032,SKU-10032,100000000032,Protein Bar100 Count,Snacks,Chips,DailyChoice,False,None,18.94,33.49,43.4,35,VND-029,Active
+PRD-00033,SKU-10033,100000000033,School SuppliesTravel,Seasonal,Travel,ValueCare,False,None,31.48,62.39,49.5,19,VND-017,Active
+PRD-00034,SKU-10034,100000000034,Elastic WrapTravel,First Aid,Wound Care,HealthPlus,False,None,22.22,33.7,34.1,27,VND-019,Active
+PRD-00035,SKU-10035,100000000035,Gauze PadsLarge,First Aid,Wound Care,MedCheck,False,None,31.34,43.32,27.7,12,VND-025,Active
+PRD-00036,SKU-10036,100000000036,Mock Rx Product FValue Pack,Prescription Medication,Brand Rx,FreshWay,True,None,2.95,4.79,38.5,19,VND-027,Active
+PRD-00037,SKU-10037,100000000037,Antacid ChewablesTravel,OTC Medication,Cold & Flu,HomeEase,False,None,31.74,56.96,44.3,5,VND-025,Active
+PRD-00038,SKU-10038,100000000038,Chocolate CookiesLarge,Snacks,Candy,PureHealth,False,None,26.56,56.71,53.2,22,VND-035,Active
+PRD-00039,SKU-10039,100000000039,UmbrellaValue Pack,Seasonal,Holiday,PureHealth,False,None,10.1,17.13,41.0,15,VND-026,Active
+PRD-00040,SKU-10040,100000000040,Mock Rx Product DValue Pack,Prescription Medication,Brand Rx,PureHealth,True,None,34.34,59.85,42.6,23,VND-002,Active
+PRD-00041,SKU-10041,100000000041,Vitamin CTravel,Vitamins & Supplements,Minerals,DailyChoice,False,None,6.97,10.49,33.6,11,VND-030,Active
+PRD-00042,SKU-10042,100000000042,BatteriesLarge,Household,Laundry,WellLife,False,None,26.51,55.76,52.5,31,VND-006,Active
+PRD-00043,SKU-10043,100000000043,Gummy Candy50 Count,Snacks,Candy,CareFirst,False,None,2.53,5.8,56.4,25,VND-005,Active
+PRD-00044,SKU-10044,100000000044,Glucose Test StripsValue Pack,Medical Supplies,Glucose Monitoring,MedCheck,False,None,7.58,10.2,25.7,12,VND-009,Active
+PRD-00045,SKU-10045,100000000045,Trail MixValue Pack,Snacks,Candy,DailyChoice,False,None,16.68,25.07,33.5,10,VND-008,Active
+PRD-00046,SKU-10046,100000000046,Crest Toothpaste50 Count,Personal Care,Skin Care,GlowUp,False,None,1.63,2.52,35.3,34,VND-025,Active
+PRD-00047,SKU-10047,100000000047,Cereal50 Count,Grocery,Breakfast,HealthPlus,False,None,24.4,44.93,45.7,27,VND-020,Active
+PRD-00048,SKU-10048,100000000048,Blood Pressure Cuff,Medical Supplies,Glucose Monitoring,DailyChoice,False,None,12.64,20.77,39.1,7,VND-033,Active
+PRD-00049,SKU-10049,100000000049,Glucose Test StripsTravel,Medical Supplies,Braces,DailyChoice,False,None,28.91,40.42,28.5,25,VND-030,Active
+PRD-00050,SKU-10050,100000000050,Mock Rx Product DValue Pack,Prescription Medication,Brand Rx,WellLife,True,None,25.88,59.99,56.9,24,VND-035,Active
+PRD-00051,SKU-10051,100000000051,Protein Bar100 Count,Snacks,Protein Bars,CareFirst,False,None,21.04,32.69,35.6,31,VND-006,Active
+PRD-00052,SKU-10052,100000000052,MoisturizerTravel,Beauty,Fragrance,DailyChoice,False,None,20.27,38.28,47.1,5,VND-032,Active
+PRD-00053,SKU-10053,100000000053,BatteriesValue Pack,Household,Paper Goods,WellLife,False,None,12.9,19.41,33.5,33,VND-018,Active
+PRD-00054,SKU-10054,100000000054,Sports DrinkValue Pack,Beverages,Soda,ValueCare,False,None,3.68,7.18,48.8,22,VND-016,Active
+PRD-00055,SKU-10055,100000000055,Mock Rx Product F100 Count,Prescription Medication,Maintenance Rx,HealthPlus,True,None,17.56,35.96,51.2,14,VND-015,Active
+PRD-00056,SKU-10056,100000000056,Soup100 Count,Grocery,Breakfast,FreshWay,False,None,20.67,34.81,40.6,16,VND-028,Active
+PRD-00057,SKU-10057,100000000057,Mock Rx Product C100 Count,Prescription Medication,Specialty Rx,CareFirst,True,None,16.29,25.11,35.1,8,VND-013,Active
+PRD-00058,SKU-10058,100000000058,Disinfecting Wipes50 Count,Household,Cleaning,CareFirst,False,None,33.32,63.8,47.8,11,VND-031,Active
+PRD-00059,SKU-10059,100000000059,Face CleanserValue Pack,Beauty,Nail Care,WellLife,False,None,10.9,17.28,36.9,5,VND-035,Active
+PRD-00060,SKU-10060,100000000060,Crest Toothpaste,Personal Care,Skin Care,MedCheck,False,None,19.7,37.9,48.0,25,VND-032,Active
+PRD-00061,SKU-10061,100000000061,Fish OilLarge,Vitamins & Supplements,Multivitamins,MedCheck,False,None,16.83,27.83,39.5,35,VND-004,Active
+PRD-00062,SKU-10062,100000000062,Face Cleanser,Beauty,Fragrance,GlowUp,False,None,14.47,19.94,27.4,26,VND-004,Active
+PRD-00063,SKU-10063,100000000063,Body WashLarge,Personal Care,Hair Care,FreshWay,False,None,3.67,5.49,33.2,29,VND-027,Active
+PRD-00064,SKU-10064,100000000064,School SuppliesTravel,Seasonal,Holiday,BrightSmile,False,None,16.18,26.79,39.6,18,VND-020,Active
+PRD-00065,SKU-10065,100000000065,School Supplies100 Count,Seasonal,Summer,GlowUp,False,None,4.15,8.33,50.2,11,VND-017,Active
+PRD-00066,SKU-10066,100000000066,Digital ThermometerValue Pack,Medical Supplies,Glucose Monitoring,UnityCare,False,None,6.7,9.24,27.5,18,VND-029,Active
+PRD-00067,SKU-10067,100000000067,Mock Rx Product C,Prescription Medication,Maintenance Rx,HomeEase,True,None,8.68,16.8,48.3,32,VND-030,Active
+PRD-00068,SKU-10068,100000000068,Daily Multivitamin100 Count,Vitamins & Supplements,Vitamin D,CareFirst,False,None,20.95,43.22,51.5,18,VND-008,Active
+PRD-00069,SKU-10069,100000000069,Iced TeaValue Pack,Beverages,Water,HealthPlus,False,None,31.86,66.76,52.3,6,VND-011,Active
+PRD-00070,SKU-10070,100000000070,Lip Balm,Beauty,Nail Care,PureHealth,False,None,16.8,25.86,35.0,35,VND-018,Active
+PRD-00071,SKU-10071,100000000071,Energy Drink,Beverages,Energy Drinks,HomeEase,False,None,21.23,46.51,54.4,15,VND-017,Active
+PRD-00072,SKU-10072,100000000072,Cold & Flu Capsules100 Count,OTC Medication,Pain Relief,UnityCare,False,None,29.38,52.45,44.0,29,VND-018,Active
+PRD-00073,SKU-10073,100000000073,Travel KitTravel,Seasonal,Summer,WellLife,False,None,18.52,30.66,39.6,10,VND-028,Active
+PRD-00074,SKU-10074,100000000074,Glucose Test StripsTravel,Medical Supplies,Masks,GlowUp,False,None,12.67,19.8,36.0,8,VND-011,Active
+PRD-00075,SKU-10075,100000000075,Disinfecting WipesTravel,Household,Batteries,FreshWay,False,None,10.62,24.24,56.2,6,VND-030,Active
+PRD-00076,SKU-10076,100000000076,Daily MultivitaminLarge,Vitamins & Supplements,Vitamin C,FreshWay,False,None,4.72,9.53,50.5,31,VND-001,Active
+PRD-00077,SKU-10077,100000000077,Wrist Brace,Medical Supplies,Masks,ValueCare,False,None,7.17,11.37,36.9,25,VND-029,Active
+PRD-00078,SKU-10078,100000000078,Allergy Relief50 Count,OTC Medication,Cold & Flu,HomeEase,False,None,5.24,8.0,34.5,20,VND-008,Active
+PRD-00079,SKU-10079,100000000079,Nasal SprayValue Pack,OTC Medication,Cold & Flu,PureHealth,False,None,11.39,15.28,25.5,7,VND-015,Active
+PRD-00080,SKU-10080,100000000080,Vitamin D3100 Count,Vitamins & Supplements,Minerals,HomeEase,False,None,29.25,49.95,41.4,14,VND-033,Active
+PRD-00081,SKU-10081,100000000081,Mock Rx Product DTravel,Prescription Medication,Specialty Rx,FreshWay,True,None,34.32,51.26,33.0,9,VND-025,Active
+PRD-00082,SKU-10082,100000000082,Bandage PackLarge,First Aid,Antiseptic,DailyChoice,False,None,27.21,58.14,53.2,34,VND-033,Active
+PRD-00083,SKU-10083,100000000083,Mascara100 Count,Beauty,Cosmetics,GlowUp,False,None,10.98,19.74,44.4,20,VND-010,Active
+PRD-00084,SKU-10084,100000000084,Chocolate CookiesLarge,Snacks,Protein Bars,ValueCare,False,None,19.65,34.43,42.9,34,VND-021,Active
+PRD-00085,SKU-10085,100000000085,Elastic WrapTravel,First Aid,Antiseptic,UnityCare,False,None,8.75,17.71,50.6,15,VND-031,Active
+PRD-00086,SKU-10086,100000000086,Mock Rx Product D100 Count,Prescription Medication,Maintenance Rx,MedCheck,True,None,27.89,52.15,46.5,20,VND-003,Active
+PRD-00087,SKU-10087,100000000087,Crest ToothpasteTravel,Personal Care,Skin Care,UnityCare,False,None,4.17,9.28,55.0,28,VND-010,Active
+PRD-00088,SKU-10088,100000000088,CerealTravel,Grocery,Breakfast,BrightSmile,False,None,27.52,41.54,33.7,27,VND-026,Active
+PRD-00089,SKU-10089,100000000089,Face Masks100 Count,Medical Supplies,Glucose Monitoring,DailyChoice,False,None,30.18,48.32,37.5,25,VND-032,Active
+PRD-00090,SKU-10090,100000000090,Sports Drink,Beverages,Soda,WellLife,False,None,8.79,16.77,47.6,12,VND-006,Active
+PRD-00091,SKU-10091,100000000091,Pasta Sauce100 Count,Grocery,Pantry,HomeEase,False,None,30.64,50.76,39.6,14,VND-002,Active
+PRD-00092,SKU-10092,100000000092,Pain Relief TabletsLarge,OTC Medication,Allergy,CareFirst,False,None,13.03,21.44,39.2,21,VND-027,Active
+PRD-00093,SKU-10093,100000000093,Travel KitValue Pack,Seasonal,Holiday,BrightSmile,False,None,3.45,7.46,53.7,26,VND-016,Active
+PRD-00094,SKU-10094,100000000094,Potato ChipsTravel,Snacks,Chips,GlowUp,False,None,22.6,37.77,40.2,5,VND-030,Active
+PRD-00095,SKU-10095,100000000095,Face CleanserTravel,Beauty,Facial Care,WellLife,False,None,33.12,78.1,57.6,25,VND-028,Active
+PRD-00096,SKU-10096,100000000096,Mock Rx Product DLarge,Prescription Medication,Specialty Rx,ValueCare,True,None,7.57,12.15,37.7,8,VND-016,Active
+PRD-00097,SKU-10097,100000000097,OatmealLarge,Grocery,Canned Goods,GlowUp,False,None,34.75,53.25,34.7,17,VND-018,Active
+PRD-00098,SKU-10098,100000000098,Cough Syrup100 Count,OTC Medication,Pain Relief,WellLife,False,None,17.76,39.32,54.8,29,VND-015,Active
+PRD-00099,SKU-10099,100000000099,Travel Kit100 Count,Seasonal,Back to School,HomeEase,False,None,7.26,10.88,33.3,29,VND-009,Active
+PRD-00100,SKU-10100,100000000100,Lancets100 Count,Medical Supplies,Glucose Monitoring,UnityCare,False,None,2.1,4.29,51.0,23,VND-024,Active
+PRD-00101,SKU-10101,100000000101,Mock Rx Product ALarge,Prescription Medication,Brand Rx,CareFirst,True,None,11.94,19.48,38.7,9,VND-035,Active
+PRD-00102,SKU-10102,100000000102,Laundry DetergentLarge,Household,Laundry,WellLife,False,None,32.06,73.13,56.2,28,VND-022,Active
+PRD-00103,SKU-10103,100000000103,Vitamin D3Value Pack,Vitamins & Supplements,Minerals,GlowUp,False,None,26.58,39.35,32.4,28,VND-026,Active
+PRD-00104,SKU-10104,100000000104,Coke Zero 20ozTravel,Beverages,Juice,ValueCare,False,None,1.23,2.15,42.7,16,VND-017,Active
+PRD-00105,SKU-10105,100000000105,Hand WarmersLarge,Seasonal,Travel,UnityCare,False,None,4.46,6.63,32.7,24,VND-021,Active
+PRD-00106,SKU-10106,100000000106,Hand Warmers,Seasonal,Holiday,HomeEase,False,None,22.51,37.72,40.3,14,VND-027,Active
+PRD-00107,SKU-10107,100000000107,Vitamin D3,Vitamins & Supplements,Vitamin D,HealthPlus,False,None,11.17,19.01,41.3,12,VND-035,Active
+PRD-00108,SKU-10108,100000000108,ConditionerLarge,Personal Care,Deodorant,FreshWay,False,None,23.71,46.97,49.5,18,VND-010,Active
+PRD-00109,SKU-10109,100000000109,Crackers50 Count,Grocery,Pantry,UnityCare,False,None,14.73,33.78,56.4,27,VND-024,Active
+PRD-00110,SKU-10110,100000000110,Wound OintmentValue Pack,First Aid,Supports,GlowUp,False,None,30.05,41.9,28.3,16,VND-035,Active
+PRD-00111,SKU-10111,100000000111,Glucose Test StripsTravel,Medical Supplies,Braces,ValueCare,False,None,10.2,23.69,57.0,7,VND-014,Active
+PRD-00112,SKU-10112,100000000112,Glucose Test StripsLarge,Medical Supplies,Glucose Monitoring,BrightSmile,False,None,9.09,12.83,29.2,11,VND-005,Active
+PRD-00113,SKU-10113,100000000113,Sports DrinkValue Pack,Beverages,Water,MedCheck,False,None,28.6,42.49,32.7,30,VND-001,Active
+PRD-00114,SKU-10114,100000000114,Moisturizer50 Count,Beauty,Facial Care,GlowUp,False,None,9.33,13.47,30.8,32,VND-002,Active
+PRD-00115,SKU-10115,100000000115,ShampooValue Pack,Personal Care,Oral Care,WellLife,False,None,20.92,28.09,25.5,6,VND-009,Active
+PRD-00116,SKU-10116,100000000116,Mock Rx Product E,Prescription Medication,Maintenance Rx,DailyChoice,True,None,26.29,44.35,40.7,21,VND-007,Active
+PRD-00117,SKU-10117,100000000117,Trail Mix,Snacks,Chips,GlowUp,False,None,25.66,57.01,55.0,21,VND-020,Active
+PRD-00118,SKU-10118,100000000118,Snickers BarTravel,Snacks,Candy,HealthPlus,False,None,29.77,48.86,39.1,20,VND-029,Active
+PRD-00119,SKU-10119,100000000119,Daily Multivitamin50 Count,Vitamins & Supplements,Multivitamins,BrightSmile,False,None,5.83,8.23,29.2,25,VND-021,Active
+PRD-00120,SKU-10120,100000000120,Crackers50 Count,Grocery,Canned Goods,HomeEase,False,None,21.49,29.96,28.3,8,VND-014,Active
+PRD-00121,SKU-10121,100000000121,Peanut ButterTravel,Grocery,Condiments,PureHealth,False,None,12.36,20.59,40.0,28,VND-007,Active
+PRD-00122,SKU-10122,100000000122,Dish Soap100 Count,Household,Batteries,GlowUp,False,None,9.48,21.78,56.5,34,VND-031,Active
+PRD-00123,SKU-10123,100000000123,Vitamin D3,Vitamins & Supplements,Multivitamins,DailyChoice,False,None,15.54,30.82,49.6,30,VND-009,Active
+PRD-00124,SKU-10124,100000000124,Sports Drink50 Count,Beverages,Soda,PureHealth,False,None,19.99,37.8,47.1,16,VND-028,Active
+PRD-00125,SKU-10125,100000000125,Mock Rx Product C50 Count,Prescription Medication,Generic Rx,FreshWay,True,None,11.45,16.0,28.4,11,VND-010,Active
+PRD-00126,SKU-10126,100000000126,Digital Thermometer,Medical Supplies,Masks,HealthPlus,False,None,12.74,22.49,43.4,29,VND-018,Active
+PRD-00127,SKU-10127,100000000127,Umbrella50 Count,Seasonal,Holiday,BrightSmile,False,None,34.13,71.12,52.0,26,VND-002,Active
+PRD-00128,SKU-10128,100000000128,SunscreenValue Pack,Seasonal,Back to School,DailyChoice,False,None,10.11,20.28,50.2,16,VND-001,Active
+PRD-00129,SKU-10129,100000000129,Body Wash100 Count,Personal Care,Hair Care,GlowUp,False,None,14.48,20.59,29.7,5,VND-006,Active
+PRD-00130,SKU-10130,100000000130,Mock Rx Product DTravel,Prescription Medication,Brand Rx,WellLife,True,None,16.29,23.34,30.2,28,VND-021,Active
+PRD-00131,SKU-10131,100000000131,SunscreenValue Pack,Seasonal,Summer,GlowUp,False,None,6.14,11.24,45.4,7,VND-018,Active
+PRD-00132,SKU-10132,100000000132,Protein Bar50 Count,Snacks,Protein Bars,FreshWay,False,None,15.89,24.08,34.0,8,VND-023,Active
+PRD-00133,SKU-10133,100000000133,Soup100 Count,Grocery,Pantry,GlowUp,False,None,23.99,40.7,41.1,14,VND-003,Active
+PRD-00134,SKU-10134,100000000134,Elastic Wrap,First Aid,Supports,CareFirst,False,None,1.01,1.55,34.9,29,VND-009,Active
+PRD-00135,SKU-10135,100000000135,Mascara,Beauty,Nail Care,MedCheck,False,None,1.01,2.01,49.7,9,VND-025,Active
+PRD-00136,SKU-10136,100000000136,Sports Drink50 Count,Beverages,Water,HealthPlus,False,None,29.29,60.52,51.6,17,VND-003,Active
+PRD-00137,SKU-10137,100000000137,Crackers,Grocery,Pantry,BrightSmile,False,None,30.28,54.07,44.0,17,VND-027,Active
+PRD-00138,SKU-10138,100000000138,Lip Balm,Beauty,Cosmetics,BrightSmile,False,None,33.84,48.81,30.7,19,VND-024,Active
+PRD-00139,SKU-10139,100000000139,Vitamin D3Value Pack,Vitamins & Supplements,Minerals,HealthPlus,False,None,15.67,25.36,38.2,17,VND-020,Active
+PRD-00140,SKU-10140,100000000140,Mock Rx Product BLarge,Prescription Medication,Specialty Rx,GlowUp,True,None,27.43,37.85,27.5,8,VND-034,Active
+PRD-00141,SKU-10141,100000000141,Orange JuiceLarge,Beverages,Water,MedCheck,False,None,25.66,53.49,52.0,12,VND-007,Active
+PRD-00142,SKU-10142,100000000142,Soft ToothbrushValue Pack,Personal Care,Skin Care,GlowUp,False,None,21.38,42.83,50.1,7,VND-012,Active
+PRD-00143,SKU-10143,100000000143,Wrist Brace50 Count,Medical Supplies,Masks,BrightSmile,False,None,26.78,44.5,39.8,25,VND-021,Active
+PRD-00144,SKU-10144,100000000144,Digital ThermometerTravel,Medical Supplies,Braces,WellLife,False,None,3.09,5.12,39.6,30,VND-018,Active
+PRD-00145,SKU-10145,100000000145,Holiday Candy50 Count,Seasonal,Summer,UnityCare,False,None,3.29,5.51,40.2,6,VND-024,Active
+PRD-00146,SKU-10146,100000000146,Body Lotion,Beauty,Cosmetics,ValueCare,False,None,21.81,37.43,41.7,23,VND-003,Active
+PRD-00147,SKU-10147,100000000147,Chocolate Cookies50 Count,Snacks,Chips,UnityCare,False,None,17.04,24.34,30.0,19,VND-007,Active
+PRD-00148,SKU-10148,100000000148,Trash Bags100 Count,Household,Cleaning,ValueCare,False,None,6.66,9.97,33.2,19,VND-034,Active
+PRD-00149,SKU-10149,100000000149,Orange JuiceLarge,Beverages,Water,DailyChoice,False,None,32.19,51.74,37.8,26,VND-004,Active
+PRD-00150,SKU-10150,100000000150,Glucose Test StripsLarge,Medical Supplies,Braces,WellLife,False,None,3.99,7.58,47.4,13,VND-010,Active
+PRD-00151,SKU-10151,100000000151,Trash Bags100 Count,Household,Cleaning,GlowUp,False,None,5.59,8.81,36.5,27,VND-026,Active
+PRD-00152,SKU-10152,100000000152,Shampoo50 Count,Personal Care,Oral Care,MedCheck,False,None,13.65,27.93,51.1,26,VND-034,Active
+PRD-00153,SKU-10153,100000000153,Fish OilLarge,Vitamins & Supplements,Minerals,CareFirst,False,None,1.37,2.11,35.2,15,VND-032,Active
+PRD-00154,SKU-10154,100000000154,Antiseptic SprayValue Pack,First Aid,Antiseptic,HealthPlus,False,None,3.39,7.19,52.9,21,VND-035,Active
+PRD-00155,SKU-10155,100000000155,Mock Rx Product FLarge,Prescription Medication,Generic Rx,BrightSmile,True,None,30.77,56.35,45.4,17,VND-010,Active
+PRD-00156,SKU-10156,100000000156,Deodorant50 Count,Personal Care,Hair Care,ValueCare,False,None,28.46,40.93,30.5,6,VND-027,Active
+PRD-00157,SKU-10157,100000000157,Batteries50 Count,Household,Paper Goods,ValueCare,False,None,10.51,20.9,49.7,12,VND-035,Active
+PRD-00158,SKU-10158,100000000158,Wound OintmentValue Pack,First Aid,Wound Care,ValueCare,False,None,13.35,30.52,56.3,19,VND-019,Active
+PRD-00159,SKU-10159,100000000159,Peanut ButterValue Pack,Grocery,Condiments,WellLife,False,None,28.19,40.02,29.6,6,VND-031,Active
+PRD-00160,SKU-10160,100000000160,Disinfecting Wipes50 Count,Household,Cleaning,MedCheck,False,None,29.9,45.58,34.4,13,VND-029,Active
+PRD-00161,SKU-10161,100000000161,Energy Drink,Beverages,Water,ValueCare,False,None,33.16,49.0,32.3,33,VND-023,Active
+PRD-00162,SKU-10162,100000000162,Pain Relief TabletsTravel,OTC Medication,Digestive Health,HealthPlus,False,None,17.94,26.69,32.8,16,VND-015,Active
+PRD-00163,SKU-10163,100000000163,Pain Relief Tablets100 Count,OTC Medication,Allergy,MedCheck,False,None,23.01,47.07,51.1,6,VND-019,Active
+PRD-00164,SKU-10164,100000000164,Gummy CandyTravel,Snacks,Chips,HealthPlus,False,None,16.11,21.53,25.2,5,VND-017,Active
+PRD-00165,SKU-10165,100000000165,Elastic Wrap100 Count,First Aid,Antiseptic,WellLife,False,None,21.6,35.39,39.0,12,VND-020,Active
+PRD-00166,SKU-10166,100000000166,Vitamin CTravel,Vitamins & Supplements,Multivitamins,HealthPlus,False,None,22.63,41.56,45.6,8,VND-032,Active
+PRD-00167,SKU-10167,100000000167,Hand Warmers50 Count,Seasonal,Summer,WellLife,False,None,20.45,39.87,48.7,18,VND-001,Active
+PRD-00168,SKU-10168,100000000168,Travel Kit50 Count,Seasonal,Back to School,HealthPlus,False,None,15.02,28.3,46.9,21,VND-024,Active
+PRD-00169,SKU-10169,100000000169,MagnesiumTravel,Vitamins & Supplements,Multivitamins,DailyChoice,False,None,2.24,3.6,37.8,13,VND-002,Active
+PRD-00170,SKU-10170,100000000170,Dish SoapValue Pack,Household,Cleaning,BrightSmile,False,None,25.85,47.63,45.7,28,VND-022,Active
+PRD-00171,SKU-10171,100000000171,Shampoo50 Count,Personal Care,Oral Care,GlowUp,False,None,12.35,22.96,46.2,19,VND-031,Active
+PRD-00172,SKU-10172,100000000172,Digital Thermometer,Medical Supplies,Thermometers,UnityCare,False,None,25.27,57.61,56.1,14,VND-013,Active
+PRD-00173,SKU-10173,100000000173,Pain Relief TabletsLarge,OTC Medication,Cold & Flu,FreshWay,False,None,32.72,56.42,42.0,20,VND-017,Active
+PRD-00174,SKU-10174,100000000174,Allergy ReliefLarge,OTC Medication,Cold & Flu,GlowUp,False,None,30.28,41.24,26.6,15,VND-018,Active
+PRD-00175,SKU-10175,100000000175,MagnesiumTravel,Vitamins & Supplements,Vitamin C,PureHealth,False,None,26.21,57.63,54.5,15,VND-012,Active
+PRD-00176,SKU-10176,100000000176,Chocolate Cookies50 Count,Snacks,Protein Bars,PureHealth,False,None,9.89,13.68,27.7,7,VND-028,Active
+PRD-00177,SKU-10177,100000000177,School SuppliesLarge,Seasonal,Holiday,GlowUp,False,None,11.75,16.24,27.6,14,VND-020,Active
+PRD-00178,SKU-10178,100000000178,Potato Chips100 Count,Snacks,Protein Bars,HomeEase,False,None,15.95,26.48,39.8,32,VND-023,Active
+PRD-00179,SKU-10179,100000000179,Holiday Candy100 Count,Seasonal,Travel,HealthPlus,False,None,34.32,78.5,56.3,26,VND-026,Active
+PRD-00180,SKU-10180,100000000180,Paper TowelsValue Pack,Household,Paper Goods,ValueCare,False,None,29.82,56.67,47.4,6,VND-009,Active
+PRD-00181,SKU-10181,100000000181,CalciumLarge,Vitamins & Supplements,Vitamin D,UnityCare,False,None,13.15,30.11,56.3,24,VND-010,Active
+PRD-00182,SKU-10182,100000000182,Face MasksLarge,Medical Supplies,Masks,MedCheck,False,None,15.95,22.01,27.5,21,VND-024,Active
+PRD-00183,SKU-10183,100000000183,Pasta SauceLarge,Grocery,Canned Goods,HomeEase,False,None,9.3,13.05,28.7,10,VND-032,Active
+PRD-00184,SKU-10184,100000000184,Sports Drink,Beverages,Energy Drinks,ValueCare,False,None,9.72,14.64,33.6,11,VND-019,Active
+PRD-00185,SKU-10185,100000000185,Mock Rx Product B,Prescription Medication,Maintenance Rx,MedCheck,True,None,5.4,7.44,27.4,33,VND-029,Active
+PRD-00186,SKU-10186,100000000186,CalciumLarge,Vitamins & Supplements,Vitamin C,WellLife,False,None,25.05,44.06,43.1,33,VND-020,Active
+PRD-00187,SKU-10187,100000000187,Shampoo50 Count,Personal Care,Hair Care,MedCheck,False,None,8.43,19.84,57.5,12,VND-032,Active
+PRD-00188,SKU-10188,100000000188,Cough Syrup50 Count,OTC Medication,Allergy,FreshWay,False,None,13.39,27.62,51.5,9,VND-006,Active
+PRD-00189,SKU-10189,100000000189,Magnesium100 Count,Vitamins & Supplements,Vitamin C,PureHealth,False,None,25.37,44.01,42.3,31,VND-005,Active
+PRD-00190,SKU-10190,100000000190,Deodorant,Personal Care,Skin Care,DailyChoice,False,None,16.16,30.75,47.4,9,VND-012,Active
+PRD-00191,SKU-10191,100000000191,Body Wash,Personal Care,Deodorant,WellLife,False,None,29.23,50.48,42.1,10,VND-011,Active
+PRD-00192,SKU-10192,100000000192,Dish Soap50 Count,Household,Paper Goods,WellLife,False,None,31.4,66.69,52.9,11,VND-018,Active
+PRD-00193,SKU-10193,100000000193,Body Wash50 Count,Personal Care,Skin Care,BrightSmile,False,None,3.95,7.34,46.2,35,VND-010,Active
+PRD-00194,SKU-10194,100000000194,Body Wash,Personal Care,Skin Care,UnityCare,False,None,29.01,39.17,25.9,35,VND-017,Active
+PRD-00195,SKU-10195,100000000195,Blood Pressure CuffTravel,Medical Supplies,Thermometers,GlowUp,False,None,21.92,29.62,26.0,22,VND-019,Active
+PRD-00196,SKU-10196,100000000196,Wrist BraceValue Pack,Medical Supplies,Braces,WellLife,False,None,28.31,54.03,47.6,19,VND-005,Active
+PRD-00197,SKU-10197,100000000197,Mock Rx Product BTravel,Prescription Medication,Generic Rx,DailyChoice,True,None,14.99,25.12,40.3,24,VND-010,Active
+PRD-00198,SKU-10198,100000000198,Disinfecting WipesLarge,Household,Laundry,DailyChoice,False,None,34.16,48.33,29.3,21,VND-007,Active
+PRD-00199,SKU-10199,100000000199,Batteries,Household,Paper Goods,HealthPlus,False,None,9.91,14.83,33.2,6,VND-019,Active
+PRD-00200,SKU-10200,100000000200,Peanut ButterValue Pack,Grocery,Condiments,HomeEase,False,None,28.61,64.75,55.8,15,VND-013,Active
+PRD-00201,SKU-10201,100000000201,Body WashTravel,Personal Care,Deodorant,UnityCare,False,None,17.83,27.51,35.2,7,VND-026,Active
+PRD-00202,SKU-10202,100000000202,Bottled WaterValue Pack,Beverages,Energy Drinks,WellLife,False,None,20.73,28.24,26.6,20,VND-031,Active
+PRD-00203,SKU-10203,100000000203,Face CleanserTravel,Beauty,Cosmetics,DailyChoice,False,None,5.34,8.06,33.7,29,VND-026,Active
+PRD-00204,SKU-10204,100000000204,Batteries,Household,Cleaning,FreshWay,False,None,20.28,29.57,31.4,14,VND-005,Active
+PRD-00205,SKU-10205,100000000205,OatmealLarge,Grocery,Condiments,BrightSmile,False,None,29.02,53.31,45.6,8,VND-009,Active
+PRD-00206,SKU-10206,100000000206,Daily MultivitaminLarge,Vitamins & Supplements,Minerals,MedCheck,False,None,19.86,31.56,37.1,11,VND-033,Active
+PRD-00207,SKU-10207,100000000207,Cereal,Grocery,Pantry,ValueCare,False,None,5.44,8.5,36.0,21,VND-030,Active
+PRD-00208,SKU-10208,100000000208,Shampoo50 Count,Personal Care,Hair Care,BrightSmile,False,None,11.66,18.8,38.0,28,VND-020,Active
+PRD-00209,SKU-10209,100000000209,School Supplies50 Count,Seasonal,Back to School,WellLife,False,None,18.98,36.77,48.4,20,VND-002,Active
+PRD-00210,SKU-10210,100000000210,Disinfecting Wipes,Household,Laundry,HomeEase,False,None,34.31,61.56,44.3,32,VND-002,Active
+PRD-00211,SKU-10211,100000000211,Holiday Candy100 Count,Seasonal,Travel,BrightSmile,False,None,27.56,55.8,50.6,12,VND-004,Active
+PRD-00212,SKU-10212,100000000212,Travel Kit50 Count,Seasonal,Travel,PureHealth,False,None,22.29,40.86,45.5,9,VND-016,Active
+PRD-00213,SKU-10213,100000000213,Cold & Flu Capsules,OTC Medication,Pain Relief,PureHealth,False,None,15.86,25.92,38.8,27,VND-014,Active
+PRD-00214,SKU-10214,100000000214,Pasta Sauce100 Count,Grocery,Condiments,CareFirst,False,None,2.88,4.09,29.6,22,VND-021,Active
+PRD-00215,SKU-10215,100000000215,Blood Pressure CuffTravel,Medical Supplies,Masks,FreshWay,False,None,11.5,16.6,30.7,15,VND-035,Active
+PRD-00216,SKU-10216,100000000216,Trash BagsTravel,Household,Laundry,FreshWay,False,None,7.34,10.98,33.1,14,VND-015,Active
+PRD-00217,SKU-10217,100000000217,Body LotionValue Pack,Beauty,Nail Care,ValueCare,False,None,24.39,41.44,41.1,16,VND-018,Active
+PRD-00218,SKU-10218,100000000218,Nail Polish100 Count,Beauty,Cosmetics,PureHealth,False,None,19.35,42.58,54.6,31,VND-023,Active
+PRD-00219,SKU-10219,100000000219,Crest ToothpasteLarge,Personal Care,Skin Care,ValueCare,False,None,33.47,46.23,27.6,25,VND-017,Active
+PRD-00220,SKU-10220,100000000220,Mock Rx Product BValue Pack,Prescription Medication,Maintenance Rx,FreshWay,True,None,29.11,44.07,33.9,27,VND-018,Active
+PRD-00221,SKU-10221,100000000221,Body Wash100 Count,Personal Care,Oral Care,GlowUp,False,None,20.85,31.12,33.0,33,VND-034,Active
+PRD-00222,SKU-10222,100000000222,Bandage Pack,First Aid,Antiseptic,HealthPlus,False,None,14.91,29.05,48.7,26,VND-009,Active
+PRD-00223,SKU-10223,100000000223,Antacid Chewables100 Count,OTC Medication,Cold & Flu,ValueCare,False,None,32.77,71.22,54.0,25,VND-013,Active
+PRD-00224,SKU-10224,100000000224,Mascara100 Count,Beauty,Nail Care,GlowUp,False,None,2.78,5.6,50.4,23,VND-015,Active
+PRD-00225,SKU-10225,100000000225,Bottled WaterTravel,Beverages,Soda,UnityCare,False,None,30.97,44.75,30.8,31,VND-026,Active
+PRD-00226,SKU-10226,100000000226,Gummy CandyLarge,Snacks,Chips,BrightSmile,False,None,30.78,41.21,25.3,24,VND-007,Active
+PRD-00227,SKU-10227,100000000227,Batteries100 Count,Household,Laundry,MedCheck,False,None,19.36,32.98,41.3,32,VND-033,Active
+PRD-00228,SKU-10228,100000000228,Potato Chips,Snacks,Cookies,GlowUp,False,None,12.08,23.75,49.1,13,VND-012,Active
+PRD-00229,SKU-10229,100000000229,Allergy Relief50 Count,OTC Medication,Allergy,BrightSmile,False,None,23.85,34.75,31.4,32,VND-026,Active
+PRD-00230,SKU-10230,100000000230,CerealTravel,Grocery,Canned Goods,MedCheck,False,None,23.67,34.35,31.1,20,VND-021,Active
+PRD-00231,SKU-10231,100000000231,Gauze PadsTravel,First Aid,Bandages,DailyChoice,False,None,8.82,17.6,49.9,14,VND-001,Active
+PRD-00232,SKU-10232,100000000232,Body LotionValue Pack,Beauty,Nail Care,WellLife,False,None,2.88,4.05,28.9,10,VND-026,Active
+PRD-00233,SKU-10233,100000000233,Lancets,Medical Supplies,Braces,DailyChoice,False,None,22.63,51.48,56.0,24,VND-015,Active
+PRD-00234,SKU-10234,100000000234,Wound OintmentValue Pack,First Aid,Antiseptic,DailyChoice,False,None,16.33,38.54,57.6,18,VND-031,Active
+PRD-00235,SKU-10235,100000000235,Bottled Water100 Count,Beverages,Water,HealthPlus,False,None,26.6,57.59,53.8,21,VND-029,Active
+PRD-00236,SKU-10236,100000000236,Coke Zero 20oz50 Count,Beverages,Juice,FreshWay,False,None,4.59,9.63,52.3,11,VND-035,Active
+PRD-00237,SKU-10237,100000000237,Shampoo50 Count,Personal Care,Hair Care,HomeEase,False,None,15.88,30.22,47.4,23,VND-032,Active
+PRD-00238,SKU-10238,100000000238,Vitamin D3Travel,Vitamins & Supplements,Minerals,BrightSmile,False,None,5.27,8.6,38.7,6,VND-030,Active
+PRD-00239,SKU-10239,100000000239,Lancets,Medical Supplies,Braces,HomeEase,False,None,14.31,29.78,51.9,11,VND-005,Active
+PRD-00240,SKU-10240,100000000240,Allergy Relief100 Count,OTC Medication,Digestive Health,HealthPlus,False,None,2.93,6.94,57.8,34,VND-031,Active
+PRD-00241,SKU-10241,100000000241,Antacid ChewablesValue Pack,OTC Medication,Allergy,HomeEase,False,None,27.09,54.48,50.3,25,VND-027,Active
+PRD-00242,SKU-10242,100000000242,BatteriesTravel,Household,Batteries,GlowUp,False,None,13.62,25.96,47.5,32,VND-035,Active
+PRD-00243,SKU-10243,100000000243,Crest ToothpasteValue Pack,Personal Care,Skin Care,MedCheck,False,None,34.76,56.04,38.0,28,VND-015,Active
+PRD-00244,SKU-10244,100000000244,Allergy ReliefTravel,OTC Medication,Pain Relief,FreshWay,False,None,23.82,41.77,43.0,17,VND-015,Active
+PRD-00245,SKU-10245,100000000245,Gauze PadsValue Pack,First Aid,Supports,HomeEase,False,None,10.19,23.12,55.9,29,VND-008,Active
+PRD-00246,SKU-10246,100000000246,Cough Syrup,OTC Medication,Digestive Health,BrightSmile,False,None,8.99,12.35,27.2,6,VND-029,Active
+PRD-00247,SKU-10247,100000000247,Travel Kit100 Count,Seasonal,Summer,FreshWay,False,None,2.27,3.75,39.5,11,VND-004,Active
+PRD-00248,SKU-10248,100000000248,Soft Toothbrush100 Count,Personal Care,Skin Care,GlowUp,False,None,20.48,36.61,44.1,31,VND-021,Active
+PRD-00249,SKU-10249,100000000249,Antiseptic Spray100 Count,First Aid,Wound Care,WellLife,False,None,18.6,30.32,38.6,6,VND-012,Active
+PRD-00250,SKU-10250,100000000250,Blood Pressure CuffTravel,Medical Supplies,Masks,GlowUp,False,None,2.36,3.71,36.4,26,VND-025,Active
+PRD-00251,SKU-10251,100000000251,Iced TeaTravel,Beverages,Juice,MedCheck,False,None,14.73,22.63,34.9,29,VND-035,Active
+PRD-00252,SKU-10252,100000000252,Potato ChipsLarge,Snacks,Chips,ValueCare,False,None,30.12,42.88,29.8,34,VND-004,Active
+PRD-00253,SKU-10253,100000000253,Energy Drink50 Count,Beverages,Energy Drinks,WellLife,False,None,18.9,30.39,37.8,11,VND-022,Active
+PRD-00254,SKU-10254,100000000254,Wrist BraceLarge,Medical Supplies,Glucose Monitoring,CareFirst,False,None,3.92,7.67,48.9,6,VND-018,Active
+PRD-00255,SKU-10255,100000000255,CerealValue Pack,Grocery,Pantry,GlowUp,False,None,28.31,50.91,44.4,22,VND-014,Active
+PRD-00256,SKU-10256,100000000256,Chocolate CookiesLarge,Snacks,Chips,CareFirst,False,None,33.53,45.01,25.5,35,VND-008,Active
+PRD-00257,SKU-10257,100000000257,Mock Rx Product B100 Count,Prescription Medication,Maintenance Rx,CareFirst,True,None,21.45,31.43,31.7,22,VND-021,Active
+PRD-00258,SKU-10258,100000000258,Lip Balm50 Count,Beauty,Fragrance,DailyChoice,False,None,22.97,35.44,35.2,21,VND-032,Active
+PRD-00259,SKU-10259,100000000259,Gummy CandyTravel,Snacks,Candy,CareFirst,False,None,26.84,41.66,35.6,16,VND-021,Active
+PRD-00260,SKU-10260,100000000260,OatmealValue Pack,Grocery,Pantry,FreshWay,False,None,26.14,35.1,25.5,34,VND-027,Active
+PRD-00261,SKU-10261,100000000261,MoisturizerLarge,Beauty,Facial Care,CareFirst,False,None,8.63,15.36,43.8,20,VND-022,Active
+PRD-00262,SKU-10262,100000000262,Body Lotion100 Count,Beauty,Fragrance,HomeEase,False,None,26.08,43.62,40.2,30,VND-023,Active
+PRD-00263,SKU-10263,100000000263,Deodorant50 Count,Personal Care,Hair Care,FreshWay,False,None,17.47,39.05,55.3,25,VND-004,Active
+PRD-00264,SKU-10264,100000000264,Coke Zero 20oz100 Count,Beverages,Soda,MedCheck,False,None,2.41,3.22,25.2,31,VND-015,Active
+PRD-00265,SKU-10265,100000000265,Vitamin D3Value Pack,Vitamins & Supplements,Vitamin D,BrightSmile,False,None,18.07,28.83,37.3,25,VND-031,Active
+PRD-00266,SKU-10266,100000000266,Glucose Test Strips,Medical Supplies,Masks,UnityCare,False,None,18.98,30.9,38.6,21,VND-018,Active
+PRD-00267,SKU-10267,100000000267,Coke Zero 20oz50 Count,Beverages,Juice,MedCheck,False,None,28.6,54.21,47.2,8,VND-007,Active
+PRD-00268,SKU-10268,100000000268,Bottled WaterValue Pack,Beverages,Water,DailyChoice,False,None,21.98,32.97,33.3,13,VND-026,Active
+PRD-00269,SKU-10269,100000000269,MagnesiumTravel,Vitamins & Supplements,Vitamin C,CareFirst,False,None,20.1,47.49,57.7,14,VND-006,Active
+PRD-00270,SKU-10270,100000000270,Glucose Test StripsTravel,Medical Supplies,Glucose Monitoring,UnityCare,False,None,13.74,24.21,43.2,25,VND-001,Active
+PRD-00271,SKU-10271,100000000271,Mock Rx Product ATravel,Prescription Medication,Brand Rx,DailyChoice,True,None,29.7,55.29,46.3,23,VND-007,Active
+PRD-00272,SKU-10272,100000000272,Bottled WaterValue Pack,Beverages,Soda,BrightSmile,False,None,31.62,60.63,47.8,20,VND-018,Active
+PRD-00273,SKU-10273,100000000273,Nasal SprayLarge,OTC Medication,Pain Relief,UnityCare,False,None,31.55,55.94,43.6,10,VND-021,Active
+PRD-00274,SKU-10274,100000000274,Cough SyrupValue Pack,OTC Medication,Cold & Flu,PureHealth,False,None,26.51,51.5,48.5,34,VND-005,Active
+PRD-00275,SKU-10275,100000000275,Nail PolishValue Pack,Beauty,Facial Care,GlowUp,False,None,20.16,42.92,53.0,33,VND-035,Active
+PRD-00276,SKU-10276,100000000276,Disinfecting WipesValue Pack,Household,Batteries,HealthPlus,False,None,27.82,53.24,47.7,21,VND-023,Active
+PRD-00277,SKU-10277,100000000277,Antacid ChewablesValue Pack,OTC Medication,Pain Relief,BrightSmile,False,None,29.47,46.22,36.2,35,VND-026,Active
+PRD-00278,SKU-10278,100000000278,Disinfecting WipesLarge,Household,Cleaning,CareFirst,False,None,27.59,45.88,39.9,16,VND-025,Active
+PRD-00279,SKU-10279,100000000279,Pasta Sauce50 Count,Grocery,Breakfast,BrightSmile,False,None,23.38,32.39,27.8,14,VND-016,Active
+PRD-00280,SKU-10280,100000000280,Mock Rx Product ALarge,Prescription Medication,Generic Rx,GlowUp,True,None,6.03,11.71,48.5,9,VND-025,Active
+PRD-00281,SKU-10281,100000000281,Paper Towels,Household,Laundry,DailyChoice,False,None,0.93,1.43,35.2,29,VND-018,Active
+PRD-00282,SKU-10282,100000000282,Vitamin D3Value Pack,Vitamins & Supplements,Vitamin D,FreshWay,False,None,15.51,27.39,43.4,18,VND-007,Active
+PRD-00283,SKU-10283,100000000283,Allergy Relief50 Count,OTC Medication,Pain Relief,DailyChoice,False,None,3.94,7.13,44.7,32,VND-025,Active
+PRD-00284,SKU-10284,100000000284,Antacid ChewablesTravel,OTC Medication,Allergy,FreshWay,False,None,27.44,53.72,48.9,33,VND-016,Active
+PRD-00285,SKU-10285,100000000285,Hand WarmersTravel,Seasonal,Holiday,WellLife,False,None,6.56,9.92,33.9,20,VND-010,Active
+PRD-00286,SKU-10286,100000000286,MagnesiumLarge,Vitamins & Supplements,Vitamin D,HealthPlus,False,None,15.17,25.7,41.0,16,VND-017,Active
+PRD-00287,SKU-10287,100000000287,Elastic Wrap50 Count,First Aid,Supports,WellLife,False,None,7.45,10.42,28.5,5,VND-026,Active
+PRD-00288,SKU-10288,100000000288,Dish SoapTravel,Household,Batteries,GlowUp,False,None,12.21,25.39,51.9,24,VND-009,Active
+PRD-00289,SKU-10289,100000000289,Nail Polish100 Count,Beauty,Nail Care,PureHealth,False,None,7.63,11.81,35.4,35,VND-021,Active
+PRD-00290,SKU-10290,100000000290,Nail PolishValue Pack,Beauty,Fragrance,PureHealth,False,None,11.91,18.11,34.2,16,VND-008,Active
+PRD-00291,SKU-10291,100000000291,School Supplies50 Count,Seasonal,Holiday,UnityCare,False,None,6.91,13.91,50.3,35,VND-030,Active
+PRD-00292,SKU-10292,100000000292,Mock Rx Product DLarge,Prescription Medication,Brand Rx,PureHealth,True,None,29.22,40.18,27.3,26,VND-032,Active
+PRD-00293,SKU-10293,100000000293,Soft ToothbrushLarge,Personal Care,Skin Care,PureHealth,False,None,23.31,45.35,48.6,7,VND-029,Active
+PRD-00294,SKU-10294,100000000294,School SuppliesTravel,Seasonal,Travel,HomeEase,False,None,19.05,42.79,55.5,18,VND-035,Active
+PRD-00295,SKU-10295,100000000295,Nasal Spray50 Count,OTC Medication,Allergy,HealthPlus,False,None,21.09,47.05,55.2,29,VND-016,Active
+PRD-00296,SKU-10296,100000000296,Digital Thermometer100 Count,Medical Supplies,Braces,GlowUp,False,None,21.73,38.52,43.6,26,VND-026,Active
+PRD-00297,SKU-10297,100000000297,Paper Towels,Household,Batteries,HomeEase,False,None,4.13,6.1,32.3,21,VND-015,Active
+PRD-00298,SKU-10298,100000000298,Protein BarTravel,Snacks,Cookies,FreshWay,False,None,27.2,48.94,44.4,9,VND-023,Active
+PRD-00299,SKU-10299,100000000299,Pain Relief TabletsLarge,OTC Medication,Digestive Health,HealthPlus,False,None,15.0,34.67,56.7,31,VND-010,Active
+PRD-00300,SKU-10300,100000000300,Dish SoapTravel,Household,Laundry,DailyChoice,False,None,27.61,47.77,42.2,20,VND-007,Active
+PRD-00301,SKU-10301,100000000301,Chocolate Cookies,Snacks,Protein Bars,HealthPlus,False,None,11.03,22.85,51.7,5,VND-022,Active
+PRD-00302,SKU-10302,100000000302,LancetsValue Pack,Medical Supplies,Glucose Monitoring,FreshWay,False,None,32.6,64.47,49.4,10,VND-011,Active
+PRD-00303,SKU-10303,100000000303,BatteriesValue Pack,Household,Batteries,MedCheck,False,None,28.07,51.77,45.8,25,VND-028,Active
+PRD-00304,SKU-10304,100000000304,Pasta Sauce50 Count,Grocery,Pantry,PureHealth,False,None,31.0,51.53,39.8,17,VND-001,Active
+PRD-00305,SKU-10305,100000000305,Mock Rx Product BLarge,Prescription Medication,Brand Rx,HealthPlus,True,None,26.52,54.89,51.7,23,VND-007,Active
+PRD-00306,SKU-10306,100000000306,Orange JuiceLarge,Beverages,Water,GlowUp,False,None,7.5,10.53,28.8,32,VND-032,Active
+PRD-00307,SKU-10307,100000000307,Sports DrinkTravel,Beverages,Juice,DailyChoice,False,None,21.69,38.99,44.4,16,VND-030,Active
+PRD-00308,SKU-10308,100000000308,Hand Warmers100 Count,Seasonal,Holiday,BrightSmile,False,None,28.17,63.04,55.3,7,VND-009,Active
+PRD-00309,SKU-10309,100000000309,Laundry DetergentLarge,Household,Cleaning,MedCheck,False,None,4.76,7.59,37.3,21,VND-025,Active
+PRD-00310,SKU-10310,100000000310,OatmealTravel,Grocery,Breakfast,FreshWay,False,None,15.24,25.86,41.1,27,VND-012,Active
+PRD-00311,SKU-10311,100000000311,Energy DrinkLarge,Beverages,Water,ValueCare,False,None,5.56,8.6,35.4,24,VND-004,Active
+PRD-00312,SKU-10312,100000000312,BatteriesValue Pack,Household,Cleaning,FreshWay,False,None,7.43,11.92,37.7,21,VND-032,Active
+PRD-00313,SKU-10313,100000000313,Crackers100 Count,Grocery,Condiments,HealthPlus,False,None,29.52,50.14,41.1,23,VND-002,Active
+PRD-00314,SKU-10314,100000000314,Bandage PackLarge,First Aid,Wound Care,ValueCare,False,None,8.45,12.91,34.5,23,VND-032,Active
+PRD-00315,SKU-10315,100000000315,Sports Drink,Beverages,Soda,DailyChoice,False,None,9.93,17.4,42.9,22,VND-003,Active
+PRD-00316,SKU-10316,100000000316,Mock Rx Product EValue Pack,Prescription Medication,Maintenance Rx,GlowUp,True,None,34.65,48.38,28.4,29,VND-016,Active
+PRD-00317,SKU-10317,100000000317,Lip BalmLarge,Beauty,Cosmetics,ValueCare,False,None,12.69,26.41,52.0,32,VND-008,Active
+PRD-00318,SKU-10318,100000000318,Instant Cold Pack50 Count,First Aid,Antiseptic,BrightSmile,False,None,24.35,52.27,53.4,25,VND-028,Active
+PRD-00319,SKU-10319,100000000319,Soft ToothbrushValue Pack,Personal Care,Hair Care,FreshWay,False,None,28.34,50.44,43.8,13,VND-035,Active
+PRD-00320,SKU-10320,100000000320,DeodorantLarge,Personal Care,Skin Care,FreshWay,False,None,10.66,16.11,33.8,33,VND-007,Active
+PRD-00321,SKU-10321,100000000321,Crest ToothpasteLarge,Personal Care,Deodorant,MedCheck,False,None,30.45,43.0,29.2,12,VND-010,Active
+PRD-00322,SKU-10322,100000000322,Mock Rx Product B100 Count,Prescription Medication,Specialty Rx,GlowUp,True,None,14.2,20.2,29.7,13,VND-027,Active
+PRD-00323,SKU-10323,100000000323,Cereal100 Count,Grocery,Condiments,PureHealth,False,None,27.97,56.36,50.4,21,VND-018,Active
+PRD-00324,SKU-10324,100000000324,Mock Rx Product DTravel,Prescription Medication,Specialty Rx,HomeEase,True,None,11.96,15.96,25.1,7,VND-030,Active
+PRD-00325,SKU-10325,100000000325,Glucose Test Strips50 Count,Medical Supplies,Braces,CareFirst,False,None,14.37,33.38,56.9,20,VND-018,Active
+PRD-00326,SKU-10326,100000000326,Dish Soap50 Count,Household,Laundry,ValueCare,False,None,20.54,36.47,43.7,30,VND-022,Active
+PRD-00327,SKU-10327,100000000327,Glucose Test Strips,Medical Supplies,Glucose Monitoring,UnityCare,False,None,22.2,46.85,52.6,8,VND-011,Active
+PRD-00328,SKU-10328,100000000328,Snickers BarTravel,Snacks,Protein Bars,MedCheck,False,None,7.68,14.69,47.7,33,VND-020,Active
+PRD-00329,SKU-10329,100000000329,Crest Toothpaste100 Count,Personal Care,Skin Care,GlowUp,False,None,13.09,18.11,27.7,33,VND-011,Active
+PRD-00330,SKU-10330,100000000330,Nasal SprayLarge,OTC Medication,Digestive Health,PureHealth,False,None,25.62,51.16,49.9,25,VND-006,Active
+PRD-00331,SKU-10331,100000000331,Mock Rx Product AValue Pack,Prescription Medication,Generic Rx,CareFirst,True,None,17.08,24.19,29.4,21,VND-029,Active
+PRD-00332,SKU-10332,100000000332,Nasal SprayLarge,OTC Medication,Pain Relief,PureHealth,False,None,28.74,67.8,57.6,27,VND-009,Active
+PRD-00333,SKU-10333,100000000333,Potato ChipsTravel,Snacks,Candy,HealthPlus,False,None,3.81,7.87,51.6,15,VND-024,Active
+PRD-00334,SKU-10334,100000000334,Lip BalmValue Pack,Beauty,Facial Care,HealthPlus,False,None,22.72,43.15,47.3,21,VND-001,Active
+PRD-00335,SKU-10335,100000000335,UmbrellaLarge,Seasonal,Holiday,MedCheck,False,None,25.49,46.97,45.7,34,VND-027,Active
+PRD-00336,SKU-10336,100000000336,Travel Kit,Seasonal,Travel,HealthPlus,False,None,31.46,44.7,29.6,23,VND-025,Active
+PRD-00337,SKU-10337,100000000337,Dish SoapValue Pack,Household,Batteries,CareFirst,False,None,9.24,17.2,46.3,22,VND-019,Active
+PRD-00338,SKU-10338,100000000338,Mock Rx Product FLarge,Prescription Medication,Generic Rx,CareFirst,True,None,7.79,14.17,45.0,28,VND-026,Active
+PRD-00339,SKU-10339,100000000339,MoisturizerTravel,Beauty,Cosmetics,GlowUp,False,None,13.97,20.84,33.0,24,VND-005,Active
+PRD-00340,SKU-10340,100000000340,Orange JuiceLarge,Beverages,Soda,BrightSmile,False,None,5.27,11.31,53.4,18,VND-024,Active
+PRD-00341,SKU-10341,100000000341,Energy Drink,Beverages,Water,WellLife,False,None,1.32,1.81,27.2,11,VND-003,Active
+PRD-00342,SKU-10342,100000000342,Cough SyrupLarge,OTC Medication,Digestive Health,PureHealth,False,None,22.28,38.11,41.5,18,VND-026,Active
+PRD-00343,SKU-10343,100000000343,Daily Multivitamin,Vitamins & Supplements,Vitamin D,CareFirst,False,None,11.36,19.54,41.9,30,VND-010,Active
+PRD-00344,SKU-10344,100000000344,Energy Drink50 Count,Beverages,Juice,GlowUp,False,None,22.47,47.34,52.5,25,VND-005,Active
+PRD-00345,SKU-10345,100000000345,Body LotionValue Pack,Beauty,Fragrance,PureHealth,False,None,2.73,3.78,27.8,8,VND-030,Active
+PRD-00346,SKU-10346,100000000346,Holiday Candy100 Count,Seasonal,Summer,HealthPlus,False,None,26.15,51.72,49.4,5,VND-009,Active
+PRD-00347,SKU-10347,100000000347,Mock Rx Product BTravel,Prescription Medication,Generic Rx,HomeEase,True,None,33.39,57.83,42.3,13,VND-011,Active
+PRD-00348,SKU-10348,100000000348,Disinfecting WipesLarge,Household,Paper Goods,UnityCare,False,None,25.85,36.36,28.9,15,VND-028,Active
+PRD-00349,SKU-10349,100000000349,Mascara100 Count,Beauty,Cosmetics,ValueCare,False,None,34.15,62.9,45.7,19,VND-033,Active
+PRD-00350,SKU-10350,100000000350,Batteries50 Count,Household,Cleaning,HealthPlus,False,None,6.47,9.27,30.2,33,VND-008,Active
+PRD-00351,SKU-10351,100000000351,Bandage Pack,First Aid,Bandages,PureHealth,False,None,9.13,15.36,40.6,34,VND-010,Active
+PRD-00352,SKU-10352,100000000352,Body Wash100 Count,Personal Care,Oral Care,DailyChoice,False,None,26.12,42.71,38.8,12,VND-027,Active
+PRD-00353,SKU-10353,100000000353,Mock Rx Product C,Prescription Medication,Specialty Rx,GlowUp,True,None,20.33,28.61,28.9,33,VND-004,Active
+PRD-00354,SKU-10354,100000000354,Body Wash,Personal Care,Hair Care,ValueCare,False,None,33.43,45.97,27.3,32,VND-019,Active
+PRD-00355,SKU-10355,100000000355,Face Cleanser50 Count,Beauty,Nail Care,WellLife,False,None,16.39,26.09,37.2,23,VND-020,Active
+PRD-00356,SKU-10356,100000000356,Mock Rx Product DLarge,Prescription Medication,Brand Rx,CareFirst,True,None,21.02,35.8,41.3,28,VND-035,Active
+PRD-00357,SKU-10357,100000000357,Bandage PackTravel,First Aid,Antiseptic,GlowUp,False,None,1.57,2.75,42.9,31,VND-001,Active
+PRD-00358,SKU-10358,100000000358,Disinfecting WipesTravel,Household,Cleaning,HealthPlus,False,None,29.83,58.49,49.0,11,VND-034,Active
+PRD-00359,SKU-10359,100000000359,Wound Ointment,First Aid,Supports,WellLife,False,None,34.06,48.45,29.7,7,VND-003,Active
+PRD-00360,SKU-10360,100000000360,Instant Cold PackLarge,First Aid,Supports,BrightSmile,False,None,16.45,32.69,49.7,8,VND-033,Active
+PRD-00361,SKU-10361,100000000361,Crest Toothpaste50 Count,Personal Care,Deodorant,MedCheck,False,None,20.2,33.31,39.4,12,VND-019,Active
+PRD-00362,SKU-10362,100000000362,Lip Balm100 Count,Beauty,Nail Care,ValueCare,False,None,29.24,45.52,35.8,13,VND-015,Active
+PRD-00363,SKU-10363,100000000363,Vitamin C50 Count,Vitamins & Supplements,Vitamin D,ValueCare,False,None,4.48,6.26,28.5,19,VND-021,Active
+PRD-00364,SKU-10364,100000000364,OatmealLarge,Grocery,Pantry,WellLife,False,None,33.79,49.58,31.9,19,VND-017,Active
+PRD-00365,SKU-10365,100000000365,Vitamin C100 Count,Vitamins & Supplements,Multivitamins,BrightSmile,False,None,11.17,21.59,48.3,6,VND-014,Active
+PRD-00366,SKU-10366,100000000366,Paper Towels100 Count,Household,Paper Goods,FreshWay,False,None,9.25,14.62,36.7,6,VND-020,Active
+PRD-00367,SKU-10367,100000000367,Face CleanserTravel,Beauty,Facial Care,FreshWay,False,None,30.02,52.99,43.3,12,VND-007,Active
+PRD-00368,SKU-10368,100000000368,Potato Chips,Snacks,Candy,CareFirst,False,None,1.16,2.44,52.4,9,VND-013,Active
+PRD-00369,SKU-10369,100000000369,Pasta Sauce100 Count,Grocery,Canned Goods,BrightSmile,False,None,32.86,45.5,27.8,13,VND-005,Active
+PRD-00370,SKU-10370,100000000370,Cold & Flu Capsules100 Count,OTC Medication,Pain Relief,DailyChoice,False,None,15.94,22.53,29.3,8,VND-003,Active
+PRD-00371,SKU-10371,100000000371,Potato Chips50 Count,Snacks,Candy,ValueCare,False,None,15.59,30.51,48.9,5,VND-025,Active
+PRD-00372,SKU-10372,100000000372,Digital ThermometerLarge,Medical Supplies,Masks,WellLife,False,None,8.1,11.77,31.2,19,VND-010,Active
+PRD-00373,SKU-10373,100000000373,Nasal SprayLarge,OTC Medication,Cold & Flu,ValueCare,False,None,17.84,38.89,54.1,6,VND-006,Active
+PRD-00374,SKU-10374,100000000374,MoisturizerTravel,Beauty,Fragrance,FreshWay,False,None,7.58,16.55,54.2,12,VND-035,Active
+PRD-00375,SKU-10375,100000000375,Nasal SprayLarge,OTC Medication,Digestive Health,DailyChoice,False,None,17.18,34.91,50.8,34,VND-033,Active
+PRD-00376,SKU-10376,100000000376,Dish SoapValue Pack,Household,Batteries,UnityCare,False,None,1.64,2.97,44.7,33,VND-018,Active
+PRD-00377,SKU-10377,100000000377,Cough SyrupLarge,OTC Medication,Digestive Health,MedCheck,False,None,27.01,64.29,58.0,8,VND-016,Active
+PRD-00378,SKU-10378,100000000378,Face Masks50 Count,Medical Supplies,Thermometers,UnityCare,False,None,28.71,64.18,55.3,29,VND-015,Active
+PRD-00379,SKU-10379,100000000379,Holiday CandyValue Pack,Seasonal,Travel,HomeEase,False,None,6.78,12.23,44.6,27,VND-023,Active
+PRD-00380,SKU-10380,100000000380,Hand Warmers100 Count,Seasonal,Summer,MedCheck,False,None,12.8,22.75,43.7,23,VND-013,Active
+PRD-00381,SKU-10381,100000000381,Potato ChipsTravel,Snacks,Cookies,BrightSmile,False,None,2.05,2.8,26.9,12,VND-002,Active
+PRD-00382,SKU-10382,100000000382,Coke Zero 20ozLarge,Beverages,Energy Drinks,MedCheck,False,None,32.19,47.09,31.6,15,VND-012,Active
+PRD-00383,SKU-10383,100000000383,Paper TowelsValue Pack,Household,Cleaning,HealthPlus,False,None,20.84,46.59,55.3,32,VND-034,Active
+PRD-00384,SKU-10384,100000000384,Dish Soap100 Count,Household,Cleaning,HealthPlus,False,None,33.01,53.29,38.1,15,VND-020,Active
+PRD-00385,SKU-10385,100000000385,Laundry Detergent100 Count,Household,Paper Goods,ValueCare,False,None,33.24,68.02,51.1,25,VND-021,Active
+PRD-00386,SKU-10386,100000000386,Soft Toothbrush100 Count,Personal Care,Skin Care,WellLife,False,None,20.92,30.23,30.8,28,VND-019,Active
+PRD-00387,SKU-10387,100000000387,Deodorant,Personal Care,Hair Care,PureHealth,False,None,33.25,76.1,56.3,32,VND-003,Active
+PRD-00388,SKU-10388,100000000388,Body WashValue Pack,Personal Care,Skin Care,ValueCare,False,None,22.66,31.66,28.4,9,VND-022,Active
+PRD-00389,SKU-10389,100000000389,Mock Rx Product BLarge,Prescription Medication,Generic Rx,HealthPlus,True,None,34.4,49.53,30.5,31,VND-022,Active
+PRD-00390,SKU-10390,100000000390,Chocolate CookiesValue Pack,Snacks,Candy,WellLife,False,None,9.3,12.78,27.2,30,VND-007,Active
+PRD-00391,SKU-10391,100000000391,Mock Rx Product ATravel,Prescription Medication,Generic Rx,MedCheck,True,None,15.76,25.77,38.8,33,VND-027,Active
+PRD-00392,SKU-10392,100000000392,Chocolate Cookies50 Count,Snacks,Protein Bars,BrightSmile,False,None,13.61,28.56,52.4,25,VND-015,Active
+PRD-00393,SKU-10393,100000000393,Crest Toothpaste,Personal Care,Deodorant,HealthPlus,False,None,10.85,16.83,35.5,7,VND-022,Active
+PRD-00394,SKU-10394,100000000394,Soft Toothbrush100 Count,Personal Care,Deodorant,HealthPlus,False,None,3.32,7.56,56.1,15,VND-031,Active
+PRD-00395,SKU-10395,100000000395,Mock Rx Product D100 Count,Prescription Medication,Generic Rx,MedCheck,True,None,6.4,14.02,54.4,6,VND-007,Active
+PRD-00396,SKU-10396,100000000396,Laundry DetergentTravel,Household,Paper Goods,HomeEase,False,None,24.63,48.13,48.8,22,VND-017,Active
+PRD-00397,SKU-10397,100000000397,Face MasksValue Pack,Medical Supplies,Braces,FreshWay,False,None,4.04,6.51,38.0,31,VND-032,Active
+PRD-00398,SKU-10398,100000000398,Shampoo,Personal Care,Oral Care,GlowUp,False,None,15.4,23.59,34.7,25,VND-031,Active
+PRD-00399,SKU-10399,100000000399,Bandage PackValue Pack,First Aid,Bandages,HealthPlus,False,None,6.6,10.1,34.6,20,VND-008,Active
+PRD-00400,SKU-10400,100000000400,Lip BalmTravel,Beauty,Fragrance,GlowUp,False,None,31.4,47.39,33.7,22,VND-025,Active
+PRD-00401,SKU-10401,100000000401,ConditionerLarge,Personal Care,Skin Care,ValueCare,False,None,7.14,9.71,26.5,19,VND-017,Active
+PRD-00402,SKU-10402,100000000402,Elastic Wrap,First Aid,Wound Care,HealthPlus,False,None,5.93,11.4,48.0,7,VND-023,Active
+PRD-00403,SKU-10403,100000000403,Sports DrinkValue Pack,Beverages,Energy Drinks,FreshWay,False,None,19.71,41.71,52.7,18,VND-035,Active
+PRD-00404,SKU-10404,100000000404,Blood Pressure CuffValue Pack,Medical Supplies,Masks,HomeEase,False,None,17.06,23.57,27.6,6,VND-033,Active
+PRD-00405,SKU-10405,100000000405,SunscreenTravel,Seasonal,Holiday,CareFirst,False,None,6.67,15.69,57.5,30,VND-013,Active
+PRD-00406,SKU-10406,100000000406,Conditioner,Personal Care,Oral Care,GlowUp,False,None,34.6,57.07,39.4,9,VND-017,Active
+PRD-00407,SKU-10407,100000000407,Paper TowelsTravel,Household,Cleaning,WellLife,False,None,19.81,34.89,43.2,21,VND-030,Active
+PRD-00408,SKU-10408,100000000408,Pain Relief TabletsTravel,OTC Medication,Digestive Health,BrightSmile,False,None,5.88,10.44,43.7,29,VND-007,Active
+PRD-00409,SKU-10409,100000000409,Daily Multivitamin50 Count,Vitamins & Supplements,Multivitamins,WellLife,False,None,30.89,67.11,54.0,17,VND-032,Active
+PRD-00410,SKU-10410,100000000410,SunscreenValue Pack,Seasonal,Travel,BrightSmile,False,None,10.18,14.49,29.7,26,VND-026,Active
+PRD-00411,SKU-10411,100000000411,Allergy Relief100 Count,OTC Medication,Digestive Health,WellLife,False,None,8.89,17.64,49.6,33,VND-024,Active
+PRD-00412,SKU-10412,100000000412,Allergy ReliefLarge,OTC Medication,Allergy,HomeEase,False,None,10.35,17.61,41.2,26,VND-007,Active
+PRD-00413,SKU-10413,100000000413,Gauze Pads100 Count,First Aid,Antiseptic,WellLife,False,None,15.93,33.36,52.3,28,VND-027,Active
+PRD-00414,SKU-10414,100000000414,Travel KitTravel,Seasonal,Summer,HomeEase,False,None,7.99,16.71,52.2,20,VND-034,Active
+PRD-00415,SKU-10415,100000000415,Trash BagsValue Pack,Household,Cleaning,PureHealth,False,None,3.0,5.82,48.4,9,VND-034,Active
+PRD-00416,SKU-10416,100000000416,Travel KitValue Pack,Seasonal,Summer,UnityCare,False,None,30.72,44.93,31.6,12,VND-003,Active
+PRD-00417,SKU-10417,100000000417,Chocolate Cookies100 Count,Snacks,Candy,ValueCare,False,None,7.57,12.05,37.2,21,VND-026,Active
+PRD-00418,SKU-10418,100000000418,Lancets,Medical Supplies,Glucose Monitoring,ValueCare,False,None,9.04,15.36,41.1,10,VND-031,Active
+PRD-00419,SKU-10419,100000000419,Holiday CandyValue Pack,Seasonal,Back to School,HomeEase,False,None,29.44,44.29,33.5,7,VND-019,Active
+PRD-00420,SKU-10420,100000000420,Pain Relief TabletsValue Pack,OTC Medication,Digestive Health,CareFirst,False,None,29.99,60.87,50.7,32,VND-015,Active
+PRD-00421,SKU-10421,100000000421,LancetsValue Pack,Medical Supplies,Thermometers,UnityCare,False,None,9.97,16.22,38.5,32,VND-001,Active
+PRD-00422,SKU-10422,100000000422,Gummy CandyValue Pack,Snacks,Chips,WellLife,False,None,21.34,28.56,25.3,24,VND-020,Active
+PRD-00423,SKU-10423,100000000423,Mock Rx Product DTravel,Prescription Medication,Specialty Rx,CareFirst,True,None,29.92,49.99,40.1,19,VND-020,Active
+PRD-00424,SKU-10424,100000000424,Blood Pressure Cuff,Medical Supplies,Masks,DailyChoice,False,None,1.0,2.38,58.0,22,VND-019,Active
+PRD-00425,SKU-10425,100000000425,Lip Balm,Beauty,Cosmetics,DailyChoice,False,None,12.27,18.63,34.1,32,VND-018,Active
+PRD-00426,SKU-10426,100000000426,MoisturizerValue Pack,Beauty,Nail Care,UnityCare,False,None,18.47,27.54,32.9,30,VND-026,Active
+PRD-00427,SKU-10427,100000000427,LancetsValue Pack,Medical Supplies,Braces,WellLife,False,None,25.45,47.68,46.6,13,VND-027,Active
+PRD-00428,SKU-10428,100000000428,Pasta Sauce,Grocery,Condiments,CareFirst,False,None,20.72,49.13,57.8,15,VND-015,Active
+PRD-00429,SKU-10429,100000000429,LancetsLarge,Medical Supplies,Masks,GlowUp,False,None,18.13,38.49,52.9,33,VND-012,Active
+PRD-00430,SKU-10430,100000000430,Lip BalmValue Pack,Beauty,Cosmetics,FreshWay,False,None,26.13,51.17,48.9,29,VND-012,Active
+PRD-00431,SKU-10431,100000000431,Lancets,Medical Supplies,Braces,WellLife,False,None,8.36,12.36,32.4,18,VND-022,Active
+PRD-00432,SKU-10432,100000000432,Trash BagsLarge,Household,Laundry,UnityCare,False,None,16.63,23.39,28.9,32,VND-005,Active
+PRD-00433,SKU-10433,100000000433,Trail Mix,Snacks,Chips,WellLife,False,None,30.46,48.81,37.6,18,VND-004,Active
+PRD-00434,SKU-10434,100000000434,Soft ToothbrushLarge,Personal Care,Hair Care,ValueCare,False,None,14.76,26.26,43.8,9,VND-021,Active
+PRD-00435,SKU-10435,100000000435,Mock Rx Product ATravel,Prescription Medication,Brand Rx,DailyChoice,True,None,12.14,28.6,57.6,25,VND-004,Active
+PRD-00436,SKU-10436,100000000436,Allergy ReliefValue Pack,OTC Medication,Digestive Health,MedCheck,False,None,26.82,38.63,30.6,20,VND-006,Active
+PRD-00437,SKU-10437,100000000437,DeodorantTravel,Personal Care,Deodorant,PureHealth,False,None,14.57,33.77,56.9,5,VND-003,Active
+PRD-00438,SKU-10438,100000000438,Iced TeaLarge,Beverages,Water,FreshWay,False,None,33.29,73.06,54.4,11,VND-002,Active
+PRD-00439,SKU-10439,100000000439,Lancets100 Count,Medical Supplies,Glucose Monitoring,DailyChoice,False,None,9.27,17.79,47.9,14,VND-009,Active
+PRD-00440,SKU-10440,100000000440,Fish Oil50 Count,Vitamins & Supplements,Minerals,UnityCare,False,None,11.23,15.42,27.2,14,VND-019,Active
+PRD-00441,SKU-10441,100000000441,Protein Bar100 Count,Snacks,Cookies,ValueCare,False,None,34.84,54.7,36.3,16,VND-013,Active
+PRD-00442,SKU-10442,100000000442,Crest ToothpasteValue Pack,Personal Care,Deodorant,CareFirst,False,None,8.43,19.84,57.5,28,VND-002,Active
+PRD-00443,SKU-10443,100000000443,SunscreenLarge,Seasonal,Holiday,PureHealth,False,None,25.11,51.39,51.1,33,VND-017,Active
+PRD-00444,SKU-10444,100000000444,Sports Drink,Beverages,Soda,UnityCare,False,None,23.42,43.83,46.6,6,VND-008,Active
+PRD-00445,SKU-10445,100000000445,Crackers,Grocery,Condiments,MedCheck,False,None,19.49,32.84,40.7,11,VND-001,Active
+PRD-00446,SKU-10446,100000000446,Body Lotion,Beauty,Fragrance,BrightSmile,False,None,23.44,35.47,33.9,27,VND-009,Active
+PRD-00447,SKU-10447,100000000447,Oatmeal100 Count,Grocery,Pantry,HealthPlus,False,None,21.91,33.36,34.3,20,VND-013,Active
+PRD-00448,SKU-10448,100000000448,Holiday Candy50 Count,Seasonal,Holiday,PureHealth,False,None,34.08,53.93,36.8,14,VND-011,Active
+PRD-00449,SKU-10449,100000000449,Cold & Flu Capsules100 Count,OTC Medication,Digestive Health,UnityCare,False,None,32.71,51.04,35.9,5,VND-006,Active
+PRD-00450,SKU-10450,100000000450,Vitamin C,Vitamins & Supplements,Minerals,HomeEase,False,None,27.45,37.85,27.5,8,VND-017,Active
+PRD-00451,SKU-10451,100000000451,Wrist BraceLarge,Medical Supplies,Thermometers,MedCheck,False,None,9.8,13.36,26.7,32,VND-003,Active
+PRD-00452,SKU-10452,100000000452,Body LotionLarge,Beauty,Nail Care,UnityCare,False,None,15.34,21.55,28.8,5,VND-009,Active
+PRD-00453,SKU-10453,100000000453,Face MasksLarge,Medical Supplies,Thermometers,WellLife,False,None,31.39,72.19,56.5,33,VND-006,Active
+PRD-00454,SKU-10454,100000000454,Laundry Detergent,Household,Laundry,WellLife,False,None,14.48,33.48,56.8,31,VND-025,Active
+PRD-00455,SKU-10455,100000000455,Mock Rx Product D100 Count,Prescription Medication,Maintenance Rx,MedCheck,True,None,31.1,44.75,30.5,27,VND-004,Active
+PRD-00456,SKU-10456,100000000456,Conditioner50 Count,Personal Care,Oral Care,ValueCare,False,None,17.28,30.73,43.8,10,VND-025,Active
+PRD-00457,SKU-10457,100000000457,Disinfecting Wipes100 Count,Household,Cleaning,ValueCare,False,None,34.09,48.23,29.3,8,VND-027,Active
+PRD-00458,SKU-10458,100000000458,Snickers BarLarge,Snacks,Candy,GlowUp,False,None,23.18,31.08,25.4,21,VND-015,Active
+PRD-00459,SKU-10459,100000000459,Blood Pressure Cuff50 Count,Medical Supplies,Braces,PureHealth,False,None,24.32,44.54,45.4,26,VND-016,Active
+PRD-00460,SKU-10460,100000000460,Gummy Candy100 Count,Snacks,Cookies,FreshWay,False,None,22.72,32.41,29.9,33,VND-004,Active
+PRD-00461,SKU-10461,100000000461,Cough SyrupTravel,OTC Medication,Cold & Flu,HealthPlus,False,None,29.93,64.63,53.7,29,VND-032,Active
+PRD-00462,SKU-10462,100000000462,Dish SoapLarge,Household,Paper Goods,GlowUp,False,None,2.47,3.65,32.3,17,VND-026,Active
+PRD-00463,SKU-10463,100000000463,Wound OintmentTravel,First Aid,Bandages,ValueCare,False,None,28.19,46.82,39.8,19,VND-021,Active
+PRD-00464,SKU-10464,100000000464,Calcium100 Count,Vitamins & Supplements,Minerals,UnityCare,False,None,1.36,2.2,38.3,22,VND-001,Active
+PRD-00465,SKU-10465,100000000465,Fish Oil50 Count,Vitamins & Supplements,Vitamin C,DailyChoice,False,None,7.83,14.82,47.2,16,VND-004,Active
+PRD-00466,SKU-10466,100000000466,Gauze Pads50 Count,First Aid,Supports,HomeEase,False,None,27.03,48.97,44.8,26,VND-024,Active
+PRD-00467,SKU-10467,100000000467,Mock Rx Product A,Prescription Medication,Maintenance Rx,DailyChoice,True,None,26.76,39.54,32.3,16,VND-019,Active
+PRD-00468,SKU-10468,100000000468,Iced Tea,Beverages,Juice,MedCheck,False,None,2.32,3.33,30.4,31,VND-027,Active
+PRD-00469,SKU-10469,100000000469,Fish OilValue Pack,Vitamins & Supplements,Vitamin C,PureHealth,False,None,7.17,16.18,55.7,11,VND-030,Active
+PRD-00470,SKU-10470,100000000470,Bandage PackTravel,First Aid,Wound Care,GlowUp,False,None,2.34,4.33,45.9,23,VND-008,Active
+PRD-00471,SKU-10471,100000000471,Gummy Candy50 Count,Snacks,Protein Bars,ValueCare,False,None,33.5,47.48,29.4,5,VND-034,Active
+PRD-00472,SKU-10472,100000000472,Mock Rx Product ETravel,Prescription Medication,Generic Rx,FreshWay,True,None,29.48,49.91,40.9,29,VND-012,Active
+PRD-00473,SKU-10473,100000000473,Mock Rx Product FValue Pack,Prescription Medication,Brand Rx,BrightSmile,True,None,4.3,8.07,46.7,33,VND-021,Active
+PRD-00474,SKU-10474,100000000474,Energy Drink50 Count,Beverages,Energy Drinks,WellLife,False,None,32.12,64.44,50.2,17,VND-022,Active
+PRD-00475,SKU-10475,100000000475,MoisturizerValue Pack,Beauty,Fragrance,HomeEase,False,None,14.89,28.69,48.1,21,VND-020,Active
+PRD-00476,SKU-10476,100000000476,Mock Rx Product F100 Count,Prescription Medication,Specialty Rx,CareFirst,True,None,32.79,60.58,45.9,11,VND-019,Active
+PRD-00477,SKU-10477,100000000477,LancetsValue Pack,Medical Supplies,Braces,MedCheck,False,None,34.36,64.17,46.5,21,VND-035,Active
+PRD-00478,SKU-10478,100000000478,Mock Rx Product F,Prescription Medication,Specialty Rx,BrightSmile,True,None,26.81,47.5,43.6,23,VND-027,Active
+PRD-00479,SKU-10479,100000000479,Wrist Brace,Medical Supplies,Braces,MedCheck,False,None,18.65,25.15,25.8,6,VND-004,Active
+PRD-00480,SKU-10480,100000000480,Antiseptic SprayLarge,First Aid,Wound Care,UnityCare,False,None,24.16,34.43,29.8,27,VND-019,Active
+PRD-00481,SKU-10481,100000000481,Gauze PadsTravel,First Aid,Bandages,HomeEase,False,None,4.26,9.19,53.6,22,VND-015,Active
+PRD-00482,SKU-10482,100000000482,Mock Rx Product B50 Count,Prescription Medication,Maintenance Rx,WellLife,True,None,27.61,56.77,51.4,27,VND-004,Active
+PRD-00483,SKU-10483,100000000483,Crackers100 Count,Grocery,Condiments,UnityCare,False,None,11.46,20.18,43.2,28,VND-017,Active
+PRD-00484,SKU-10484,100000000484,Antiseptic Spray100 Count,First Aid,Supports,BrightSmile,False,None,24.88,46.39,46.4,22,VND-013,Active
+PRD-00485,SKU-10485,100000000485,Mock Rx Product CTravel,Prescription Medication,Brand Rx,MedCheck,True,None,6.83,13.02,47.5,35,VND-012,Active
+PRD-00486,SKU-10486,100000000486,Mock Rx Product D,Prescription Medication,Generic Rx,MedCheck,True,None,15.43,27.25,43.4,10,VND-017,Active
+PRD-00487,SKU-10487,100000000487,Antacid Chewables100 Count,OTC Medication,Allergy,DailyChoice,False,None,32.86,44.6,26.3,24,VND-004,Active
+PRD-00488,SKU-10488,100000000488,Wrist Brace50 Count,Medical Supplies,Braces,HomeEase,False,None,19.59,26.99,27.4,15,VND-034,Active
+PRD-00489,SKU-10489,100000000489,Elastic Wrap,First Aid,Antiseptic,FreshWay,False,None,27.68,39.69,30.3,22,VND-026,Active
+PRD-00490,SKU-10490,100000000490,Vitamin CValue Pack,Vitamins & Supplements,Vitamin C,WellLife,False,None,23.47,36.63,35.9,11,VND-034,Active
+PRD-00491,SKU-10491,100000000491,Snickers Bar100 Count,Snacks,Candy,GlowUp,False,None,12.6,18.79,32.9,24,VND-016,Active
+PRD-00492,SKU-10492,100000000492,Antacid Chewables,OTC Medication,Allergy,WellLife,False,None,13.97,24.43,42.8,5,VND-034,Active
+PRD-00493,SKU-10493,100000000493,Batteries,Household,Batteries,DailyChoice,False,None,10.9,20.37,46.5,21,VND-006,Active
+PRD-00494,SKU-10494,100000000494,Fish Oil50 Count,Vitamins & Supplements,Vitamin D,GlowUp,False,None,1.0,1.37,27.2,25,VND-014,Active
+PRD-00495,SKU-10495,100000000495,Glucose Test StripsValue Pack,Medical Supplies,Masks,HomeEase,False,None,19.17,37.0,48.2,29,VND-028,Active
+PRD-00496,SKU-10496,100000000496,Lancets100 Count,Medical Supplies,Glucose Monitoring,DailyChoice,False,None,6.02,10.06,40.2,6,VND-006,Active
+PRD-00497,SKU-10497,100000000497,Vitamin CLarge,Vitamins & Supplements,Multivitamins,CareFirst,False,None,19.86,35.45,44.0,34,VND-017,Active
+PRD-00498,SKU-10498,100000000498,Crackers100 Count,Grocery,Condiments,PureHealth,False,None,14.6,22.62,35.4,26,VND-008,Active
+PRD-00499,SKU-10499,100000000499,Iced Tea100 Count,Beverages,Soda,BrightSmile,False,None,21.93,43.81,49.9,6,VND-005,Active
+PRD-00500,SKU-10500,100000000500,Dish Soap100 Count,Household,Cleaning,ValueCare,False,None,11.07,15.34,27.9,17,VND-026,Active
+PRD-00501,SKU-10501,100000000501,Wrist BraceValue Pack,Medical Supplies,Glucose Monitoring,PureHealth,False,None,19.02,26.98,29.5,30,VND-035,Active
+PRD-00502,SKU-10502,100000000502,Mascara100 Count,Beauty,Facial Care,HomeEase,False,None,31.13,72.16,56.9,25,VND-024,Active
+PRD-00503,SKU-10503,100000000503,Pain Relief Tablets,OTC Medication,Cold & Flu,FreshWay,False,None,0.92,1.66,44.7,22,VND-006,Active
+PRD-00504,SKU-10504,100000000504,Body Lotion100 Count,Beauty,Facial Care,PureHealth,False,None,31.7,49.8,36.3,33,VND-033,Active
+PRD-00505,SKU-10505,100000000505,Soft ToothbrushValue Pack,Personal Care,Hair Care,HealthPlus,False,None,21.88,32.82,33.3,10,VND-004,Active
+PRD-00506,SKU-10506,100000000506,Iced Tea50 Count,Beverages,Energy Drinks,WellLife,False,None,3.26,6.17,47.2,8,VND-013,Active
+PRD-00507,SKU-10507,100000000507,Mock Rx Product CLarge,Prescription Medication,Maintenance Rx,HealthPlus,True,None,5.14,9.63,46.6,14,VND-005,Active
+PRD-00508,SKU-10508,100000000508,Wound OintmentTravel,First Aid,Wound Care,HomeEase,False,None,12.0,22.54,46.8,23,VND-010,Active
+PRD-00509,SKU-10509,100000000509,Holiday CandyTravel,Seasonal,Back to School,CareFirst,False,None,6.53,10.1,35.3,27,VND-028,Active
+PRD-00510,SKU-10510,100000000510,Moisturizer100 Count,Beauty,Nail Care,ValueCare,False,None,25.85,56.16,54.0,19,VND-023,Active
+PRD-00511,SKU-10511,100000000511,Nail Polish,Beauty,Fragrance,WellLife,False,None,6.77,12.31,45.0,32,VND-009,Active
+PRD-00512,SKU-10512,100000000512,Orange Juice100 Count,Beverages,Water,HealthPlus,False,None,31.11,42.92,27.5,33,VND-002,Active
+PRD-00513,SKU-10513,100000000513,Sports Drink50 Count,Beverages,Soda,UnityCare,False,None,14.63,26.35,44.5,22,VND-017,Active
+PRD-00514,SKU-10514,100000000514,Iced TeaValue Pack,Beverages,Energy Drinks,BrightSmile,False,None,13.28,19.64,32.4,28,VND-019,Active
+PRD-00515,SKU-10515,100000000515,Body Wash50 Count,Personal Care,Deodorant,UnityCare,False,None,3.85,6.11,37.0,26,VND-016,Active
+PRD-00516,SKU-10516,100000000516,School SuppliesValue Pack,Seasonal,Holiday,BrightSmile,False,None,16.03,23.2,30.9,26,VND-010,Active
+PRD-00517,SKU-10517,100000000517,Mock Rx Product C,Prescription Medication,Maintenance Rx,HealthPlus,True,None,8.24,13.99,41.1,13,VND-024,Active
+PRD-00518,SKU-10518,100000000518,Instant Cold PackValue Pack,First Aid,Bandages,PureHealth,False,None,18.49,37.83,51.1,20,VND-030,Active
+PRD-00519,SKU-10519,100000000519,Nasal SprayLarge,OTC Medication,Pain Relief,GlowUp,False,None,4.29,9.97,57.0,31,VND-018,Active
+PRD-00520,SKU-10520,100000000520,Mock Rx Product E50 Count,Prescription Medication,Specialty Rx,PureHealth,True,None,20.28,32.41,37.4,16,VND-005,Active
+PRD-00521,SKU-10521,100000000521,Energy DrinkValue Pack,Beverages,Juice,DailyChoice,False,None,18.44,29.11,36.6,20,VND-031,Active
+PRD-00522,SKU-10522,100000000522,School SuppliesValue Pack,Seasonal,Summer,FreshWay,False,None,15.82,23.47,32.6,25,VND-018,Active
+PRD-00523,SKU-10523,100000000523,Antiseptic SprayValue Pack,First Aid,Antiseptic,HealthPlus,False,None,13.16,25.64,48.7,26,VND-015,Active
+PRD-00524,SKU-10524,100000000524,Pasta Sauce,Grocery,Canned Goods,CareFirst,False,None,17.24,29.12,40.8,23,VND-011,Active
+PRD-00525,SKU-10525,100000000525,Glucose Test StripsValue Pack,Medical Supplies,Masks,MedCheck,False,None,2.23,3.98,43.9,9,VND-033,Active
+PRD-00526,SKU-10526,100000000526,Pain Relief TabletsValue Pack,OTC Medication,Cold & Flu,PureHealth,False,None,9.6,13.9,30.9,24,VND-002,Active
+PRD-00527,SKU-10527,100000000527,Mock Rx Product AValue Pack,Prescription Medication,Specialty Rx,ValueCare,True,None,16.14,38.21,57.8,10,VND-015,Active
+PRD-00528,SKU-10528,100000000528,OatmealValue Pack,Grocery,Breakfast,MedCheck,False,None,22.1,38.01,41.9,28,VND-022,Active
+PRD-00529,SKU-10529,100000000529,Potato ChipsTravel,Snacks,Candy,CareFirst,False,None,13.95,19.53,28.6,21,VND-033,Active
+PRD-00530,SKU-10530,100000000530,Digital Thermometer50 Count,Medical Supplies,Masks,BrightSmile,False,None,4.05,6.83,40.7,24,VND-003,Active
+PRD-00531,SKU-10531,100000000531,Coke Zero 20ozTravel,Beverages,Soda,FreshWay,False,None,23.33,51.58,54.8,31,VND-001,Active
+PRD-00532,SKU-10532,100000000532,Blood Pressure CuffTravel,Medical Supplies,Masks,FreshWay,False,None,13.44,18.27,26.4,18,VND-015,Active
+PRD-00533,SKU-10533,100000000533,Chocolate Cookies50 Count,Snacks,Protein Bars,HomeEase,False,None,28.31,62.85,55.0,23,VND-007,Active
+PRD-00534,SKU-10534,100000000534,SoupTravel,Grocery,Breakfast,HealthPlus,False,None,26.98,60.0,55.0,14,VND-035,Active
+PRD-00535,SKU-10535,100000000535,Peanut Butter,Grocery,Canned Goods,BrightSmile,False,None,25.04,51.16,51.1,21,VND-008,Active
+PRD-00536,SKU-10536,100000000536,Energy Drink100 Count,Beverages,Soda,PureHealth,False,None,7.79,16.08,51.5,16,VND-007,Active
+PRD-00537,SKU-10537,100000000537,Deodorant50 Count,Personal Care,Deodorant,PureHealth,False,None,9.44,20.18,53.2,23,VND-024,Active
+PRD-00538,SKU-10538,100000000538,Hand WarmersTravel,Seasonal,Back to School,FreshWay,False,None,26.61,43.36,38.6,20,VND-012,Active
+PRD-00539,SKU-10539,100000000539,Dish SoapLarge,Household,Batteries,PureHealth,False,None,20.53,41.52,50.5,28,VND-009,Active
+PRD-00540,SKU-10540,100000000540,LancetsValue Pack,Medical Supplies,Glucose Monitoring,MedCheck,False,None,16.05,30.91,48.1,8,VND-014,Active
+PRD-00541,SKU-10541,100000000541,Orange Juice50 Count,Beverages,Energy Drinks,UnityCare,False,None,21.78,41.56,47.6,10,VND-025,Active
+PRD-00542,SKU-10542,100000000542,Glucose Test StripsValue Pack,Medical Supplies,Glucose Monitoring,HealthPlus,False,None,16.9,30.62,44.8,7,VND-017,Active
+PRD-00543,SKU-10543,100000000543,Bandage Pack50 Count,First Aid,Wound Care,PureHealth,False,None,2.04,3.27,37.7,24,VND-034,Active
+PRD-00544,SKU-10544,100000000544,Moisturizer100 Count,Beauty,Cosmetics,GlowUp,False,None,17.68,23.68,25.4,34,VND-034,Active
+PRD-00545,SKU-10545,100000000545,Face Cleanser50 Count,Beauty,Facial Care,BrightSmile,False,None,18.24,35.11,48.0,10,VND-003,Active
+PRD-00546,SKU-10546,100000000546,Disinfecting Wipes,Household,Paper Goods,WellLife,False,None,34.17,47.37,27.9,29,VND-026,Active
+PRD-00547,SKU-10547,100000000547,Batteries50 Count,Household,Batteries,HomeEase,False,None,7.61,10.22,25.5,7,VND-006,Active
+PRD-00548,SKU-10548,100000000548,Iced Tea50 Count,Beverages,Juice,WellLife,False,None,32.09,50.53,36.5,12,VND-013,Active
+PRD-00549,SKU-10549,100000000549,Trail Mix,Snacks,Protein Bars,HealthPlus,False,None,9.69,15.74,38.4,22,VND-005,Active
+PRD-00550,SKU-10550,100000000550,Orange Juice,Beverages,Juice,FreshWay,False,None,28.25,65.05,56.6,31,VND-017,Active
+PRD-00551,SKU-10551,100000000551,Mock Rx Product D50 Count,Prescription Medication,Maintenance Rx,DailyChoice,True,None,17.31,25.85,33.0,35,VND-030,Active
+PRD-00552,SKU-10552,100000000552,Blood Pressure Cuff,Medical Supplies,Masks,PureHealth,False,None,17.26,25.96,33.5,25,VND-015,Active
+PRD-00553,SKU-10553,100000000553,Face MasksTravel,Medical Supplies,Thermometers,UnityCare,False,None,33.47,57.75,42.0,27,VND-017,Active
+PRD-00554,SKU-10554,100000000554,Bandage PackTravel,First Aid,Wound Care,HealthPlus,False,None,23.82,49.72,52.1,22,VND-012,Active
+PRD-00555,SKU-10555,100000000555,Chocolate CookiesValue Pack,Snacks,Cookies,HomeEase,False,None,31.38,47.46,33.9,26,VND-013,Active
+PRD-00556,SKU-10556,100000000556,Potato Chips100 Count,Snacks,Chips,CareFirst,False,None,9.04,13.65,33.8,11,VND-016,Active
+PRD-00557,SKU-10557,100000000557,Travel Kit,Seasonal,Back to School,GlowUp,False,None,4.86,6.71,27.6,20,VND-001,Active
+PRD-00558,SKU-10558,100000000558,Energy DrinkLarge,Beverages,Soda,BrightSmile,False,None,22.01,37.46,41.2,32,VND-018,Active
+PRD-00559,SKU-10559,100000000559,Trail MixLarge,Snacks,Chips,MedCheck,False,None,14.38,28.62,49.8,6,VND-034,Active
+PRD-00560,SKU-10560,100000000560,Oatmeal,Grocery,Condiments,GlowUp,False,None,17.96,28.96,38.0,29,VND-012,Active
+PRD-00561,SKU-10561,100000000561,Gummy Candy50 Count,Snacks,Candy,UnityCare,False,None,16.51,31.59,47.7,26,VND-014,Active
+PRD-00562,SKU-10562,100000000562,SoupLarge,Grocery,Pantry,FreshWay,False,None,21.74,32.73,33.6,13,VND-016,Active
+PRD-00563,SKU-10563,100000000563,Nail PolishLarge,Beauty,Fragrance,CareFirst,False,None,13.28,22.69,41.5,18,VND-024,Active
+PRD-00564,SKU-10564,100000000564,Dish SoapTravel,Household,Batteries,BrightSmile,False,None,6.91,9.78,29.3,26,VND-015,Active
+PRD-00565,SKU-10565,100000000565,Vitamin C50 Count,Vitamins & Supplements,Vitamin C,MedCheck,False,None,15.55,24.91,37.6,30,VND-010,Active
+PRD-00566,SKU-10566,100000000566,Potato ChipsTravel,Snacks,Candy,GlowUp,False,None,17.86,42.38,57.9,21,VND-035,Active
+PRD-00567,SKU-10567,100000000567,Mock Rx Product DLarge,Prescription Medication,Specialty Rx,UnityCare,True,None,9.35,20.03,53.3,17,VND-007,Active
+PRD-00568,SKU-10568,100000000568,Mock Rx Product AValue Pack,Prescription Medication,Brand Rx,GlowUp,True,None,28.62,48.28,40.7,8,VND-029,Active
+PRD-00569,SKU-10569,100000000569,Mock Rx Product CLarge,Prescription Medication,Specialty Rx,WellLife,True,None,13.09,23.13,43.4,16,VND-002,Active
+PRD-00570,SKU-10570,100000000570,Soup100 Count,Grocery,Pantry,BrightSmile,False,None,33.74,49.3,31.6,25,VND-035,Active
+PRD-00571,SKU-10571,100000000571,ShampooLarge,Personal Care,Skin Care,HomeEase,False,None,23.81,40.42,41.1,19,VND-006,Active
+PRD-00572,SKU-10572,100000000572,Crackers100 Count,Grocery,Canned Goods,GlowUp,False,None,33.51,72.3,53.7,30,VND-022,Active
+PRD-00573,SKU-10573,100000000573,Cereal,Grocery,Condiments,DailyChoice,False,None,6.3,9.34,32.5,25,VND-019,Active
+PRD-00574,SKU-10574,100000000574,Mock Rx Product E100 Count,Prescription Medication,Specialty Rx,DailyChoice,True,None,14.29,31.26,54.3,28,VND-034,Active
+PRD-00575,SKU-10575,100000000575,Potato ChipsValue Pack,Snacks,Protein Bars,CareFirst,False,None,30.01,42.34,29.1,26,VND-017,Active
+PRD-00576,SKU-10576,100000000576,Mock Rx Product BValue Pack,Prescription Medication,Generic Rx,ValueCare,True,None,14.35,19.97,28.2,22,VND-004,Active
+PRD-00577,SKU-10577,100000000577,Cough Syrup,OTC Medication,Digestive Health,HealthPlus,False,None,4.31,7.89,45.4,25,VND-025,Active
+PRD-00578,SKU-10578,100000000578,Moisturizer100 Count,Beauty,Facial Care,MedCheck,False,None,10.48,19.29,45.7,21,VND-011,Active
+PRD-00579,SKU-10579,100000000579,Nasal SprayLarge,OTC Medication,Pain Relief,ValueCare,False,None,30.22,47.02,35.7,19,VND-035,Active
+PRD-00580,SKU-10580,100000000580,Moisturizer100 Count,Beauty,Fragrance,ValueCare,False,None,19.22,34.63,44.5,25,VND-028,Active
+PRD-00581,SKU-10581,100000000581,Orange JuiceTravel,Beverages,Juice,ValueCare,False,None,19.23,39.69,51.6,14,VND-024,Active
+PRD-00582,SKU-10582,100000000582,Peanut ButterLarge,Grocery,Canned Goods,MedCheck,False,None,1.11,1.92,42.3,16,VND-019,Active
+PRD-00583,SKU-10583,100000000583,Gummy CandyTravel,Snacks,Candy,UnityCare,False,None,33.18,55.99,40.7,29,VND-028,Active
+PRD-00584,SKU-10584,100000000584,Face Cleanser50 Count,Beauty,Facial Care,FreshWay,False,None,13.55,22.06,38.6,18,VND-026,Active
+PRD-00585,SKU-10585,100000000585,Instant Cold Pack100 Count,First Aid,Antiseptic,CareFirst,False,None,22.88,48.0,52.3,13,VND-006,Active
+PRD-00586,SKU-10586,100000000586,Oatmeal50 Count,Grocery,Breakfast,WellLife,False,None,28.41,54.21,47.6,25,VND-035,Active
+PRD-00587,SKU-10587,100000000587,Moisturizer,Beauty,Fragrance,GlowUp,False,None,7.0,10.7,34.6,19,VND-029,Active
+PRD-00588,SKU-10588,100000000588,MoisturizerLarge,Beauty,Fragrance,FreshWay,False,None,1.41,1.92,26.6,5,VND-012,Active
+PRD-00589,SKU-10589,100000000589,Daily MultivitaminValue Pack,Vitamins & Supplements,Vitamin C,CareFirst,False,None,25.25,49.5,49.0,7,VND-010,Active
+PRD-00590,SKU-10590,100000000590,Cold & Flu CapsulesLarge,OTC Medication,Digestive Health,ValueCare,False,None,15.14,30.85,50.9,16,VND-030,Active
+PRD-00591,SKU-10591,100000000591,Mock Rx Product C,Prescription Medication,Generic Rx,UnityCare,True,None,29.64,67.99,56.4,13,VND-026,Active
+PRD-00592,SKU-10592,100000000592,Vitamin CValue Pack,Vitamins & Supplements,Minerals,PureHealth,False,None,31.43,47.09,33.3,31,VND-001,Active
+PRD-00593,SKU-10593,100000000593,MagnesiumTravel,Vitamins & Supplements,Vitamin D,CareFirst,False,None,9.22,21.86,57.8,19,VND-007,Active
+PRD-00594,SKU-10594,100000000594,Energy DrinkTravel,Beverages,Water,DailyChoice,False,None,24.09,37.23,35.3,10,VND-003,Active
+PRD-00595,SKU-10595,100000000595,Mock Rx Product CTravel,Prescription Medication,Generic Rx,UnityCare,True,None,22.62,33.05,31.6,32,VND-014,Active
+PRD-00596,SKU-10596,100000000596,CalciumTravel,Vitamins & Supplements,Vitamin D,WellLife,False,None,11.86,17.07,30.5,23,VND-008,Active
+PRD-00597,SKU-10597,100000000597,Cereal,Grocery,Breakfast,HomeEase,False,None,20.65,39.56,47.8,24,VND-010,Active
+PRD-00598,SKU-10598,100000000598,Laundry DetergentValue Pack,Household,Cleaning,DailyChoice,False,None,17.87,34.13,47.6,34,VND-004,Active
+PRD-00599,SKU-10599,100000000599,Nasal SprayValue Pack,OTC Medication,Allergy,MedCheck,False,None,24.77,50.67,51.1,20,VND-015,Active
+PRD-00600,SKU-10600,100000000600,Batteries100 Count,Household,Laundry,DailyChoice,False,None,7.36,14.08,47.7,28,VND-009,Active
+PRD-00601,SKU-10601,100000000601,Lip Balm100 Count,Beauty,Cosmetics,HomeEase,False,None,15.73,24.1,34.7,20,VND-013,Active
+PRD-00602,SKU-10602,100000000602,School SuppliesLarge,Seasonal,Holiday,BrightSmile,False,None,11.84,19.88,40.5,34,VND-011,Active
+PRD-00603,SKU-10603,100000000603,MagnesiumLarge,Vitamins & Supplements,Vitamin D,ValueCare,False,None,28.82,50.45,42.9,5,VND-033,Active
+PRD-00604,SKU-10604,100000000604,Cereal50 Count,Grocery,Breakfast,CareFirst,False,None,30.1,60.94,50.6,15,VND-005,Active
+PRD-00605,SKU-10605,100000000605,Digital Thermometer50 Count,Medical Supplies,Masks,MedCheck,False,None,24.15,48.56,50.3,24,VND-019,Active
+PRD-00606,SKU-10606,100000000606,Disinfecting WipesLarge,Household,Batteries,HealthPlus,False,None,4.53,7.85,42.3,6,VND-009,Active
+PRD-00607,SKU-10607,100000000607,Soft Toothbrush,Personal Care,Oral Care,BrightSmile,False,None,17.37,24.21,28.3,25,VND-025,Active
+PRD-00608,SKU-10608,100000000608,Blood Pressure Cuff50 Count,Medical Supplies,Masks,DailyChoice,False,None,24.77,37.22,33.4,12,VND-005,Active
+PRD-00609,SKU-10609,100000000609,Nasal SprayTravel,OTC Medication,Cold & Flu,ValueCare,False,None,32.55,68.47,52.5,30,VND-004,Active
+PRD-00610,SKU-10610,100000000610,Dish Soap100 Count,Household,Batteries,FreshWay,False,None,2.75,5.03,45.4,6,VND-005,Active
+PRD-00611,SKU-10611,100000000611,Moisturizer50 Count,Beauty,Cosmetics,FreshWay,False,None,4.08,7.99,48.9,17,VND-013,Active
+PRD-00612,SKU-10612,100000000612,Elastic Wrap100 Count,First Aid,Antiseptic,FreshWay,False,None,33.2,58.69,43.4,18,VND-007,Active
+PRD-00613,SKU-10613,100000000613,LancetsTravel,Medical Supplies,Braces,HealthPlus,False,None,24.81,40.73,39.1,10,VND-012,Active
+PRD-00614,SKU-10614,100000000614,Sports DrinkLarge,Beverages,Energy Drinks,BrightSmile,False,None,23.27,40.55,42.6,19,VND-023,Active
+PRD-00615,SKU-10615,100000000615,Dish SoapTravel,Household,Laundry,HomeEase,False,None,26.92,44.28,39.2,15,VND-016,Active
+PRD-00616,SKU-10616,100000000616,Umbrella50 Count,Seasonal,Holiday,ValueCare,False,None,32.47,48.74,33.4,19,VND-026,Active
+PRD-00617,SKU-10617,100000000617,Allergy Relief50 Count,OTC Medication,Pain Relief,WellLife,False,None,1.31,1.86,29.5,5,VND-020,Active
+PRD-00618,SKU-10618,100000000618,Gauze Pads,First Aid,Antiseptic,WellLife,False,None,27.17,61.93,56.1,34,VND-033,Active
+PRD-00619,SKU-10619,100000000619,Coke Zero 20oz,Beverages,Water,WellLife,False,None,16.52,23.65,30.2,16,VND-016,Active
+PRD-00620,SKU-10620,100000000620,Gauze Pads,First Aid,Wound Care,CareFirst,False,None,20.29,36.09,43.8,28,VND-005,Active
+PRD-00621,SKU-10621,100000000621,Mock Rx Product DValue Pack,Prescription Medication,Specialty Rx,HomeEase,True,None,17.47,38.54,54.7,23,VND-007,Active
+PRD-00622,SKU-10622,100000000622,Sunscreen100 Count,Seasonal,Back to School,UnityCare,False,None,28.44,45.57,37.6,34,VND-022,Active
+PRD-00623,SKU-10623,100000000623,Batteries,Household,Batteries,GlowUp,False,None,30.54,45.23,32.5,32,VND-001,Active
+PRD-00624,SKU-10624,100000000624,Glucose Test StripsLarge,Medical Supplies,Masks,BrightSmile,False,None,18.71,29.02,35.5,9,VND-021,Active
+PRD-00625,SKU-10625,100000000625,Bottled Water,Beverages,Water,ValueCare,False,None,23.82,56.6,57.9,29,VND-033,Active
+PRD-00626,SKU-10626,100000000626,MagnesiumLarge,Vitamins & Supplements,Vitamin D,DailyChoice,False,None,27.68,39.48,29.9,7,VND-031,Active
+PRD-00627,SKU-10627,100000000627,School SuppliesTravel,Seasonal,Summer,PureHealth,False,None,9.74,15.75,38.2,29,VND-009,Active
+PRD-00628,SKU-10628,100000000628,Body WashValue Pack,Personal Care,Deodorant,CareFirst,False,None,17.46,32.65,46.5,22,VND-034,Active
+PRD-00629,SKU-10629,100000000629,Bandage PackLarge,First Aid,Antiseptic,BrightSmile,False,None,27.35,42.52,35.7,7,VND-008,Active
+PRD-00630,SKU-10630,100000000630,Wrist BraceLarge,Medical Supplies,Masks,BrightSmile,False,None,12.68,19.68,35.6,25,VND-002,Active
+PRD-00631,SKU-10631,100000000631,Mascara50 Count,Beauty,Facial Care,BrightSmile,False,None,28.89,59.56,51.5,9,VND-029,Active
+PRD-00632,SKU-10632,100000000632,Cold & Flu Capsules100 Count,OTC Medication,Cold & Flu,HealthPlus,False,None,13.55,27.1,50.0,8,VND-004,Active
+PRD-00633,SKU-10633,100000000633,Gauze Pads,First Aid,Antiseptic,WellLife,False,None,12.51,25.82,51.5,19,VND-031,Active
+PRD-00634,SKU-10634,100000000634,Cold & Flu Capsules100 Count,OTC Medication,Allergy,FreshWay,False,None,19.18,28.09,31.7,29,VND-017,Active
+PRD-00635,SKU-10635,100000000635,Sports Drink100 Count,Beverages,Energy Drinks,GlowUp,False,None,34.74,66.73,47.9,5,VND-025,Active
+PRD-00636,SKU-10636,100000000636,Holiday CandyValue Pack,Seasonal,Summer,HomeEase,False,None,2.81,4.11,31.6,24,VND-018,Active
+PRD-00637,SKU-10637,100000000637,Nasal Spray,OTC Medication,Digestive Health,GlowUp,False,None,3.03,5.69,46.8,32,VND-024,Active
+PRD-00638,SKU-10638,100000000638,Daily Multivitamin100 Count,Vitamins & Supplements,Multivitamins,FreshWay,False,None,13.99,32.79,57.3,27,VND-007,Active
+PRD-00639,SKU-10639,100000000639,Trash Bags50 Count,Household,Batteries,ValueCare,False,None,3.76,5.49,31.6,22,VND-002,Active
+PRD-00640,SKU-10640,100000000640,Cough SyrupLarge,OTC Medication,Cold & Flu,MedCheck,False,None,12.17,19.62,38.0,5,VND-023,Active
+PRD-00641,SKU-10641,100000000641,Face Masks100 Count,Medical Supplies,Braces,FreshWay,False,None,11.1,26.35,57.9,13,VND-004,Active
+PRD-00642,SKU-10642,100000000642,Wrist Brace,Medical Supplies,Braces,CareFirst,False,None,33.09,75.76,56.3,9,VND-022,Active
+PRD-00643,SKU-10643,100000000643,Cereal100 Count,Grocery,Breakfast,BrightSmile,False,None,13.84,31.96,56.7,32,VND-015,Active
+PRD-00644,SKU-10644,100000000644,OatmealValue Pack,Grocery,Breakfast,BrightSmile,False,None,15.36,23.74,35.3,15,VND-029,Active
+PRD-00645,SKU-10645,100000000645,Bottled Water100 Count,Beverages,Water,CareFirst,False,None,5.5,9.63,42.9,32,VND-009,Active
+PRD-00646,SKU-10646,100000000646,Lip BalmValue Pack,Beauty,Facial Care,MedCheck,False,None,23.23,41.22,43.6,15,VND-005,Active
+PRD-00647,SKU-10647,100000000647,Bottled WaterLarge,Beverages,Soda,UnityCare,False,None,29.5,42.02,29.8,29,VND-021,Active
+PRD-00648,SKU-10648,100000000648,SoupTravel,Grocery,Condiments,GlowUp,False,None,26.29,54.9,52.1,34,VND-018,Active
+PRD-00649,SKU-10649,100000000649,Crest ToothpasteValue Pack,Personal Care,Hair Care,BrightSmile,False,None,7.08,14.21,50.2,24,VND-018,Active
+PRD-00650,SKU-10650,100000000650,School SuppliesValue Pack,Seasonal,Holiday,HealthPlus,False,None,8.66,11.68,25.9,27,VND-031,Active
+PRD-00651,SKU-10651,100000000651,Deodorant100 Count,Personal Care,Deodorant,ValueCare,False,None,13.56,28.93,53.1,20,VND-009,Active
+PRD-00652,SKU-10652,100000000652,Soft Toothbrush,Personal Care,Hair Care,WellLife,False,None,14.74,34.26,57.0,35,VND-027,Active
+PRD-00653,SKU-10653,100000000653,Antiseptic Spray,First Aid,Antiseptic,ValueCare,False,None,6.81,15.66,56.5,32,VND-032,Active
+PRD-00654,SKU-10654,100000000654,Mock Rx Product DValue Pack,Prescription Medication,Specialty Rx,BrightSmile,True,None,15.39,31.16,50.6,28,VND-025,Active
+PRD-00655,SKU-10655,100000000655,Mock Rx Product D50 Count,Prescription Medication,Specialty Rx,FreshWay,True,None,32.92,58.65,43.9,21,VND-003,Active
+PRD-00656,SKU-10656,100000000656,Energy DrinkTravel,Beverages,Soda,CareFirst,False,None,29.08,39.51,26.4,21,VND-035,Active
+PRD-00657,SKU-10657,100000000657,OatmealTravel,Grocery,Pantry,UnityCare,False,None,18.43,34.01,45.8,11,VND-019,Active
+PRD-00658,SKU-10658,100000000658,Chocolate CookiesLarge,Snacks,Protein Bars,BrightSmile,False,None,16.55,27.11,38.9,34,VND-004,Active
+PRD-00659,SKU-10659,100000000659,Mock Rx Product D100 Count,Prescription Medication,Brand Rx,HealthPlus,True,None,16.22,31.71,48.8,10,VND-035,Active
+PRD-00660,SKU-10660,100000000660,ConditionerLarge,Personal Care,Deodorant,BrightSmile,False,None,16.19,23.43,30.9,33,VND-013,Active
+PRD-00661,SKU-10661,100000000661,Chocolate CookiesLarge,Snacks,Candy,MedCheck,False,None,24.44,54.23,54.9,27,VND-008,Active
+PRD-00662,SKU-10662,100000000662,CalciumTravel,Vitamins & Supplements,Multivitamins,HomeEase,False,None,22.47,31.13,27.8,17,VND-033,Active
+PRD-00663,SKU-10663,100000000663,Umbrella50 Count,Seasonal,Holiday,DailyChoice,False,None,13.79,27.78,50.4,23,VND-010,Active
+PRD-00664,SKU-10664,100000000664,Soft Toothbrush100 Count,Personal Care,Hair Care,HomeEase,False,None,2.51,3.87,35.2,29,VND-029,Active
+PRD-00665,SKU-10665,100000000665,Face CleanserValue Pack,Beauty,Facial Care,WellLife,False,None,33.64,44.92,25.1,5,VND-030,Active
+PRD-00666,SKU-10666,100000000666,Trail Mix,Snacks,Protein Bars,CareFirst,False,None,21.57,36.74,41.3,23,VND-031,Active
+PRD-00667,SKU-10667,100000000667,Protein Bar,Snacks,Protein Bars,FreshWay,False,None,21.34,28.54,25.2,13,VND-014,Active
+PRD-00668,SKU-10668,100000000668,Cold & Flu Capsules,OTC Medication,Cold & Flu,UnityCare,False,None,23.12,31.33,26.2,26,VND-020,Active
+PRD-00669,SKU-10669,100000000669,Paper Towels,Household,Cleaning,GlowUp,False,None,15.03,21.75,30.9,14,VND-012,Active
+PRD-00670,SKU-10670,100000000670,Snickers Bar,Snacks,Cookies,PureHealth,False,None,27.07,42.07,35.7,31,VND-005,Active
+PRD-00671,SKU-10671,100000000671,SoupTravel,Grocery,Pantry,WellLife,False,None,5.36,10.29,47.9,15,VND-034,Active
+PRD-00672,SKU-10672,100000000672,Pasta SauceValue Pack,Grocery,Breakfast,HomeEase,False,None,21.71,30.41,28.6,25,VND-034,Active
+PRD-00673,SKU-10673,100000000673,Calcium100 Count,Vitamins & Supplements,Minerals,HomeEase,False,None,21.46,43.8,51.0,14,VND-028,Active
+PRD-00674,SKU-10674,100000000674,Holiday Candy50 Count,Seasonal,Back to School,MedCheck,False,None,20.45,37.57,45.6,24,VND-032,Active
+PRD-00675,SKU-10675,100000000675,Energy DrinkValue Pack,Beverages,Energy Drinks,WellLife,False,None,31.02,46.08,32.7,11,VND-001,Active
+PRD-00676,SKU-10676,100000000676,Magnesium100 Count,Vitamins & Supplements,Multivitamins,CareFirst,False,None,28.04,55.35,49.3,30,VND-027,Active
+PRD-00677,SKU-10677,100000000677,SoupLarge,Grocery,Pantry,UnityCare,False,None,19.94,36.95,46.0,25,VND-013,Active
+PRD-00678,SKU-10678,100000000678,Mock Rx Product C,Prescription Medication,Specialty Rx,DailyChoice,True,None,11.29,19.37,41.7,29,VND-001,Active
+PRD-00679,SKU-10679,100000000679,Daily MultivitaminTravel,Vitamins & Supplements,Vitamin C,UnityCare,False,None,25.56,46.75,45.3,31,VND-012,Active
+PRD-00680,SKU-10680,100000000680,Gauze Pads100 Count,First Aid,Wound Care,UnityCare,False,None,17.16,28.92,40.7,25,VND-009,Active
+PRD-00681,SKU-10681,100000000681,Gummy CandyTravel,Snacks,Chips,DailyChoice,False,None,31.3,54.64,42.7,19,VND-027,Active
+PRD-00682,SKU-10682,100000000682,Mock Rx Product ELarge,Prescription Medication,Generic Rx,FreshWay,True,None,20.1,38.2,47.4,22,VND-002,Active
+PRD-00683,SKU-10683,100000000683,Gauze Pads,First Aid,Wound Care,UnityCare,False,None,33.96,51.65,34.3,15,VND-025,Active
+PRD-00684,SKU-10684,100000000684,Blood Pressure Cuff50 Count,Medical Supplies,Thermometers,WellLife,False,None,14.09,25.45,44.6,27,VND-021,Active
+PRD-00685,SKU-10685,100000000685,Mock Rx Product CTravel,Prescription Medication,Generic Rx,DailyChoice,True,None,3.72,8.08,53.9,19,VND-020,Active
+PRD-00686,SKU-10686,100000000686,Antiseptic Spray,First Aid,Wound Care,CareFirst,False,None,13.57,18.4,26.2,34,VND-006,Active
+PRD-00687,SKU-10687,100000000687,Protein Bar50 Count,Snacks,Candy,ValueCare,False,None,6.03,9.45,36.2,28,VND-034,Active
+PRD-00688,SKU-10688,100000000688,Moisturizer,Beauty,Nail Care,GlowUp,False,None,28.91,65.64,56.0,9,VND-014,Active
+PRD-00689,SKU-10689,100000000689,Mock Rx Product DTravel,Prescription Medication,Generic Rx,UnityCare,True,None,25.19,43.61,42.2,14,VND-003,Active
+PRD-00690,SKU-10690,100000000690,Face MasksTravel,Medical Supplies,Glucose Monitoring,GlowUp,False,None,31.2,43.58,28.4,28,VND-020,Active
+PRD-00691,SKU-10691,100000000691,Nasal SprayValue Pack,OTC Medication,Allergy,WellLife,False,None,11.74,17.1,31.4,22,VND-021,Active
+PRD-00692,SKU-10692,100000000692,Chocolate CookiesValue Pack,Snacks,Candy,BrightSmile,False,None,6.14,8.62,28.8,22,VND-033,Active
+PRD-00693,SKU-10693,100000000693,Fish OilLarge,Vitamins & Supplements,Vitamin D,HomeEase,False,None,19.57,29.63,33.9,30,VND-019,Active
+PRD-00694,SKU-10694,100000000694,Travel Kit,Seasonal,Holiday,FreshWay,False,None,11.41,25.05,54.4,19,VND-004,Active
+PRD-00695,SKU-10695,100000000695,Conditioner100 Count,Personal Care,Oral Care,HealthPlus,False,None,2.48,3.98,37.7,18,VND-026,Active
+PRD-00696,SKU-10696,100000000696,Body WashLarge,Personal Care,Deodorant,HomeEase,False,None,11.45,23.84,52.0,29,VND-035,Active
+PRD-00697,SKU-10697,100000000697,Fish OilValue Pack,Vitamins & Supplements,Minerals,HomeEase,False,None,3.93,8.1,51.5,19,VND-007,Active
+PRD-00698,SKU-10698,100000000698,Gummy Candy100 Count,Snacks,Cookies,CareFirst,False,None,25.07,42.03,40.4,35,VND-015,Active
+PRD-00699,SKU-10699,100000000699,ShampooTravel,Personal Care,Skin Care,DailyChoice,False,None,7.03,15.72,55.3,30,VND-021,Active
+PRD-00700,SKU-10700,100000000700,Snickers Bar,Snacks,Protein Bars,ValueCare,False,None,17.03,26.86,36.6,32,VND-011,Active
+PRD-00701,SKU-10701,100000000701,Nail Polish50 Count,Beauty,Nail Care,HomeEase,False,None,5.11,7.14,28.4,30,VND-007,Active
+PRD-00702,SKU-10702,100000000702,Dish Soap50 Count,Household,Cleaning,CareFirst,False,None,16.54,29.8,44.5,24,VND-016,Active
+PRD-00703,SKU-10703,100000000703,Energy DrinkTravel,Beverages,Water,HomeEase,False,None,3.01,4.42,31.9,23,VND-028,Active
+PRD-00704,SKU-10704,100000000704,Oatmeal100 Count,Grocery,Canned Goods,HealthPlus,False,None,8.84,16.64,46.9,28,VND-032,Active
+PRD-00705,SKU-10705,100000000705,Daily Multivitamin50 Count,Vitamins & Supplements,Minerals,WellLife,False,None,4.09,6.78,39.7,35,VND-026,Active
+PRD-00706,SKU-10706,100000000706,Calcium50 Count,Vitamins & Supplements,Multivitamins,ValueCare,False,None,27.17,43.47,37.5,25,VND-004,Active
+PRD-00707,SKU-10707,100000000707,Vitamin C50 Count,Vitamins & Supplements,Vitamin D,UnityCare,False,None,31.69,58.68,46.0,29,VND-010,Active
+PRD-00708,SKU-10708,100000000708,Wrist Brace50 Count,Medical Supplies,Thermometers,ValueCare,False,None,10.73,19.62,45.3,11,VND-014,Active
+PRD-00709,SKU-10709,100000000709,Face Masks50 Count,Medical Supplies,Braces,PureHealth,False,None,27.96,53.18,47.4,27,VND-023,Active
+PRD-00710,SKU-10710,100000000710,Fish Oil50 Count,Vitamins & Supplements,Multivitamins,WellLife,False,None,14.59,20.61,29.2,6,VND-024,Active
+PRD-00711,SKU-10711,100000000711,Coke Zero 20oz100 Count,Beverages,Soda,HealthPlus,False,None,19.93,46.67,57.3,32,VND-019,Active
+PRD-00712,SKU-10712,100000000712,Antacid Chewables100 Count,OTC Medication,Cold & Flu,HomeEase,False,None,20.96,38.55,45.6,17,VND-026,Active
+PRD-00713,SKU-10713,100000000713,OatmealValue Pack,Grocery,Condiments,CareFirst,False,None,23.44,39.51,40.7,22,VND-025,Active
+PRD-00714,SKU-10714,100000000714,Laundry DetergentLarge,Household,Batteries,MedCheck,False,None,34.91,66.01,47.1,5,VND-005,Active
+PRD-00715,SKU-10715,100000000715,Digital Thermometer100 Count,Medical Supplies,Glucose Monitoring,MedCheck,False,None,31.06,58.29,46.7,7,VND-009,Active
+PRD-00716,SKU-10716,100000000716,Wrist Brace100 Count,Medical Supplies,Masks,MedCheck,False,None,21.45,35.19,39.0,19,VND-033,Active
+PRD-00717,SKU-10717,100000000717,CrackersLarge,Grocery,Condiments,UnityCare,False,None,8.48,13.91,39.0,23,VND-032,Active
+PRD-00718,SKU-10718,100000000718,Mock Rx Product F50 Count,Prescription Medication,Brand Rx,BrightSmile,True,None,9.97,22.44,55.6,16,VND-003,Active
+PRD-00719,SKU-10719,100000000719,Nasal SprayLarge,OTC Medication,Digestive Health,HomeEase,False,None,4.63,7.83,40.9,7,VND-010,Active
+PRD-00720,SKU-10720,100000000720,Mock Rx Product D50 Count,Prescription Medication,Specialty Rx,HealthPlus,True,None,3.43,7.52,54.4,12,VND-031,Active
+PRD-00721,SKU-10721,100000000721,Lancets100 Count,Medical Supplies,Glucose Monitoring,BrightSmile,False,None,19.22,34.4,44.1,6,VND-022,Active
+PRD-00722,SKU-10722,100000000722,Energy DrinkTravel,Beverages,Soda,HomeEase,False,None,18.31,30.77,40.5,15,VND-027,Active
+PRD-00723,SKU-10723,100000000723,Dish SoapValue Pack,Household,Laundry,HomeEase,False,None,1.96,4.4,55.5,14,VND-017,Active
+PRD-00724,SKU-10724,100000000724,Cough SyrupValue Pack,OTC Medication,Digestive Health,WellLife,False,None,20.37,38.19,46.7,30,VND-002,Active
+PRD-00725,SKU-10725,100000000725,Face CleanserValue Pack,Beauty,Fragrance,WellLife,False,None,18.07,38.53,53.1,13,VND-009,Active
+PRD-00726,SKU-10726,100000000726,Holiday CandyLarge,Seasonal,Back to School,MedCheck,False,None,1.24,1.74,28.7,34,VND-010,Active
+PRD-00727,SKU-10727,100000000727,Face MasksValue Pack,Medical Supplies,Masks,ValueCare,False,None,9.7,18.7,48.1,10,VND-034,Active
+PRD-00728,SKU-10728,100000000728,Pain Relief TabletsValue Pack,OTC Medication,Allergy,ValueCare,False,None,21.15,44.17,52.1,29,VND-027,Active
+PRD-00729,SKU-10729,100000000729,Pasta SauceTravel,Grocery,Breakfast,BrightSmile,False,None,25.62,36.87,30.5,28,VND-023,Active
+PRD-00730,SKU-10730,100000000730,Pain Relief Tablets,OTC Medication,Allergy,WellLife,False,None,6.49,10.49,38.2,20,VND-035,Active
+PRD-00731,SKU-10731,100000000731,Instant Cold Pack100 Count,First Aid,Supports,FreshWay,False,None,14.11,21.27,33.7,32,VND-028,Active
+PRD-00732,SKU-10732,100000000732,Antacid ChewablesTravel,OTC Medication,Allergy,GlowUp,False,None,23.99,55.45,56.7,35,VND-003,Active
+PRD-00733,SKU-10733,100000000733,Magnesium50 Count,Vitamins & Supplements,Vitamin C,DailyChoice,False,None,32.19,68.97,53.3,13,VND-018,Active
+PRD-00734,SKU-10734,100000000734,Calcium50 Count,Vitamins & Supplements,Vitamin C,HomeEase,False,None,14.15,28.59,50.5,12,VND-013,Active
+PRD-00735,SKU-10735,100000000735,Iced Tea100 Count,Beverages,Juice,UnityCare,False,None,34.77,53.77,35.3,26,VND-001,Active
+PRD-00736,SKU-10736,100000000736,Magnesium,Vitamins & Supplements,Multivitamins,DailyChoice,False,None,18.74,35.78,47.6,12,VND-019,Active
+PRD-00737,SKU-10737,100000000737,Face Cleanser,Beauty,Facial Care,BrightSmile,False,None,21.96,30.03,26.9,26,VND-014,Active
+PRD-00738,SKU-10738,100000000738,Hand Warmers,Seasonal,Summer,PureHealth,False,None,3.71,6.74,45.0,26,VND-012,Active
+PRD-00739,SKU-10739,100000000739,Daily MultivitaminLarge,Vitamins & Supplements,Vitamin D,GlowUp,False,None,16.74,37.95,55.9,19,VND-018,Active
+PRD-00740,SKU-10740,100000000740,SoupValue Pack,Grocery,Canned Goods,UnityCare,False,None,27.49,41.75,34.2,17,VND-025,Active
+PRD-00741,SKU-10741,100000000741,Dish SoapLarge,Household,Cleaning,CareFirst,False,None,6.84,9.41,27.3,24,VND-026,Active
+PRD-00742,SKU-10742,100000000742,Crest ToothpasteValue Pack,Personal Care,Deodorant,BrightSmile,False,None,19.27,31.71,39.2,25,VND-007,Active
+PRD-00743,SKU-10743,100000000743,Snickers Bar,Snacks,Cookies,WellLife,False,None,3.25,5.79,43.9,29,VND-029,Active
+PRD-00744,SKU-10744,100000000744,Cold & Flu Capsules100 Count,OTC Medication,Digestive Health,GlowUp,False,None,22.68,51.3,55.8,17,VND-018,Active
+PRD-00745,SKU-10745,100000000745,Conditioner50 Count,Personal Care,Skin Care,ValueCare,False,None,0.88,1.7,48.4,20,VND-028,Active
+PRD-00746,SKU-10746,100000000746,OatmealValue Pack,Grocery,Pantry,ValueCare,False,None,0.86,1.98,56.5,8,VND-035,Active
+PRD-00747,SKU-10747,100000000747,Disinfecting WipesLarge,Household,Laundry,GlowUp,False,None,14.47,26.73,45.9,7,VND-024,Active
+PRD-00748,SKU-10748,100000000748,Coke Zero 20ozTravel,Beverages,Juice,CareFirst,False,None,26.8,40.96,34.6,10,VND-003,Active
+PRD-00749,SKU-10749,100000000749,Soup100 Count,Grocery,Breakfast,HomeEase,False,None,14.11,19.74,28.5,16,VND-032,Active
+PRD-00750,SKU-10750,100000000750,CalciumValue Pack,Vitamins & Supplements,Minerals,HomeEase,False,None,5.54,8.07,31.4,23,VND-016,Active
+PRD-00751,SKU-10751,100000000751,Snickers Bar50 Count,Snacks,Protein Bars,ValueCare,False,None,22.79,38.95,41.5,35,VND-002,Active
+PRD-00752,SKU-10752,100000000752,Pain Relief TabletsLarge,OTC Medication,Allergy,HealthPlus,False,None,27.73,37.68,26.4,11,VND-034,Active
+PRD-00753,SKU-10753,100000000753,Gummy Candy50 Count,Snacks,Chips,HomeEase,False,None,8.73,12.02,27.4,9,VND-032,Active
+PRD-00754,SKU-10754,100000000754,Wrist Brace50 Count,Medical Supplies,Glucose Monitoring,MedCheck,False,None,2.32,4.47,48.1,5,VND-012,Active
+PRD-00755,SKU-10755,100000000755,Face Masks,Medical Supplies,Glucose Monitoring,BrightSmile,False,None,16.37,23.6,30.6,7,VND-007,Active
+PRD-00756,SKU-10756,100000000756,Fish Oil50 Count,Vitamins & Supplements,Minerals,PureHealth,False,None,8.3,17.13,51.5,15,VND-026,Active
+PRD-00757,SKU-10757,100000000757,Disinfecting Wipes50 Count,Household,Cleaning,CareFirst,False,None,19.45,30.21,35.6,29,VND-003,Active
+PRD-00758,SKU-10758,100000000758,Holiday Candy,Seasonal,Holiday,PureHealth,False,None,4.89,6.95,29.7,10,VND-024,Active
+PRD-00759,SKU-10759,100000000759,Energy DrinkValue Pack,Beverages,Water,HealthPlus,False,None,32.45,44.06,26.3,30,VND-025,Active
+PRD-00760,SKU-10760,100000000760,Conditioner,Personal Care,Oral Care,HealthPlus,False,None,0.97,1.4,30.9,27,VND-019,Active
+PRD-00761,SKU-10761,100000000761,Pasta SauceValue Pack,Grocery,Condiments,FreshWay,False,None,7.81,14.49,46.1,19,VND-027,Active
+PRD-00762,SKU-10762,100000000762,Elastic Wrap100 Count,First Aid,Antiseptic,ValueCare,False,None,2.04,2.95,30.9,24,VND-006,Active
+PRD-00763,SKU-10763,100000000763,Face MasksTravel,Medical Supplies,Braces,HealthPlus,False,None,0.91,1.35,32.8,21,VND-007,Active
+PRD-00764,SKU-10764,100000000764,School Supplies50 Count,Seasonal,Back to School,GlowUp,False,None,8.26,16.66,50.4,11,VND-018,Active
+PRD-00765,SKU-10765,100000000765,Pain Relief TabletsValue Pack,OTC Medication,Cold & Flu,ValueCare,False,None,24.22,56.28,57.0,20,VND-012,Active
+PRD-00766,SKU-10766,100000000766,Crest Toothpaste100 Count,Personal Care,Oral Care,WellLife,False,None,13.22,19.42,31.9,15,VND-030,Active
+PRD-00767,SKU-10767,100000000767,Nasal Spray,OTC Medication,Pain Relief,UnityCare,False,None,32.43,46.87,30.8,20,VND-033,Active
+PRD-00768,SKU-10768,100000000768,Vitamin C100 Count,Vitamins & Supplements,Multivitamins,PureHealth,False,None,15.99,28.62,44.1,11,VND-021,Active
+PRD-00769,SKU-10769,100000000769,Gauze PadsValue Pack,First Aid,Bandages,CareFirst,False,None,4.11,8.11,49.3,17,VND-015,Active
+PRD-00770,SKU-10770,100000000770,Fish OilTravel,Vitamins & Supplements,Minerals,CareFirst,False,None,2.61,4.31,39.4,34,VND-030,Active
+PRD-00771,SKU-10771,100000000771,ShampooValue Pack,Personal Care,Deodorant,DailyChoice,False,None,16.43,23.95,31.4,13,VND-013,Active
+PRD-00772,SKU-10772,100000000772,Paper Towels100 Count,Household,Paper Goods,HealthPlus,False,None,20.23,30.77,34.3,32,VND-030,Active
+PRD-00773,SKU-10773,100000000773,Potato ChipsLarge,Snacks,Protein Bars,MedCheck,False,None,8.28,12.69,34.7,30,VND-011,Active
+PRD-00774,SKU-10774,100000000774,SunscreenTravel,Seasonal,Holiday,CareFirst,False,None,30.1,51.14,41.1,23,VND-031,Active
+PRD-00775,SKU-10775,100000000775,Snickers Bar100 Count,Snacks,Cookies,CareFirst,False,None,15.41,33.35,53.8,15,VND-028,Active
+PRD-00776,SKU-10776,100000000776,School SuppliesValue Pack,Seasonal,Holiday,PureHealth,False,None,32.05,70.66,54.6,6,VND-003,Active
+PRD-00777,SKU-10777,100000000777,Protein Bar50 Count,Snacks,Candy,HomeEase,False,None,14.26,29.54,51.7,31,VND-007,Active
+PRD-00778,SKU-10778,100000000778,Potato Chips,Snacks,Protein Bars,HomeEase,False,None,19.88,26.65,25.4,18,VND-014,Active
+PRD-00779,SKU-10779,100000000779,ShampooValue Pack,Personal Care,Skin Care,ValueCare,False,None,22.93,31.84,28.0,26,VND-020,Active
+PRD-00780,SKU-10780,100000000780,Body Wash100 Count,Personal Care,Deodorant,ValueCare,False,None,20.74,48.48,57.2,29,VND-009,Active
+PRD-00781,SKU-10781,100000000781,Mock Rx Product BLarge,Prescription Medication,Maintenance Rx,UnityCare,True,None,22.22,42.92,48.2,32,VND-005,Active
+PRD-00782,SKU-10782,100000000782,Oatmeal,Grocery,Canned Goods,HomeEase,False,None,10.91,21.75,49.8,35,VND-035,Active
+PRD-00783,SKU-10783,100000000783,Hand Warmers,Seasonal,Holiday,UnityCare,False,None,22.0,34.42,36.1,21,VND-024,Active
+PRD-00784,SKU-10784,100000000784,Antacid ChewablesLarge,OTC Medication,Pain Relief,DailyChoice,False,None,16.69,22.66,26.3,10,VND-005,Active
+PRD-00785,SKU-10785,100000000785,Bottled WaterLarge,Beverages,Water,ValueCare,False,None,8.92,12.52,28.7,28,VND-014,Active
+PRD-00786,SKU-10786,100000000786,Mock Rx Product CLarge,Prescription Medication,Brand Rx,PureHealth,True,None,31.5,53.95,41.6,13,VND-004,Active
+PRD-00787,SKU-10787,100000000787,Daily MultivitaminTravel,Vitamins & Supplements,Vitamin C,HealthPlus,False,None,17.4,30.2,42.4,20,VND-035,Active
+PRD-00788,SKU-10788,100000000788,Wrist Brace50 Count,Medical Supplies,Braces,HomeEase,False,None,13.36,25.31,47.2,30,VND-005,Active
+PRD-00789,SKU-10789,100000000789,Bandage Pack,First Aid,Supports,HealthPlus,False,None,14.13,20.45,30.9,8,VND-011,Active
+PRD-00790,SKU-10790,100000000790,Body LotionValue Pack,Beauty,Cosmetics,FreshWay,False,None,17.75,38.48,53.9,35,VND-002,Active
+PRD-00791,SKU-10791,100000000791,Body Lotion50 Count,Beauty,Fragrance,PureHealth,False,None,32.66,55.02,40.6,19,VND-002,Active
+PRD-00792,SKU-10792,100000000792,Face Cleanser,Beauty,Facial Care,FreshWay,False,None,30.61,45.46,32.7,25,VND-022,Active
+PRD-00793,SKU-10793,100000000793,Pasta Sauce100 Count,Grocery,Canned Goods,GlowUp,False,None,27.7,46.98,41.0,27,VND-034,Active
+PRD-00794,SKU-10794,100000000794,Energy DrinkLarge,Beverages,Energy Drinks,WellLife,False,None,20.18,44.49,54.6,10,VND-017,Active
+PRD-00795,SKU-10795,100000000795,Gauze PadsLarge,First Aid,Supports,DailyChoice,False,None,27.11,36.92,26.6,14,VND-030,Active
+PRD-00796,SKU-10796,100000000796,Deodorant50 Count,Personal Care,Hair Care,HomeEase,False,None,10.52,24.53,57.1,27,VND-010,Active
+PRD-00797,SKU-10797,100000000797,Crest Toothpaste,Personal Care,Hair Care,ValueCare,False,None,34.79,62.08,44.0,13,VND-024,Active
+PRD-00798,SKU-10798,100000000798,Body Wash100 Count,Personal Care,Hair Care,DailyChoice,False,None,1.94,3.01,35.5,9,VND-024,Active
+PRD-00799,SKU-10799,100000000799,Trail MixLarge,Snacks,Chips,ValueCare,False,None,4.91,6.62,25.8,29,VND-010,Active
+PRD-00800,SKU-10800,100000000800,Potato Chips,Snacks,Cookies,FreshWay,False,None,33.98,59.64,43.0,15,VND-019,Active

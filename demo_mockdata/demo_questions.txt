@@ -1,0 +1,12 @@
+1. Which employee refunds the most?
+2. Show every refund processed by Sarah Miller.
+3. Which managers approve the most refunds?
+4. Show duplicate refunds across stores.
+5. Which products are most frequently refunded?
+6. Show the full receipt and all line items for a selected transaction.
+7. Which stores have the highest inventory variance?
+8. Which products have negative inventory?
+9. Which employee has repeated cash drawer shortages?
+10. Which store has the highest insurance claim rejection rate?
+11. Compare store sales, refunds, inventory variance, and claims.
+12. Show all after-hours overrides and sensitive activities.

@@ -1,0 +1,169 @@
+MICHAEL PHARMACY CHAIN DEMO DATA PACKAGE
+=========================================
+
+Purpose
+-------
+This package provides a complete fictional multi-location pharmacy and front-store retail dataset
+for demonstrating DAAB + LAAM + 4A.
+
+Important
+---------
+- All names and data are fictional.
+- Do not use this package for real patient, pharmacy, or compliance decisions.
+- No real PHI is included.
+- The dataset contains both pharmacy operations and CVS-style front-store retail receipts.
+
+Package size
+------------
+Stores: 5
+Employees: 110
+Products: 800
+Customers: 5000
+Sales receipts: 5000
+Receipt line items: 22596
+Payments: 5000
+Refunds: 232
+Refund line items: 338
+Voids: 120
+Discount overrides: 311
+Inventory snapshots: 1500
+Inventory adjustments: 1308
+Inventory movements: 22916
+Prescriptions: 1500
+Insurance claims: 1500
+Employee shifts: 1000
+Cash drawer sessions: 568
+Audit events: 5220
+
+Core relationship path
+----------------------
+Store -> Employee -> Shift -> Register -> Receipt -> Receipt Line Items -> Payment
+      -> Refund/Void/Override -> Manager Approval -> Inventory Movement -> Audit Event
+
+Most important files
+--------------------
+transactions.csv
+transaction_items.csv
+payments.csv
+refunds.csv
+refund_items.csv
+discount_overrides.csv
+inventory_snapshots.csv
+inventory_adjustments.csv
+prescriptions.csv
+insurance_claims.csv
+cash_drawers.csv
+expected_findings.csv
+demo_questions.txt
+
+Intentional anomalies
+---------------------
+1. Sarah Miller at PH-001 has excessive refunds, including no-receipt and late-evening refunds.
+2. PH-005 contains concentrated inventory shrinkage.
+3. Twelve original receipts were intentionally refunded twice.
+4. PH-002 has concentrated evening manager overrides.
+5. PH-004 has an elevated insurance claim rejection rate.
+6. Daniel Ross at PH-005 has repeated cash drawer shortages.
+7. PH-004 has a July front-store sales decline.
+8. Some products at PH-004 contain expired stock.
+
+Recommended Friday demo flow
+----------------------------
+1. Ask: Which employee refunds the most?
+2. Open Sarah Miller's refund summary.
+3. Drill into the linked refund receipts and original sale line items.
+4. Ask: Show duplicate refunds.
+5. Ask: Which store has the highest inventory discrepancy?
+6. Ask: Which store has the highest insurance claim rejection rate?
+7. Ask: Which employee has repeated cash drawer shortages?
+8. Ask LAAM to summarize the highest-risk operational issues and recommend follow-up actions.
+
+
+FILES
+-----
+README.txt
+audit_events.csv
+cash_drawers.csv
+customers.csv
+demo_questions.txt
+discount_overrides.csv
+employee_shifts.csv
+employees.csv
+expected_findings.csv
+insurance_claims.csv
+inventory_adjustments.csv
+inventory_movements.csv
+inventory_snapshots.csv
+payments.csv
+prescriptions.csv
+products.csv
+refund_items.csv
+refunds.csv
+stores.csv
+transaction_items.csv
+transactions.csv
+voids.csv
+
+SAMPLE RECEIPTS WITH LINE ITEMS
+-------------------------------
+
+Receipt RCP-00000001 | Store PH-003 | 2026-06-13 20:19:10 | Cashier EMP-0047 | Total $310.99
+  - Iced Tea100 Count | Qty 1 | Unit $53.77 | Discount $0 | Line Total $53.77
+  - Face CleanserTravel | Qty 2 | Unit $52.99 | Discount $0 | Line Total $105.98
+  - Dish Soap50 Count | Qty 1 | Unit $29.8 | Discount $0 | Line Total $29.8
+  - Gummy Candy50 Count | Qty 1 | Unit $47.48 | Discount $0 | Line Total $47.48
+  - Potato ChipsLarge | Qty 1 | Unit $12.69 | Discount $1.27 | Line Total $11.42
+  - Fish OilValue Pack | Qty 1 | Unit $16.18 | Discount $0 | Line Total $16.18
+  - Antacid ChewablesLarge | Qty 1 | Unit $22.66 | Discount $0 | Line Total $22.66
+
+Receipt RCP-00000002 | Store PH-003 | 2026-05-30 10:28:32 | Cashier EMP-0060 | Total $49.28
+  - Lip Balm100 Count | Qty 1 | Unit $45.52 | Discount $0 | Line Total $45.52
+
+Receipt RCP-00000003 | Store PH-002 | 2026-05-13 14:39:31 | Cashier EMP-0040 | Total $334.87
+  - Allergy ReliefLarge | Qty 1 | Unit $17.61 | Discount $0 | Line Total $17.61
+  - LancetsValue Pack | Qty 1 | Unit $64.47 | Discount $0 | Line Total $64.47
+  - SoupTravel | Qty 4 | Unit $54.9 | Discount $0 | Line Total $219.6
+  - Wrist BraceLarge | Qty 1 | Unit $7.67 | Discount $0 | Line Total $7.67
+
+Receipt RCP-00000004 | Store PH-002 | 2026-06-02 15:12:15 | Cashier EMP-0039 | Total $262.31
+  - Disinfecting WipesLarge | Qty 2 | Unit $45.88 | Discount $0 | Line Total $91.76
+  - Bottled WaterTravel | Qty 4 | Unit $37.64 | Discount $0 | Line Total $150.56
+
+Receipt RCP-00000005 | Store PH-001 | 2026-07-22 10:09:18 | Cashier EMP-0020 | Total $304.77
+  - Blood Pressure Cuff | Qty 1 | Unit $2.38 | Discount $0 | Line Total $2.38
+  - Nail Polish100 Count | Qty 1 | Unit $42.58 | Discount $0 | Line Total $42.58
+  - Antiseptic SprayValue Pack | Qty 1 | Unit $25.64 | Discount $1.28 | Line Total $24.36
+  - Face MasksLarge | Qty 1 | Unit $22.01 | Discount $0 | Line Total $22.01
+  - Daily Multivitamin100 Count | Qty 1 | Unit $43.22 | Discount $0 | Line Total $43.22
+  - Nasal SprayLarge | Qty 2 | Unit $55.94 | Discount $0 | Line Total $111.88
+  - OatmealValue Pack | Qty 1 | Unit $35.1 | Discount $0 | Line Total $35.1
+
+Receipt RCP-00000006 | Store PH-001 | 2026-05-08 17:39:10 | Cashier EMP-0013 | Total $138.99
+  - Hand WarmersLarge | Qty 1 | Unit $6.63 | Discount $1.33 | Line Total $5.3
+  - Antiseptic SprayValue Pack | Qty 1 | Unit $7.19 | Discount $0.72 | Line Total $6.47
+  - Vitamin C100 Count | Qty 1 | Unit $21.59 | Discount $0 | Line Total $21.59
+  - Deodorant50 Count | Qty 1 | Unit $39.05 | Discount $0 | Line Total $39.05
+  - Gummy CandyTravel | Qty 1 | Unit $55.99 | Discount $0 | Line Total $55.99
+
+Receipt RCP-00000007 | Store PH-004 | 2026-05-12 13:44:31 | Cashier EMP-0080 | Total $171.28
+  - MoisturizerLarge | Qty 3 | Unit $15.36 | Discount $0 | Line Total $46.08
+  - Peanut ButterValue Pack | Qty 1 | Unit $64.75 | Discount $0 | Line Total $64.75
+  - MoisturizerLarge | Qty 4 | Unit $1.92 | Discount $0 | Line Total $7.68
+  - CrackersLarge | Qty 1 | Unit $13.91 | Discount $0 | Line Total $13.91
+  - Hand Warmers | Qty 1 | Unit $6.74 | Discount $0.34 | Line Total $6.4
+  - Antiseptic SprayValue Pack | Qty 3 | Unit $7.19 | Discount $2.16 | Line Total $19.41
+
+Receipt RCP-00000008 | Store PH-004 | 2026-06-18 20:22:42 | Cashier EMP-0085 | Total $49.78
+  - Glucose Test StripsValue Pack | Qty 1 | Unit $3.98 | Discount $0 | Line Total $3.98
+  - Travel KitValue Pack | Qty 1 | Unit $7.46 | Discount $0 | Line Total $7.46
+  - Disinfecting WipesLarge | Qty 1 | Unit $36.36 | Discount $1.82 | Line Total $34.54
+
+Receipt RCP-00000009 | Store PH-001 | 2026-07-22 08:46:13 | Cashier EMP-0017 | Total $88.98
+  - LancetsTravel | Qty 1 | Unit $40.73 | Discount $0 | Line Total $40.73
+  - Energy DrinkValue Pack | Qty 1 | Unit $46.08 | Discount $4.61 | Line Total $41.47
+
+Receipt RCP-00000010 | Store PH-003 | 2026-07-09 16:46:22 | Cashier EMP-0059 | Total $150.16
+  - Soup100 Count | Qty 1 | Unit $34.81 | Discount $0 | Line Total $34.81
+  - Shampoo | Qty 1 | Unit $23.59 | Discount $0 | Line Total $23.59
+  - OatmealValue Pack | Qty 1 | Unit $39.51 | Discount $0 | Line Total $39.51
+  - Glucose Test StripsValue Pack | Qty 4 | Unit $10.2 | Discount $0 | Line Total $40.8

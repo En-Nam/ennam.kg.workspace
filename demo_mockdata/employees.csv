@@ -1,0 +1,111 @@
+employee_id,first_name,last_name,store_id,role,department,hire_date,status,refund_permission,void_permission,discount_override_permission,pharmacy_access
+EMP-0001,Amanda,Lee,PH-001,Store Manager,Management,2021-01-10,Active,True,True,True,True
+EMP-0002,Ethan,Hill,PH-001,Assistant Manager,Management,2019-04-13,Active,True,True,True,True
+EMP-0003,Ava,Ross,PH-001,Assistant Manager,Management,2021-09-30,Active,True,True,True,True
+EMP-0004,Linda,Carter,PH-001,Pharmacist,Pharmacy,2020-02-24,Active,False,False,False,True
+EMP-0005,Mia,Moore,PH-001,Pharmacist,Pharmacy,2025-02-11,Active,False,False,False,True
+EMP-0006,Sarah,Miller,PH-001,Cashier,Front Store,2023-09-25,Active,False,False,False,True
+EMP-0007,Robert,Lee,PH-001,Pharmacy Technician,Pharmacy,2020-01-19,Active,False,False,False,True
+EMP-0008,John,Chen,PH-001,Pharmacy Technician,Pharmacy,2024-08-31,Active,False,False,False,True
+EMP-0009,Olivia,Lee,PH-001,Pharmacy Technician,Pharmacy,2025-04-17,Active,False,False,False,True
+EMP-0010,John,Thomas,PH-001,Pharmacy Technician,Pharmacy,2025-02-10,Active,False,False,False,True
+EMP-0011,Laura,Chen,PH-001,Pharmacy Technician,Pharmacy,2024-01-14,Active,False,False,False,True
+EMP-0012,Brandon,Ross,PH-001,Shift Supervisor,Front Store,2019-01-27,Active,True,True,True,False
+EMP-0013,Liam,White,PH-001,Shift Supervisor,Front Store,2020-10-15,Active,True,True,True,False
+EMP-0014,Noah,Smith,PH-001,Cashier,Front Store,2022-10-25,Active,True,False,False,False
+EMP-0015,Daniel,Carter,PH-001,Cashier,Front Store,2021-05-31,Active,True,False,False,False
+EMP-0016,Liam,Patel,PH-001,Cashier,Front Store,2020-02-23,Active,True,False,False,False
+EMP-0017,Jennifer,Reed,PH-001,Cashier,Front Store,2020-02-01,Active,True,False,False,False
+EMP-0018,Rachel,Kim,PH-001,Cashier,Front Store,2025-10-08,Active,True,False,False,False
+EMP-0019,Daniel,White,PH-001,Cashier,Front Store,2019-06-27,Active,True,False,False,False
+EMP-0020,Ava,Wilson,PH-001,Cashier,Front Store,2025-01-05,Active,True,False,False,False
+EMP-0021,Marcus,Reed,PH-001,Inventory Associate,Inventory,2019-11-19,Active,False,False,False,False
+EMP-0022,Jessica,Nguyen,PH-001,Inventory Associate,Inventory,2023-01-21,Active,False,False,False,False
+EMP-0023,Robert,King,PH-002,Store Manager,Management,2021-01-10,Active,True,True,True,True
+EMP-0024,Brandon,Martinez,PH-002,Assistant Manager,Management,2019-10-12,Active,True,True,True,True
+EMP-0025,Robert,Anderson,PH-002,Assistant Manager,Management,2021-07-22,Active,True,True,True,True
+EMP-0026,Liam,Nguyen,PH-002,Pharmacist,Pharmacy,2019-11-23,Active,False,False,False,True
+EMP-0027,Linda,Hill,PH-002,Pharmacist,Pharmacy,2023-04-06,Active,False,False,False,True
+EMP-0028,Daniel,Wilson,PH-002,Pharmacist,Pharmacy,2023-02-03,Active,False,False,False,True
+EMP-0029,Sarah,Kim,PH-002,Pharmacy Technician,Pharmacy,2022-12-26,Active,False,False,False,True
+EMP-0030,John,Anderson,PH-002,Pharmacy Technician,Pharmacy,2021-12-29,Active,False,False,False,True
+EMP-0031,Noah,Anderson,PH-002,Pharmacy Technician,Pharmacy,2019-10-20,Active,False,False,False,True
+EMP-0032,Olivia,Taylor,PH-002,Pharmacy Technician,Pharmacy,2020-12-01,Active,False,False,False,True
+EMP-0033,Jessica,Moore,PH-002,Pharmacy Technician,Pharmacy,2021-09-29,Active,False,False,False,True
+EMP-0034,Sarah,Wilson,PH-002,Shift Supervisor,Front Store,2023-04-04,Active,True,True,True,False
+EMP-0035,Daniel,Taylor,PH-002,Shift Supervisor,Front Store,2025-03-31,Active,True,True,True,False
+EMP-0036,Linda,Anderson,PH-002,Cashier,Front Store,2022-08-21,Active,True,False,False,False
+EMP-0037,Liam,Jackson,PH-002,Cashier,Front Store,2019-08-18,Active,True,False,False,False
+EMP-0038,Linda,King,PH-002,Cashier,Front Store,2022-07-16,Active,True,False,False,False
+EMP-0039,Anthony,Ross,PH-002,Cashier,Front Store,2019-09-29,Active,True,False,False,False
+EMP-0040,John,Garcia,PH-002,Cashier,Front Store,2022-07-12,Active,True,False,False,False
+EMP-0041,John,Taylor,PH-002,Cashier,Front Store,2024-08-06,Active,True,False,False,False
+EMP-0042,Anthony,Taylor,PH-002,Cashier,Front Store,2024-02-23,Active,True,False,False,False
+EMP-0043,Melissa,Ross,PH-002,Inventory Associate,Inventory,2020-07-25,Active,False,False,False,False
+EMP-0044,Linda,Moore,PH-002,Inventory Associate,Inventory,2025-04-18,Active,False,False,False,False
+EMP-0045,Jennifer,Tran,PH-003,Store Manager,Management,2021-01-10,Active,True,True,True,True
+EMP-0046,Jessica,Ross,PH-003,Assistant Manager,Management,2025-07-22,Active,True,True,True,True
+EMP-0047,Laura,Garcia,PH-003,Assistant Manager,Management,2023-06-24,Active,True,True,True,True
+EMP-0048,Rachel,Chen,PH-003,Pharmacist,Pharmacy,2020-07-20,Active,False,False,False,True
+EMP-0049,Michael,Brown,PH-003,Pharmacist,Pharmacy,2020-01-08,Active,False,False,False,True
+EMP-0050,Liam,King,PH-003,Pharmacist,Pharmacy,2020-03-25,Active,False,False,False,True
+EMP-0051,Melissa,Taylor,PH-003,Pharmacy Technician,Pharmacy,2020-10-17,Active,False,False,False,True
+EMP-0052,Grace,Anderson,PH-003,Pharmacy Technician,Pharmacy,2023-09-26,Active,False,False,False,True
+EMP-0053,Olivia,Tran,PH-003,Pharmacy Technician,Pharmacy,2023-04-26,Active,False,False,False,True
+EMP-0054,Anthony,Lopez,PH-003,Pharmacy Technician,Pharmacy,2024-04-01,Active,False,False,False,True
+EMP-0055,Michael,Ross,PH-003,Pharmacy Technician,Pharmacy,2025-03-16,Active,False,False,False,True
+EMP-0056,Amanda,Anderson,PH-003,Shift Supervisor,Front Store,2020-04-14,Active,True,True,True,False
+EMP-0057,Mia,Johnson,PH-003,Shift Supervisor,Front Store,2021-12-28,Active,True,True,True,False
+EMP-0058,Liam,Taylor,PH-003,Cashier,Front Store,2022-10-25,Active,True,False,False,False
+EMP-0059,Marcus,Nguyen,PH-003,Cashier,Front Store,2023-11-16,Active,True,False,False,False
+EMP-0060,Sarah,Wilson,PH-003,Cashier,Front Store,2019-01-14,Active,True,False,False,False
+EMP-0061,Ava,Moore,PH-003,Cashier,Front Store,2021-12-14,Active,True,False,False,False
+EMP-0062,Michael,Jackson,PH-003,Cashier,Front Store,2021-01-01,Active,True,False,False,False
+EMP-0063,Michael,Hill,PH-003,Cashier,Front Store,2022-05-07,Active,True,False,False,False
+EMP-0064,Ethan,Davis,PH-003,Cashier,Front Store,2025-10-30,Active,True,False,False,False
+EMP-0065,John,Carter,PH-003,Inventory Associate,Inventory,2023-03-12,Active,False,False,False,False
+EMP-0066,Liam,Miller,PH-003,Inventory Associate,Inventory,2025-01-18,Active,False,False,False,False
+EMP-0067,Marcus,Hill,PH-004,Store Manager,Management,2021-01-10,Active,True,True,True,True
+EMP-0068,Liam,Davis,PH-004,Assistant Manager,Management,2019-01-03,Active,True,True,True,True
+EMP-0069,Olivia,Patel,PH-004,Assistant Manager,Management,2024-06-24,Active,True,True,True,True
+EMP-0070,Amanda,Hill,PH-004,Pharmacist,Pharmacy,2023-01-26,Active,False,False,False,True
+EMP-0071,Grace,Nguyen,PH-004,Pharmacist,Pharmacy,2021-09-07,Active,False,False,False,True
+EMP-0072,Robert,Chen,PH-004,Pharmacist,Pharmacy,2025-05-12,Active,False,False,False,True
+EMP-0073,Jennifer,Tran,PH-004,Pharmacy Technician,Pharmacy,2024-06-13,Active,False,False,False,True
+EMP-0074,Jennifer,Jackson,PH-004,Pharmacy Technician,Pharmacy,2024-12-21,Active,False,False,False,True
+EMP-0075,Liam,Carter,PH-004,Pharmacy Technician,Pharmacy,2020-06-09,Active,False,False,False,True
+EMP-0076,Mia,Brown,PH-004,Pharmacy Technician,Pharmacy,2025-03-01,Active,False,False,False,True
+EMP-0077,Sarah,Ross,PH-004,Pharmacy Technician,Pharmacy,2024-12-01,Active,False,False,False,True
+EMP-0078,Olivia,Smith,PH-004,Shift Supervisor,Front Store,2021-05-17,Active,True,True,True,False
+EMP-0079,Jessica,Jackson,PH-004,Shift Supervisor,Front Store,2021-04-03,Active,True,True,True,False
+EMP-0080,Noah,Nguyen,PH-004,Cashier,Front Store,2023-06-23,Active,True,False,False,False
+EMP-0081,Mia,Taylor,PH-004,Cashier,Front Store,2023-03-10,Active,True,False,False,False
+EMP-0082,David,Davis,PH-004,Cashier,Front Store,2024-01-24,Active,True,False,False,False
+EMP-0083,Marcus,Chen,PH-004,Cashier,Front Store,2021-07-09,Active,True,False,False,False
+EMP-0084,Jennifer,Patel,PH-004,Cashier,Front Store,2019-03-28,Active,True,False,False,False
+EMP-0085,Brandon,Johnson,PH-004,Cashier,Front Store,2021-07-31,Active,True,False,False,False
+EMP-0086,Brandon,Chen,PH-004,Cashier,Front Store,2019-01-30,Active,True,False,False,False
+EMP-0087,Jennifer,Thomas,PH-004,Inventory Associate,Inventory,2019-08-30,Active,False,False,False,False
+EMP-0088,Linda,Tran,PH-004,Inventory Associate,Inventory,2019-05-09,Active,False,False,False,False
+EMP-0089,Melissa,Carter,PH-005,Store Manager,Management,2021-01-10,Active,True,True,True,True
+EMP-0090,Kevin,Tran,PH-005,Assistant Manager,Management,2024-10-06,Active,True,True,True,True
+EMP-0091,Linda,Ross,PH-005,Assistant Manager,Management,2024-06-11,Active,True,True,True,True
+EMP-0092,John,Johnson,PH-005,Pharmacist,Pharmacy,2020-06-25,Active,False,False,False,True
+EMP-0093,Ava,Garcia,PH-005,Pharmacist,Pharmacy,2025-06-18,Active,False,False,False,True
+EMP-0094,Emily,Chen,PH-005,Pharmacist,Pharmacy,2024-04-21,Active,False,False,False,True
+EMP-0095,Grace,Smith,PH-005,Pharmacy Technician,Pharmacy,2021-02-18,Active,False,False,False,True
+EMP-0096,Marcus,Hill,PH-005,Pharmacy Technician,Pharmacy,2023-11-01,Active,False,False,False,True
+EMP-0097,Rachel,Smith,PH-005,Pharmacy Technician,Pharmacy,2023-08-11,Active,False,False,False,True
+EMP-0098,David,Moore,PH-005,Pharmacy Technician,Pharmacy,2019-08-10,Active,False,False,False,True
+EMP-0099,Mia,Taylor,PH-005,Pharmacy Technician,Pharmacy,2020-02-08,Active,False,False,False,True
+EMP-0100,Robert,Reed,PH-005,Shift Supervisor,Front Store,2022-10-21,Active,True,True,True,False
+EMP-0101,Grace,Hill,PH-005,Shift Supervisor,Front Store,2021-10-15,Active,True,True,True,False
+EMP-0102,Daniel,Ross,PH-005,Cashier,Front Store,2025-01-05,Active,True,False,False,False
+EMP-0103,David,Carter,PH-005,Cashier,Front Store,2023-09-25,Active,True,False,False,False
+EMP-0104,Sarah,Ross,PH-005,Cashier,Front Store,2024-03-09,Active,True,False,False,False
+EMP-0105,Linda,Tran,PH-005,Cashier,Front Store,2023-12-21,Active,True,False,False,False
+EMP-0106,Grace,Johnson,PH-005,Cashier,Front Store,2020-02-06,Active,True,False,False,False
+EMP-0107,Robert,Taylor,PH-005,Cashier,Front Store,2025-01-23,Active,True,False,False,False
+EMP-0108,Amanda,Tran,PH-005,Cashier,Front Store,2021-08-26,Active,True,False,False,False
+EMP-0109,Sarah,Smith,PH-005,Inventory Associate,Inventory,2024-06-12,Active,False,False,False,False
+EMP-0110,Emily,Martinez,PH-005,Inventory Associate,Inventory,2023-07-01,Active,False,False,False,False

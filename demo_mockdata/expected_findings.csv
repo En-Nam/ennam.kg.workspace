@@ -1,0 +1,7 @@
+finding_id,severity,finding_type,store_id,employee_id,summary,recommended_action
+FND-001,High,Excessive refund activity,PH-001,EMP-0006,"Sarah Miller refund rate is far above company average, with many no-receipt and late-evening refunds.",Review linked refunds and manager approvals.
+FND-002,High,Inventory shrinkage,PH-005,,Large negative inventory variances are concentrated in OTC and medical supplies.,Perform cycle count and review adjustment history.
+FND-003,High,Duplicate refunds,Multiple,,Twelve original transactions appear to have been refunded twice.,Review cross-store refund activity and payment methods.
+FND-004,Medium,Manager override concentration,PH-002,EMP-0023,Evening price overrides and discounts are unusually concentrated under one manager.,Review override approvals and affected employees.
+FND-005,High,Claim rejection rate,PH-004,,Insurance claim rejection rate is materially above chain average.,Review rejection codes and technician shifts.
+FND-006,High,Cash drawer shortages,PH-005,EMP-0102,Repeated shortages coincide with no-sale drawer openings on closing shifts.,Review drawer sessions and cash refunds.
