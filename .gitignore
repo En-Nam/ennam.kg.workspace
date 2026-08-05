@@ -3,7 +3,7 @@
 /ennam.kg.python/
 /ennam.kg.next/
 /ennam.kg.requirements/
-
+/LAAM/
 # --- Secrets / local (NEVER commit) ---
 /.env
 /SECRET.md
