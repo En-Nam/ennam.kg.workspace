@@ -1,50 +1,51 @@
-# QA — fresh (unrehearsed) questions vs LAAM+DAAB, 2026-08-05
+# QA — Michael Pharmacy Chain, 12 câu hỏi demo — 2026-08-10
 
-Questions LAAM had never seen, run after `499146a` + `16e861c`, text mode. Expected answers
-computed from `pharmacy_demo` FIRST. Purpose: test generalisation beyond the rehearsed 12, and
-re-attempt the row-fabrication bug on other many-row questions.
-See `mem:backlog/daab-q8-column-semantics-and-row-fabrication`.
+Chạy qua LAAM (localhost:3100, gpt-oss-120b) sau 4 thay đổi hop-reduction hôm nay.
+Mỗi câu một hội thoại MỚI, gửi đúng nguyên văn trong `docs/demo-script-michael-pharmacy-12-questions.md`.
+Đối chiếu đáp án kỳ vọng trong chính file đó.
 
-| # | Question | Verdict |
-|---|---|---|
-| N1 | Which store has the most employees? | PASS — PH-005, 22 |
-| N2 | Which is our busiest store? | FAILED then FIXED (see P2) |
-| N3 | Did any employee refund at a store they don't work at? | transient BytePlus API error |
-| N4 | Which prescription drug is rejected by insurance most often? | PASS |
-| N5 | List every void transaction with employee and reason | PASS — key result |
+## Kết quả: 11/12 đạt, 1 sai
 
-## N2 — the one real defect, now fixed (commit `396e19f`)
-1 of 2 runs answered with **0 tool calls**, claiming no revenue/traffic data existed. Mechanism:
-the P1 rule ("don't pick a column when several are plausible") was over-generalised by the model
-into "can't commit to a metric ⇒ can't query ⇒ refuse". P2 states the intended path explicitly
-(send the question down; the lower layer asks) and forbids claiming "no data" before calling any
-tool. **Re-verified with 4 fresh threads: 0/4 refused**, all queried, all converged on PH-002
-(1,062 transactions all-time / 209,047.13 revenue — both match the DB); one of the four asked
-the user to choose the metric, which is also correct.
+| # | Câu | Kỳ vọng | Thực tế | Tool | KQ |
+|---|---|---|---|---|---|
+| 1 | Which employee refunds the most? | Sarah Miller EMP-0006, $3,689.32 | đúng | 2 | ✅ |
+| 2 | Show every refund processed by Sarah Miller. | 62 lần + bảng | 62, có bảng | 2 | ✅ |
+| 3 | Which managers approve the most refunds? | Ava Ross 23, Amanda Lee 19, Ethan Hill 18 | đúng cả 3 | 2 | ✅ |
+| 4 | **Show duplicate refunds across stores.** | **9 giao dịch** | **8, 8, 2 (3 lần chạy)** | 2/2/6 | ❌ |
+| 5 | Which products are most frequently refunded? | School Supplies Value Pack đứng đầu theo số lần | đúng, 6 lần | 2 | ✅ |
+| 6 | Show the full receipt … selected transaction. | AI hỏi lại "giao dịch nào?" | hỏi lại | 0 | ✅ |
+| 7 | Which stores have the highest inventory variance? | PH-005; script cảnh báo 2 cách đo ngược nhau | DAAB HỎI LẠI value vs quantity | 2 | ✅+ |
+| 8 | Which products have negative inventory? | "không có sản phẩm nào" | đúng, dùng system_quantity (không rơi bẫy variance_quantity) | 4 | ✅ |
+| 9 | Which employee has repeated cash drawer shortages? | Robert Reed 9 lần / 58 nhân viên | đúng cả hai số | 2 | ✅ |
+| 10 | Which store has the highest insurance claim rejection rate? | PH-004, 15.47% | đúng | 2 | ✅ |
+| 11 | Compare store sales, refunds, inventory variance, and claims. | ⚠️ hay quá tải/thiếu | HỎI LẠI (variance value/qty, sales amount/profit) | 2 | ✅+ |
+| 12 | Show all after-hours overrides and sensitive activities. | ⚠️ mơ hồ nhất, hỏi lại nhiều lượt | hỏi lại, liệt kê các định nghĩa flagged | 3 | ✅ |
 
-## Row fabrication — TWO attempts, NOT reproduced
-- N5, 120 rows: 50 distinct rows, no repeats, three sampled rows matched the DB exactly, and it
-  disclosed the cut honestly ("chỉ hiển thị 50 bản ghi đầu trong tổng 120").
-- `discount_overrides`, 311 rows: it asked which amount column was meant
-  (`discount_amount` / `adjusted_amount` / `original_amount`) — correct, but produced no big table.
-Conclusion: likely a one-off degeneration on Q8, plausibly aggravated by a wrong-column result
-full of near-identical rows. Do not chase further without a fresh reproduction.
+`✅+` = tốt hơn kỳ vọng: script ghi ⚠️ nhưng cơ chế hỏi-lại của DAAB xử lý đúng.
 
-## Minor, observed once each — NOT acted on
-- One answer labelled a USD figure as "đồng" (VND). 1 of 4 runs.
-- One of six sampled DAAB clarifying questions just echoed the user's question back as the stem.
+## Câu 4 — sai thật, và KHÔNG phải do thay đổi hôm nay
 
-## THREE GRADING ERRORS I MADE — the real lesson of this session
-Every one was my verification being wrong, not the product:
-1. **N4 "wrong answer"** — I graded with `GROUP BY product_name`, but **6 distinct product_ids
-   share the name "Mock Rx Product DTravel"**, so my ground truth merged six drugs into a bogus
-   13. The AI grouped by `product_id` and correctly returned PRD-00316, 6. **AI was right.**
-2. **"DAAB returns an empty clarification question"** — my probe read `clarification.question`;
-   the field is `clarifying_question`. No defect existed.
-3. **"DAAB picks the wrong column for Q8"** — DAAB asks correctly 4/4 when given the user's
-   actual words; LAAM was rewriting the question first.
+Planner nối theo **`customer_id`** (cùng KHÁCH, khác cửa hàng) thay vì **`original_transaction_id`**
+(cùng GIAO DỊCH GỐC bị hoàn ở 2 nơi). Kiểm chứng trực tiếp trên `pharmacy_demo`:
+- đúng: `group by original_transaction_id having count(distinct store_id) > 1` → **9**
+- planner: `group by customer_id …` → **8**
 
-Pattern: an apparent product bug was an artifact of my own tooling or ground-truth query three
-times. Before reporting a defect, re-derive the expected value a second, independent way —
-especially when the system's answer is internally consistent (correct SQL, figures taken
-straight from `ai_queries.results`).
+Con số 8 là thật nhưng trả lời một câu hỏi KHÁC, và câu trả lời trình bày nó như thể đúng.
+
+**Bằng chứng không phải regression:** lần chạy 04:55:01 gửi xuống DAAB **nguyên văn**
+"Show duplicate refunds across stores." — planner vẫn chọn `customer_id`. Text vào đúng như ý,
+key ra vẫn sai ⇒ lỗi nằm hoàn toàn trong planner của DAAB, các thay đổi ở LAAM/bridge hôm nay
+không thể là nguyên nhân. Commit `ec949ac` (2026-08-07, TRƯỚC hôm nay) trích đúng câu SQL với
+đúng join key này. Bản vá lúc đó là một NOTE, không sửa việc chọn key.
+
+⚠️ `docs/demo-script-michael-pharmacy-12-questions.md` ghi câu 4 là "✅ 9 giao dịch — đã sửa".
+**Không tái hiện được.** Nên sửa lại tài liệu, hoặc sửa planner, trước khi demo.
+
+Phụ: 2 lần chạy sau, LAAM viết lại câu hỏi 4 lần liên tiếp (chốt "same customer, same amount,
+same datetime") và kết quả tụt còn **2 dòng** — vấn đề viết-lại-câu-hỏi làm một đáp án sai thành
+sai nặng hơn. Xem `mem:decisions/tool-result-notes-ignored-by-model`.
+
+## Hiệu năng
+Không câu nào cần quá 6 tool call. Các câu tra cứu thẳng đều **2 call**
+(`kg_query_datasource` + `kg_query_datasource_status`) — trước loạt sửa hôm nay là 5.
+`kg_list_projects` / `kg_list_datasources` không xuất hiện ở bất kỳ câu nào.
