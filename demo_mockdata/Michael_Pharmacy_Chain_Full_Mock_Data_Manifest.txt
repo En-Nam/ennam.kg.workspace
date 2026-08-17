@@ -45,6 +45,8 @@ Most important files
 transactions.csv
 transaction_items.csv
 payments.csv
+invoices.csv
+receipts.csv
 refunds.csv
 refund_items.csv
 discount_overrides.csv
@@ -66,6 +68,9 @@ Intentional anomalies
 6. Daniel Ross at PH-005 has repeated cash drawer shortages.
 7. PH-004 has a July front-store sales decline.
 8. Some products at PH-004 contain expired stock.
+9. Sarah Miller reprinted original receipts shortly before her own refunds of the same
+   transactions (receipts.csv, print_type Reprint by EMP-0006) - this is how the
+   "original receipt present" flag on her refunds was satisfied.
 
 Recommended Friday demo flow
 ----------------------------
@@ -94,9 +99,11 @@ insurance_claims.csv
 inventory_adjustments.csv
 inventory_movements.csv
 inventory_snapshots.csv
+invoices.csv
 payments.csv
 prescriptions.csv
 products.csv
+receipts.csv
 refund_items.csv
 refunds.csv
 stores.csv

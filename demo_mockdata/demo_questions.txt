@@ -10,3 +10,8 @@
 10. Which store has the highest insurance claim rejection rate?
 11. Compare store sales, refunds, inventory variance, and claims.
 12. Show all after-hours overrides and sensitive activities.
+13. Which invoices are overdue, and what is the total outstanding amount by store?
+14. Show the complete document trail for transaction TXN-0000857: line items, payments, receipt prints, invoice, and any refund.
+15. Which employees reprint receipts the most?
+16. List receipt reprints that happened shortly before a refund of the same transaction. Who printed them?
+17. What share of invoices are corporate versus personal, and which store has the highest corporate share?
