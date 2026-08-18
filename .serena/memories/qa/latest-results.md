@@ -1,51 +1,47 @@
-# QA — Michael Pharmacy Chain, 12 câu hỏi demo — 2026-08-10
+# QA — Pharmacy demo Q13–Q17 (2026-08-17, CHỐT SAU KHI VÁ + WARM CACHE)
 
-Chạy qua LAAM (localhost:3100, gpt-oss-120b) sau 4 thay đổi hop-reduction hôm nay.
-Mỗi câu một hội thoại MỚI, gửi đúng nguyên văn trong `docs/demo-script-michael-pharmacy-12-questions.md`.
-Đối chiếu đáp án kỳ vọng trong chính file đó.
+DB `pharmacy_demo` 2026-08-17 (21 bảng) · `daab-postgres:5433` · kg-server build lần 3.
+Chuỗi bắt buộc sau khi đổi data: extract-schema → sync-schema → **generate-kg**.
+DAAB commit: `7cef8fe` (value-hints cap) + `3623470` (time window) trên
+`task/implement_docs_sync` — **đã commit, CHƯA push**.
 
-## Kết quả: 11/12 đạt, 1 sai
+## BỘ CÂU HỎI DÙNG CHO DEMO — 7 plan đã verify + đang ấm trong cache
 
-| # | Câu | Kỳ vọng | Thực tế | Tool | KQ |
-|---|---|---|---|---|---|
-| 1 | Which employee refunds the most? | Sarah Miller EMP-0006, $3,689.32 | đúng | 2 | ✅ |
-| 2 | Show every refund processed by Sarah Miller. | 62 lần + bảng | 62, có bảng | 2 | ✅ |
-| 3 | Which managers approve the most refunds? | Ava Ross 23, Amanda Lee 19, Ethan Hill 18 | đúng cả 3 | 2 | ✅ |
-| 4 | **Show duplicate refunds across stores.** | **9 giao dịch** | **8, 8, 2 (3 lần chạy)** | 2/2/6 | ❌ |
-| 5 | Which products are most frequently refunded? | School Supplies Value Pack đứng đầu theo số lần | đúng, 6 lần | 2 | ✅ |
-| 6 | Show the full receipt … selected transaction. | AI hỏi lại "giao dịch nào?" | hỏi lại | 0 | ✅ |
-| 7 | Which stores have the highest inventory variance? | PH-005; script cảnh báo 2 cách đo ngược nhau | DAAB HỎI LẠI value vs quantity | 2 | ✅+ |
-| 8 | Which products have negative inventory? | "không có sản phẩm nào" | đúng, dùng system_quantity (không rơi bẫy variance_quantity) | 4 | ✅ |
-| 9 | Which employee has repeated cash drawer shortages? | Robert Reed 9 lần / 58 nhân viên | đúng cả hai số | 2 | ✅ |
-| 10 | Which store has the highest insurance claim rejection rate? | PH-004, 15.47% | đúng | 2 | ✅ |
-| 11 | Compare store sales, refunds, inventory variance, and claims. | ⚠️ hay quá tải/thiếu | HỎI LẠI (variance value/qty, sales amount/profit) | 2 | ✅+ |
-| 12 | Show all after-hours overrides and sensitive activities. | ⚠️ mơ hồ nhất, hỏi lại nhiều lượt | hỏi lại, liệt kê các định nghĩa flagged | 3 | ✅ |
+| # | Câu hỏi (dùng NGUYÊN VĂN) | Kết quả đã verify |
+|---|---------------------------|-------------------|
+| 13 | Which invoices are overdue, and what is the total outstanding amount by store? | PH-003 4463.13 · PH-001 4064.43 · PH-002 3900.23 · PH-004 2488.58 · PH-005 2215.88 |
+| 14 | Show the complete document trail for transaction TXN-0000857: line items, payments, receipt prints, invoice, and any refund. | 6 dòng, đủ 6 bảng. Kể trọn FND-007. Fan-out — đừng SUM `amount`. |
+| 15 | Which employees reprint receipts the most? | EMP-0006 **50** · EMP-0001 7 · EMP-0038 6 · EMP-0040 5 |
+| 16 | List receipt reprints that happened shortly before a refund of the same transaction. Who printed them? | 50 dòng, **40 của Sarah**. Không có chặn trên thời gian. |
+| **16b** ⭐ | **For each employee, how many times did they reprint a receipt and then, in the following 48 hours, process a refund for that same transaction? Only count reprints that came before the refund.** | **Sarah Miller (EMP-0006) = 40**, đúng 1 dòng, có TÊN. Khớp tuyệt đối answer key FND-007. |
+| 17 | *(nguyên văn HỎNG 4/4 — đừng dùng)* Thay bằng 17b/17c ↓ | |
+| **17b** vi | **Cửa hàng nào có tỉ lệ hóa đơn xuất cho doanh nghiệp cao nhất, so với hóa đơn cho khách lẻ?** | PH-002 **35,27%** ✓ |
+| **17b** en | **Which store has the highest proportion of invoices billed to companies rather than to individuals?** | PH-002 **35,27%** ✓ |
+| **17c** en | **Across all invoices, how many are billed to companies and how many to individuals?** | companies **314** / individuals **658** ✓ (32,3% / 67,7%) |
 
-`✅+` = tốt hơn kỳ vọng: script ghi ⚠️ nhưng cơ chế hỏi-lại của DAAB xử lý đúng.
+**16b là câu mạnh nhất cho FND-007**: đời thường (KHÔNG tên cột), ra đúng con số answer key,
+kèm tên nhân viên. Chỉ chạy được nhờ 2 bản vá — trước đó câu này bất khả thi.
 
-## Câu 4 — sai thật, và KHÔNG phải do thay đổi hôm nay
+## Cạm bẫy đã đo được về cách hỏi (dùng để soạn kịch bản demo)
+- "…and then refunded that same transaction within 48 hours" (KHÔNG nói rõ thứ tự) → planner bỏ
+  chặn dưới ⇒ **42** thay vì 40, gồm 5 ca refund xảy ra TRƯỚC reprint (ngược logic). Sai tinh vi,
+  Sarah vẫn nổi bật nên dễ lọt. **Phải thêm "Only count reprints that came before the refund."**
+- Câu 17 nguyên văn (ghép 2 ý) hỏng ỔN ĐỊNH 4/4; câu đơn ~50/50 ⇒ tách từng ý.
 
-Planner nối theo **`customer_id`** (cùng KHÁCH, khác cửa hàng) thay vì **`original_transaction_id`**
-(cùng GIAO DỊCH GỐC bị hoàn ở 2 nơi). Kiểm chứng trực tiếp trên `pharmacy_demo`:
-- đúng: `group by original_transaction_id having count(distinct store_id) > 1` → **9**
-- planner: `group by customer_id …` → **8**
+## Đã chủ động XOÁ khỏi cache 3 plan hỏng/sai
+Q17 nguyên văn (tautology) · câu Q16 kỹ thuật cũ (lỗi interval, nay đã vá nhưng bản kỹ thuật
+không hợp demo) · bản 16 cho ra 42. ⇒ Cache chỉ còn plan đã verify đúng.
+⚠️ **KHÔNG xoá cache trước demo. KHÔNG rebuild sát giờ demo** (rebuild ⇒ buộc phải clear ⇒ warm lại).
 
-Con số 8 là thật nhưng trả lời một câu hỏi KHÁC, và câu trả lời trình bày nó như thể đúng.
+## Bản vá đã chứng minh trên thực tế
+- `sql_generator.go` (interval): SQL sinh ra chứa `<= r.printed_datetime + interval '48 hours'` ✓
+- `plan_harden.go` (EXTRACT/EPOCH): dạng `EXTRACT(EPOCH FROM …)` giờ chạy, trước đây báo
+  "unknown column(s) EPOCH" ✓
+- `value_hints.go` (cap 200): "How many voids happened after the receipt was printed…" dùng đúng
+  literal `'After Receipt Printed'` → 36 dòng khớp ground truth ✓
 
-**Bằng chứng không phải regression:** lần chạy 04:55:01 gửi xuống DAAB **nguyên văn**
-"Show duplicate refunds across stores." — planner vẫn chọn `customer_id`. Text vào đúng như ý,
-key ra vẫn sai ⇒ lỗi nằm hoàn toàn trong planner của DAAB, các thay đổi ở LAAM/bridge hôm nay
-không thể là nguyên nhân. Commit `ec949ac` (2026-08-07, TRƯỚC hôm nay) trích đúng câu SQL với
-đúng join key này. Bản vá lúc đó là một NOTE, không sửa việc chọn key.
-
-⚠️ `docs/demo-script-michael-pharmacy-12-questions.md` ghi câu 4 là "✅ 9 giao dịch — đã sửa".
-**Không tái hiện được.** Nên sửa lại tài liệu, hoặc sửa planner, trước khi demo.
-
-Phụ: 2 lần chạy sau, LAAM viết lại câu hỏi 4 lần liên tiếp (chốt "same customer, same amount,
-same datetime") và kết quả tụt còn **2 dòng** — vấn đề viết-lại-câu-hỏi làm một đáp án sai thành
-sai nặng hơn. Xem `mem:decisions/tool-result-notes-ignored-by-model`.
-
-## Hiệu năng
-Không câu nào cần quá 6 tool call. Các câu tra cứu thẳng đều **2 call**
-(`kg_query_datasource` + `kg_query_datasource_status`) — trước loạt sửa hôm nay là 5.
-`kg_list_projects` / `kg_list_datasources` không xuất hiện ở bất kỳ câu nào.
+## Còn tồn
+- Planner phi tất định (xem `mem:decisions/daab-nl-planner-nondeterminism`) — bảng trên chỉ
+  đảm bảo đúng chừng nào cache còn nguyên.
+- Gốc rễ chưa sửa: model không bật `value_is_expression`. Hai bản vá là lưới hứng tầng dưới.
+- 2 commit DAAB chưa push.
