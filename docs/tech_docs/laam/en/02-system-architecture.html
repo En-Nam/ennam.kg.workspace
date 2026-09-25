@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LAAM — System Architecture</title>
+<link rel="stylesheet" href="../../tooling/doc.css">
+<style>
+  .figure .diagram svg { max-height: var(--mh, 150mm); }
+  table.api { font-size: 7.8pt; }
+  table.api td { padding: 1px 5px; line-height: 1.3; }
+  table.api tr:has(td[colspan]) { break-after: avoid; page-break-after: avoid; }
+  section.chapter.cont { page-break-before: auto; margin-top: 26px; }
+  .kpis .kpi { break-inside: avoid; page-break-inside: avoid; }
+</style>
+</head>
+<body class="p-laam">
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div class="band">
+    <div class="kicker">Technical Documentation Pack · Document 02</div>
+    <h1>LAAM</h1>
+    <div class="sub">System Architecture</div>
+    <p class="lede" style="margin-top:18px;max-width:150mm">Components, request flows, the agent and workflow engines, the model and connector layers, the data model and the integration surface of a self-hosted, multi-user AI work assistant.</p>
+  </div>
+  <div class="meta">
+    <div><b>Version</b>1.0</div>
+    <div><b>Date</b>2026-09-24</div>
+    <div><b>Code baseline</b>LAAM @ 7eb0724</div>
+  </div>
+</section>
+
+<!-- ============================ TOC ============================ -->
+<section class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><span class="n">1</span>Overview and design principles</li>
+    <li><span class="n">2</span>System context</li>
+    <li><span class="n">3</span>Component architecture</li>
+    <li><span class="n">4</span>Chat and agent engine
+      <ul><li>Turn lifecycle · prompt and persona precedence · tool loop · streaming protocol · reasoning effort · context management</li></ul></li>
+    <li><span class="n">5</span>Model provider layer</li>
+    <li><span class="n">6</span>Tools and connectors
+      <ul><li>Internal tools · built-in connectors · MCP client · result handling</li></ul></li>
+    <li><span class="n">7</span>Reliability guards</li>
+    <li><span class="n">8</span>Workflow engine
+      <ul><li>Graph model · execution modes · durability and idempotent writes · triggers and scheduler</li></ul></li>
+    <li><span class="n">9</span>AI workflow authoring</li>
+    <li><span class="n">10</span>Voice pipeline</li>
+    <li><span class="n">11</span>Data model</li>
+    <li><span class="n">12</span>API surface</li>
+    <li><span class="n">13</span>Evaluation harness</li>
+    <li><span class="n">A</span>Appendix — API endpoint reference</li>
+  </ol>
+  <p class="small" style="margin-top:16px">Status vocabulary used throughout:
+    <span class="pill ok">LIVE</span> implemented, wired and exercised with real data ·
+    <span class="pill warn">BUILT</span> implemented and wired, not yet exercised with production data ·
+    <span class="pill off">PLANNED</span> roadmap, flag-off by default, or interface only.
+    Deployment status: <b>pre-production</b> — LAAM runs today as a self-hosted Docker Compose stack for development, internal use and demonstrations.</p>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section class="chapter">
+<h2><span class="n">1</span>Overview and design principles</h2>
+
+<p class="lede">LAAM is a self-hosted, multi-user AI work assistant. People ask business questions in chat or by voice; LAAM answers them against live data by calling tools on connected systems. In chat, every write to a connected system waits for the user to confirm a code-built preview; scheduled workflows may write only through tools marked workflow-safe and only to allow-listed recipients. The same tool layer powers durable, schedulable workflow graphs that an AI can author and test-run on the user's behalf.</p>
+
+<p>LAAM is a single Next.js 16 application (React 19, TypeScript strict) backed by PostgreSQL 16. It ships seven product surfaces:</p>
+
+<table>
+<thead><tr><th style="width:22%">Surface</th><th>What it does</th><th style="width:11%">Status</th></tr></thead>
+<tbody>
+<tr><td><b>Chat</b> <code>/chat</code></td><td>Multi-provider LLM assistant with tool calling over connectors and MCP servers, write-confirm cards, file attachments (PDF, DOCX, images, OCR), rich rendering (tables, charts, maps) and per-user workspaces with a shared persona.</td><td><span class="pill ok">LIVE</span></td></tr>
+<tr><td><b>Voice</b> <code>/constellation</code></td><td>Full-screen, hands-free voice command centre: browser speech recognition, voice-activity barge-in, streaming neural text-to-speech from a self-hosted service.</td><td><span class="pill ok">LIVE</span></td></tr>
+<tr><td><b>Workflows</b> <code>/workflows</code></td><td>Durable graph automations (agent, connector, MCP, condition, for-each nodes; optional parallel execution), cron schedules, dry-run, and AI authoring that test-runs the graphs it proposes. The workflow engine is LIVE; the cron scheduler and AI authoring are BUILT.</td><td><span class="pill ok">LIVE</span> / <span class="pill warn">BUILT</span></td></tr>
+<tr><td><b>Connectors</b> <code>/connectors</code></td><td>12 built-in connectors (11 integrations and 1 offline demo) plus any number of per-user remote MCP servers, with encrypted per-user credentials and OAuth where the provider supports it.</td><td><span class="pill ok">LIVE</span> / <span class="pill warn">BUILT</span></td></tr>
+<tr><td><b>Search</b> <code>/search</code></td><td>Global search across monitored sessions, the caller's conversations (including message content) and workflows, using trigram indexes.</td><td><span class="pill warn">BUILT</span></td></tr>
+<tr><td><b>Access</b> <code>/settings/*</code></td><td>Role-based access control (owner / admin / member / viewer), off-boarding, personal API and MCP access tokens, admin-provisioned keys, per-user custom agents.</td><td><span class="pill ok">LIVE</span></td></tr>
+<tr><td><b>Monitoring</b> <code>/monitoring</code></td><td>Real-time view of AI coding-agent sessions (ingested from transcript files by a collector) and of LAAM's own chat and workflow runs, including model, tools, tokens and cost.</td><td><span class="pill ok">LIVE</span></td></tr>
+</tbody>
+</table>
+
+<p>LAAM is also an MCP <i>server</i> <span class="pill warn">BUILT</span>: external agents holding an access token can call nine read-only tools over <code>POST /api/mcp</code>.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">26</div><div class="l">Page routes</div></div>
+  <div class="kpi"><div class="v">88</div><div class="l">API method handlers (64 route files)</div></div>
+  <div class="kpi"><div class="v">22</div><div class="l">Postgres tables · 19 migrations</div></div>
+  <div class="kpi"><div class="v">363</div><div class="l">Test files (Vitest)</div></div>
+  <div class="kpi"><div class="v">12</div><div class="l">Built-in connectors · 46 tools</div></div>
+  <div class="kpi"><div class="v">12</div><div class="l">Internal agent tools</div></div>
+  <div class="kpi"><div class="v">5</div><div class="l">LLM providers supported</div></div>
+  <div class="kpi"><div class="v">3</div><div class="l">UI languages (vi · en · zh)</div></div>
+</div>
+<p class="small">All figures counted from the source tree at commit <code>7eb0724</code>. The 12 built-in connectors are 11 integrations and 1 offline demo; 14 of their 46 tools are writes. The Vitest suite holds 3,573 test cases in 363 files (3,567 passing when re-run on the baseline, 2026-09-24).</p>
+
+<h3>Design principles</h3>
+<p>Five principles recur through the code and explain most of the architecture described in later chapters. Each is backed by code or tests rather than by convention alone.</p>
+
+<table>
+<thead><tr><th style="width:26%">Principle</th><th>How it is enforced</th></tr></thead>
+<tbody>
+<tr><td><b>Use the model only for judgement</b></td><td>Routing, retries, extraction, arithmetic, table building and write execution are done by code. The model decides <i>which</i> tool to call and how to phrase the answer. Example: result tables are built from the tool's rows by code and streamed as a separate frame, so the model never retypes numbers.</td></tr>
+<tr><td><b>Human confirms writes in chat</b></td><td>A tool counts as a read only when it is declared read-only by a built-in connector, or by an MCP server the user has marked trusted; everything else is treated as a write. In chat, every write to a connected system suspends the turn and waits for the user to confirm a code-built preview; the confirmed call runs in code with the sealed arguments, and its nonce is checked against the audit log. Scheduled and unattended workflows may execute writes only for tools marked workflow-safe and only to allow-listed recipients; all other writes fail closed.</td></tr>
+<tr><td><b>Fail loud</b></td><td>No silent provider fallback, no blank replies, no "success" without an executed write. Each failure path produces a coded, tri-lingual notice or a failed step that names the cause.</td></tr>
+<tr><td><b>Model-provider-agnostic</b></td><td>Five providers sit behind one internal adapter contract. Chat users pick a model; background tasks resolve one through a deterministic router. Capabilities (tools, vision, structured output) are checked per provider.</td></tr>
+<tr><td><b>Connector-agnostic</b></td><td>External systems plug in through a generic <code>Connector</code> interface or as user-added MCP servers, and the integration layer is generic. Connector-specific behaviour (for example list-to-detail drill-down pairs) is supplied through configuration. A few model-facing prompt strings still reference one knowledge-graph server's tools; their cleanup is tracked.</td></tr>
+</tbody>
+</table>
+
+<div class="callout info"><span class="t">No code execution by the agent</span>A test in the unit suite fails if process spawning, <code>eval</code>, <code>new Function</code> or the <code>vm</code> module appear anywhere in the agent or workflow engines; there is no CI yet, so the suite is run by hand. The internal tools and the workflow node kinds are fixed in code, and the test also checks tool names and count. The assistant can only act through declared tools.</div>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">2</span>System context</h2>
+
+<p>LAAM runs as one application container on a customer-controlled host, next to its database and two optional sidecar services. Everything the assistant knows about the outside world arrives through one of four channels: LLM providers, connectors (built-in or MCP), web search, and public geo and weather services. Users reach it from a browser on desktop or mobile.</p>
+
+<table>
+<thead><tr><th style="width:24%">External actor</th><th>Interaction</th><th style="width:22%">Credential</th></tr></thead>
+<tbody>
+<tr><td>Users</td><td>Chat turns, voice turns, workflow authoring and runs, connector management, administration.</td><td>Email and password (bcrypt), JWT session</td></tr>
+<tr><td>External AI agents</td><td>Call LAAM's nine read-only monitoring tools over MCP; every call is itself recorded as a monitored session.</td><td>Personal access token (<code>api</code> or <code>mcp</code> kind)</td></tr>
+<tr><td>LLM providers</td><td>Chat completions, tool calling, structured output. Server-side keys only; never sent to the browser.</td><td>Operator API keys (environment)</td></tr>
+<tr><td>Built-in connectors</td><td>Read and write through each provider's REST API.</td><td>Per-user token or OAuth grant, encrypted at rest</td></tr>
+<tr><td>MCP servers</td><td>Tool discovery (<code>tools/list</code>), tool calls, server instructions.</td><td>Per-user bearer token and headers, encrypted at rest</td></tr>
+<tr><td>Collectors</td><td>Push parsed coding-agent session metadata with short, pattern-redacted text snippets (never full transcripts) from developer machines.</td><td>Collector access token</td></tr>
+<tr><td>Host scheduler</td><td>Pokes the workflow tick endpoint once a minute.</td><td>Shared secret (constant-time compare)</td></tr>
+</tbody>
+</table>
+
+<div class="figure" style="--mh:106mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart LR
+  subgraph People["Callers"]
+    direction TB
+    U["Users (browser)&lt;br/&gt;over HTTPS"]
+    EA["External AI agents&lt;br/&gt;over MCP"]
+    COL["Collectors&lt;br/&gt;push to ingest"]
+    HS["Host scheduler&lt;br/&gt;calls tick"]
+  end
+  L["LAAM"]
+  subgraph Out["Outbound dependencies"]
+    direction TB
+    CL["Cloud LLMs: BytePlus,&lt;br/&gt;Cerebras, DeepSeek, Anthropic"]
+    OL["Local LLM: Ollama"]
+    BI["Built-in connectors (12)"]
+    MCP["User-added MCP servers"]
+    SX["SearXNG web search"]
+    TTS["Neural TTS service"]
+    GEO["Geo and weather APIs"]
+  end
+  U --&gt; L
+  EA --&gt; L
+  COL --&gt; L
+  HS --&gt; L
+  L --&gt; CL
+  L --&gt; OL
+  L --&gt; BI
+  L --&gt; MCP
+  L --&gt; SX
+  L --&gt; TTS
+  L --&gt; GEO
+</pre>
+<div class="cap"><b>Figure 1.</b> System context. LAAM is the only component users talk to; all model and connector credentials stay server-side.</div>
+</div>
+
+
+
+<h3>Deployment shape</h3>
+<p>The reference deployment is a Docker Compose stack on a single GPU-equipped host: the LAAM application container (multi-stage <code>node:24-alpine</code> image, Next.js standalone output, non-root user, health check; OCR and PDF binaries bundled), the TTS service, SearXNG and a database admin UI. PostgreSQL 16 is an external instance shared with other services on the host network. Ollama and a small host-metrics agent run natively on the host so they can reach the GPU. Ingress is through a private mesh-VPN, optionally published to the internet through the same VPN's tunnel feature. Infrastructure, security and operations are covered in document 03 of this pack.</p>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">3</span>Component architecture</h2>
+
+<p>Inside the application, a thin HTTP layer (App Router pages and API route handlers) sits on a set of library modules under <code>src/lib</code>. The route handlers own authentication, request validation and streaming; the library modules own all behaviour and are unit-tested without a server.</p>
+
+<div class="figure" style="--mh:137mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  subgraph Edge["HTTP layer (Next.js 16)"]
+    PX["proxy.ts:&lt;br/&gt;session check"]
+    UI["26 pages&lt;br/&gt;(React 19)"]
+    API["64 API&lt;br/&gt;route files"]
+  end
+  subgraph Lib["Library modules (src/lib)"]
+    MON["monitoring:&lt;br/&gt;parsers, pricing"]
+    BUS["events bus,&lt;br/&gt;notifications"]
+    CON["connectors:&lt;br/&gt;OAuth, crypto,&lt;br/&gt;MCP client"]
+    AG["agent: tool loop,&lt;br/&gt;guards,&lt;br/&gt;safety gate"]
+    LLM["llm: adapters,&lt;br/&gt;internal router"]
+    WF["workflow:&lt;br/&gt;engine, journal,&lt;br/&gt;scheduler"]
+  end
+  subgraph Data["Stateful services"]
+    PG[("PostgreSQL 16&lt;br/&gt;+ pg_trgm")]
+    SX["SearXNG"]
+    TT["VieNeu TTS"]
+    OL["Ollama"]
+  end
+  PX --&gt; UI
+  PX --&gt; API
+  API --&gt; AG
+  API --&gt; WF
+  WF --&gt; AG
+  AG --&gt; LLM
+  AG --&gt; CON
+  WF --&gt; CON
+  WF --&gt; BUS
+  MON --&gt; BUS
+  AG --&gt; SX
+  API --&gt; TT
+  LLM --&gt; OL
+  Lib --&gt; PG
+</pre>
+<div class="cap"><b>Figure 2.</b> Component architecture. Cloud LLM providers and connector APIs (not shown) are reached from the <code>llm</code> and <code>connectors</code> modules; the <code>auth</code> and <code>mcp-server</code> modules are omitted for readability.</div>
+</div>
+
+<table>
+<thead><tr><th style="width:20%">Component</th><th>Responsibility</th><th style="width:21%">Location</th></tr></thead>
+<tbody>
+<tr><td>Route protection</td><td>Edge-safe session check on every non-static path; a short public allow-list (landing, login, register, and three token- or secret-authenticated endpoints: ingest, MCP, workflow tick).</td><td><code>src/proxy.ts</code></td></tr>
+<tr><td>Chat route</td><td>The chat turn: validation, conversation load, history budget, tool surface, prompt, provider branch, streaming frames, write suspension and confirmation.</td><td><code>app/api/chat/route.ts</code></td></tr>
+<tr><td>Agent engine</td><td>Tool loop (<code>runToolRounds</code>), safety gate, guards and nudges, result panels and digests, context eviction, summarisation.</td><td><code>lib/agent</code></td></tr>
+<tr><td>Provider layer</td><td>Adapters for Ollama, BytePlus, Cerebras, DeepSeek and Anthropic; the internal-model router; structured-output strategies.</td><td><code>lib/llm</code></td></tr>
+<tr><td>Connector layer</td><td>12 built-in connectors behind one interface; OAuth flows and refresh under a Postgres advisory lock; AES-256-GCM credential store; generic MCP client with discovery, namespacing and SSRF guard.</td><td><code>lib/connectors</code></td></tr>
+<tr><td>Workflow engine</td><td>Linear walker and parallel DAG scheduler, node executors, run journal, idempotency ledger, crash resume, cron scheduler, and the AI authoring pipeline.</td><td><code>lib/workflow</code></td></tr>
+<tr><td>Auth</td><td>Auth.js v5 credentials login with JWT sessions refreshed from the database; RBAC helpers; login lockout and registration limiter.</td><td><code>lib/auth</code>, <code>src/auth.ts</code></td></tr>
+<tr><td>Monitoring</td><td>Transcript parsers (shared with the collector), pricing table, stuck-session detection, unified read model over agent, chat and workflow runs.</td><td><code>lib/monitoring</code></td></tr>
+<tr><td>Event bus</td><td>In-process publish/subscribe pinned on the global object; fans out to the SSE endpoint (<code>/api/events</code>) for sessions, workflow steps and per-user notifications.</td><td><code>lib/events-bus.ts</code></td></tr>
+<tr><td>Boot hook</td><td>On start-up, marks workflow runs orphaned in <code>running</code> as <code>resumable</code> so the scheduler resumes them.</td><td><code>src/instrumentation.ts</code></td></tr>
+<tr><td>Collector / host agent</td><td>Two zero-dependency Node scripts: the collector pushes parsed session metadata from developer machines; the host agent exposes CPU, RAM and GPU metrics for the voice surface.</td><td><code>collector/</code>, <code>host-agent/</code></td></tr>
+</tbody>
+</table>
+
+<h3>Technology stack</h3>
+<table>
+<thead><tr><th style="width:24%">Layer</th><th>Technology</th></tr></thead>
+<tbody>
+<tr><td>Runtime and framework</td><td>Node.js 24, Next.js 16.2 App Router (standalone output), React 19.2, TypeScript 6 (strict), Tailwind CSS 4</td></tr>
+<tr><td>Auth</td><td>Auth.js v5 beta (<code>next-auth</code> 5.0.0-beta.31) with Drizzle adapter, bcrypt password hashing, JWT session strategy</td></tr>
+<tr><td>Data</td><td>PostgreSQL 16 with <code>pg_trgm</code>; Drizzle ORM and Drizzle Kit migrations; <code>node-postgres</code> driver; Zod 4 validation</td></tr>
+<tr><td>LLM</td><td>Anthropic SDK for Claude; OpenAI-compatible HTTP (no SDK) for BytePlus ModelArk, Cerebras and DeepSeek; Ollama HTTP API</td></tr>
+<tr><td>MCP</td><td>Client: official <code>@modelcontextprotocol/sdk</code> (Streamable HTTP with SSE fallback). Server: hand-written JSON-RPC over Streamable HTTP</td></tr>
+<tr><td>UI libraries</td><td>React Flow (workflow editor, session graph), Recharts, Leaflet with OpenStreetMap, three.js / react-three-fiber (voice visuals), react-markdown with sanitisation</td></tr>
+<tr><td>Voice</td><td>Web Speech API (speech-to-text), Silero VAD in the browser, self-hosted VieNeu TTS (Python, FastAPI)</td></tr>
+<tr><td>Documents</td><td>Tesseract OCR (Vietnamese, English, Simplified Chinese), Poppler PDF extraction, DOCX text extraction</td></tr>
+<tr><td>Testing</td><td>Vitest, Testing Library, jsdom; a separate host-only eval configuration that calls real models</td></tr>
+</tbody>
+</table>
+
+<div class="callout info"><span class="t">Single-process design</span>The event bus, rate limiters and workflow resume logic assume one application process. This keeps the stack simple for self-hosted deployments; horizontal scaling would move the bus and limiters to a shared store (for example Redis) first.</div>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">4</span>Chat and agent engine</h2>
+
+<p class="lede">A chat turn is one <code>POST /api/chat</code> request. The route authenticates the caller, assembles context, runs a tool loop against the chosen model, and streams the answer back while persisting every message and tool call. The same engine serves the voice surface, which only switches the output guide.</p>
+
+<h3>4.1 Turn lifecycle</h3>
+
+
+<p>The route performs these steps in order:</p>
+<ol>
+<li><b>Authorise.</b> Require a session, then require a mutating role (viewers are read-only). Before any I/O, Claude model ids are checked against an allow-list (400 otherwise); BytePlus and Cerebras ids are recognised by list, and any other id goes to the local runtime.</li>
+<li><b>Validate.</b> Reject empty messages, strip NUL bytes, cap images at two per turn and about 2.8 MB (base64) each.</li>
+<li><b>Load context.</b> Load or create the conversation. A new conversation is stamped with its workspace after an ownership check; the workspace never changes afterwards.</li>
+<li><b>Budget history.</b> Replay history within a provider-aware character budget. Overflow is folded into a rolling summary by the internal model (chapter 5) and stored on the conversation row.</li>
+<li><b>Build the tool surface.</b> Internal tools, plus the user's connected built-in connector tools, plus every tool from the user's MCP servers, namespaced per server (chapter 6).</li>
+<li><b>Pre-dispatch a quick tool</b> (optional). If the user picked a specific tool in the UI, code runs it deterministically before the model loop, through the same safety gate.</li>
+<li><b>Assemble the system prompt</b> (section 4.2), then add proactive alerts (stuck or expensive monitored sessions, de-duplicated per conversation with a 6-hour cooldown) as a separate frame, never inside model prose.</li>
+<li><b>Run the tool loop</b> (section 4.3), then the final completion (section 4.6).</li>
+<li><b>Finalise.</b> Strip leaked tool-call JSON, persist the assistant message with token counts, persist every tool call and result, emit trailing frames.</li>
+<li><b>Or suspend.</b> If the model proposed a write, the turn ends with a confirm card instead (chapter 7).</li>
+</ol>
+
+<div class="figure" style="--mh:163mm">
+<pre class="mermaid">
+%%{init: {"sequence": {"actorMargin": 14, "width": 96, "boxMargin": 10, "noteMargin": 6, "messageMargin": 20, "height": 50, "diagramMarginX": 8}}}%%
+sequenceDiagram
+  participant B as Browser
+  participant R as Chat route
+  participant D as Postgres
+  participant A as Agent loop
+  participant M as LLM
+  participant T as Tools,&lt;br/&gt;safety gate
+  B-&gt;&gt;R: POST /api/chat
+  Note over R: Session, RBAC,&lt;br/&gt;validation
+  R-&gt;&gt;D: Load conversation,&lt;br/&gt;save message
+  Note over R: History budget,&lt;br/&gt;prompt, tools
+  R-&gt;&gt;A: runToolRounds
+  loop Until no tool calls (max 25)
+    A-&gt;&gt;M: Completion&lt;br/&gt;+ tools
+    M--&gt;&gt;A: Tool calls
+    A-&gt;&gt;T: Dispatch (writes&lt;br/&gt;suspend)
+    T--&gt;&gt;A: Bounded results
+    A--&gt;&gt;B: tool, view frames
+  end
+  A-&gt;&gt;M: Final completion
+  M--&gt;&gt;B: Streamed answer
+  R-&gt;&gt;D: Save answer,&lt;br/&gt;tool calls
+  R--&gt;&gt;B: cite, tokens frames
+</pre>
+<div class="cap"><b>Figure 3.</b> A chat turn. Tool activity and result tables stream to the browser as they happen, before the final answer.</div>
+</div>
+
+<h3>4.2 System prompt and persona precedence</h3>
+<p>The system prompt is assembled by code from six parts in a fixed order: base persona, today's date, a language hint (Vietnamese, English or Chinese), the tool block (only when tools exist), each MCP server's own instructions (captured from its <code>initialize</code> response, capped), and an output guide. The text guide teaches the table, chart and map block contract; the voice guide sets a spoken register, forbids reading identifiers aloud and allows at most one table or chart.</p>
+<p>The tool block carries measured behavioural rules, phrased generically: a write must go through a tool and success must never be claimed without one; "search again" forces a fresh call; counts come from structured data; multi-metric comparisons are split into separate calls; natural-language data tools receive the user's own wording; SQL is never placed in a natural-language field.</p>
+
+<table>
+<thead><tr><th style="width:8%">Priority</th><th style="width:30%">Source</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Explicit system-prompt override</td><td>Replaces the entire prompt; tool, date and language blocks and proactive alerts are dropped. Used for power users and internal paths.</td></tr>
+<tr><td>2</td><td>Workspace persona</td><td>Replaces only the base persona; tool, date and language blocks remain. Resolved server-side from the conversation row, so a voice turn resumed elsewhere gets the same persona.</td></tr>
+<tr><td>3</td><td>Custom agent selected by the user</td><td>Replaces only the base persona.</td></tr>
+<tr><td>4</td><td>System default</td><td>Built-in assistant persona.</td></tr>
+</tbody>
+</table>
+<p class="small">A workspace persona is either a custom agent or free-text instructions, never both (the API rejects both with 400). A deleted custom agent falls back to the default and the UI shows a warning badge.</p>
+
+<h3>4.3 The tool loop</h3>
+<p><code>runToolRounds</code> (<code>lib/agent/orchestrator.ts</code>) runs <b>until the model stops calling tools</b>. It replaced a fixed four-round cap in release 2.5.0, which had cut off any task needing more than three tool rounds (for example, summarising ten emails and then sending a report).</p>
+<table>
+<thead><tr><th style="width:26%">Mechanism</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td>Runaway backstop</td><td>25 rounds by default (configurable, hard ceiling 50). The last round is forced to text.</td></tr>
+<tr><td>Repeat guard</td><td>The same tool with identical arguments three times is treated as stuck (eight times for status-polling tools). The loop stops dispatching and tells the model to answer with what it has. "Stuck" and "out of rounds" are reported separately for operator tuning.</td></tr>
+<tr><td>Context eviction</td><td>When the accumulated conversation exceeds a character budget (about 37k characters for local models, about 400k for cloud), the oldest tool results are replaced by a stub, keeping the three most recent. This follows the tool-result clearing pattern used by major model vendors.</td></tr>
+<tr><td>Per-result processing</td><td>Each result is unwrapped, checked for emptiness, turned into a data panel if tabular, and annotated so the model does not retype a table already on screen (chapter 6).</td></tr>
+<tr><td>One-shot nudges</td><td>At most once per turn each: read a page after a web search returned URLs; re-ask when the model answered from memory in round 0 despite having tools; stop using LAAM's own audit log for business questions. Workflow agent nodes disable nudges because their prompt is the instruction.</td></tr>
+</tbody>
+</table>
+
+<h3>4.4 Streaming protocol</h3>
+<p>A chat response is a <code>text/plain</code> stream, not Server-Sent Events. Plain answer text is interleaved with JSON control frames delimited by the ASCII record separator (U+001E), which never occurs in normal prose. The conversation id travels in a response header. Workflow runs, by contrast, publish over the SSE bus at <code>/api/events</code>.</p>
+<table>
+<thead><tr><th style="width:18%">Frame</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>tool</code></td><td>A tool call started or returned (live trace in the UI).</td></tr>
+<tr><td><code>view</code></td><td>A code-built data panel (table, optional chart hint) derived from a tool result.</td></tr>
+<tr><td><code>cite</code></td><td>Sources used by the answer.</td></tr>
+<tr><td><code>pending_write</code></td><td>A write awaiting human confirmation: code-built preview and sealed token.</td></tr>
+<tr><td><code>proactive</code></td><td>Alerts about stuck or costly monitored sessions.</td></tr>
+<tr><td><code>tokens</code></td><td>Token usage, sent only when the provider actually reported usage (no fabricated zero cost).</td></tr>
+<tr><td><code>hb</code></td><td>Heartbeat while a reasoning model is thinking, so idle proxies do not drop the connection.</td></tr>
+</tbody>
+</table>
+
+<h3>4.5 Reasoning effort by phase</h3>
+<p>For reasoning models on BytePlus and Cerebras, LAAM sets reasoning effort separately for <b>tool rounds</b> and for the <b>final answer</b> (each falls back to a shared setting; only <code>low</code>, <code>medium</code> and <code>high</code> are forwarded). This lets a deployment trade latency against depth where it matters. The shipped example configuration sets the final phase to <code>low</code> and deliberately leaves tool rounds at the provider default: low effort during tool selection produced a wrong "nothing found" answer on a data-lookup question in testing. DeepSeek has its own settings, and its "thinking" mode is disabled on tool rounds after a traced 100-second-plus call.</p>
+
+<h3>4.6 Final answer and context management</h3>
+<ul>
+<li><b>Digest before the final completion.</b> Large tabular results reach the model as a digest (row count, columns, code-computed per-column totals across all rows, a few sample rows). The raw rows stay in <code>chat_tool_call</code>, so a reloaded conversation rebuilds its tables exactly.</li>
+<li><b>Question pin.</b> After a tool-using turn on the cloud (BytePlus or Cerebras) path, the user's question is restated before the final completion. It was added after a measured case where the answer drifted to an earlier topic.</li>
+<li><b>Empty-answer recovery.</b> If a cloud model's final stream is empty, the engine retries exactly once with an "answer now from what you have" nudge; if still empty, it sends a coded notice. A blank bubble is never shown.</li>
+<li><b>Rolling summary.</b> LAAM has no separate long-term memory store. Conversation memory is the rolling summary on the conversation row plus the persisted tool turns. Any shared memory a customer wants comes through a connected MCP server like any other tool.</li>
+</ul>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">5</span>Model provider layer</h2>
+
+<p class="lede">LAAM talks to five model providers through one adapter contract. Users choose among chat models in a picker; background tasks (summaries, workflow agent nodes, AI authoring) have no picker and resolve a model through a deterministic router.</p>
+
+<table>
+<thead><tr><th style="width:17%">Provider</th><th style="width:18%">Transport</th><th style="width:14%">Chat picker</th><th style="width:13%">Tool loop</th><th style="width:10%">Vision</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Ollama (local)</td><td>Ollama HTTP API</td><td>Always</td><td>Yes</td><td>Yes (≤2 images)</td><td>Zero marginal cost; runs on the host GPU.</td></tr>
+<tr><td>BytePlus ModelArk</td><td>OpenAI-compatible HTTP</td><td>When key set (preselected)</td><td>Yes</td><td>Not wired</td><td>Eight whitelisted models, default <code>gpt-oss-120b</code>.</td></tr>
+<tr><td>Cerebras</td><td>OpenAI-compatible HTTP</td><td>When key set</td><td>Yes</td><td>Not wired</td><td>Shares the BytePlus code path.</td></tr>
+<tr><td>DeepSeek</td><td>OpenAI-compatible HTTP</td><td>No</td><td>Yes</td><td>No</td><td>Background tasks only.</td></tr>
+<tr><td>Anthropic Claude</td><td>Anthropic SDK</td><td>When key set</td><td><b>No</b></td><td>No</td><td>Text-only chat; asking it to drive tools fails loudly.</td></tr>
+</tbody>
+</table>
+
+<div class="figure" style="--mh:115mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart LR
+  subgraph Chat["Chat turn: user picks a model"]
+    direction TB
+    P["Claude id on allow-list?&lt;br/&gt;(else 400)"] --&gt; BR{{"Provider"}}
+    BR --&gt;|"Claude"| C1["Stream text,&lt;br/&gt;no tools"]
+    BR --&gt;|"BytePlus,&lt;br/&gt;Cerebras"| C2["Full tool loop"]
+    BR --&gt;|"other ids"| C3["Full tool loop,&lt;br/&gt;local Ollama"]
+  end
+  subgraph Internal["Background task: internal router"]
+    direction TB
+    I0["INTERNAL_MODEL override"] --&gt; I1["BytePlus"]
+    I1 --&gt; I2["Cerebras"]
+    I2 --&gt; I3["DeepSeek"]
+    I3 --&gt; I4["Anthropic"]
+    I4 --&gt; I5["Local Ollama"]
+  end
+  Chat ~~~ Internal
+</pre>
+<div class="cap"><b>Figure 4.</b> Chat routing and the internal-model router. The router resolves exactly one model per call; the first configured tier wins.</div>
+</div>
+
+<h3>Routing rules</h3>
+<ul>
+<li><b>Cloud-first default.</b> The chat picker preselects BytePlus if configured, then Cerebras, else the local model. A deployment without cloud keys runs entirely on local models.</li>
+<li><b>No silent cross-provider fallback.</b> A provider error produces a coded, tri-lingual notice (authentication, rate limit, overloaded, connection, API) and the turn is persisted. BytePlus and Cerebras retry once on 429, 503 or 529 after a configurable delay.</li>
+<li><b>Three internal entry points.</b> <code>callModelText</code> (no tools), <code>callModelChat</code> (tool loop) and <code>callModelGenerate</code> (structured JSON).</li>
+<li><b>Capability checks.</b> Claude can summarise but cannot run a workflow agent node; the run fails at that node with an explicit error rather than producing an untooled answer.</li>
+</ul>
+
+
+<h3>Structured output per provider</h3>
+<p>Workflow authoring needs reliable JSON. Support differs by provider and model, so the strategy is chosen per provider from measurements: JSON mode where supported; prompt-only JSON when a model rejects the <code>response_format</code> parameter; a forced tool call ("structured tool") as the default for branch derivation on BytePlus <code>gpt-oss-120b</code> (10 of 10 in testing); strict JSON schema on Cerebras. DeepSeek's strict function calling measured worse and is opt-in only.</p>
+
+<h3>Cost accounting</h3>
+<p>A pricing table (USD per million input and output tokens) covers Claude, BytePlus, Cerebras and DeepSeek models. An unmatched model is costed at a default Sonnet-level estimate; models whose price is not published show no cost rather than a guess. Tokens are recorded per chat message and per workflow step together with the model that actually answered, and cost is derived at write time. Monitoring shows model, tools and cost for chat and workflow runs alongside monitored agent sessions.</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">6</span>Tools and connectors</h2>
+
+<p class="lede">Everything the assistant can do is a tool. Tools come from three sources: a closed set of internal tools, the built-in connectors a user has connected, and the MCP servers a user has added. All three share one dispatch path and one safety gate.</p>
+
+<h3>6.1 Internal tools (always available)</h3>
+<table>
+<thead><tr><th style="width:26%">Group</th><th>Tools</th></tr></thead>
+<tbody>
+<tr><td>Monitoring (9, read-only)</td><td><code>laam_list_agents</code>, <code>laam_get_agent</code>, <code>laam_query_stats</code>, <code>laam_list_machines</code>, <code>laam_find_stuck</code>, <code>laam_search_sessions</code>, <code>laam_get_timeline</code>, <code>laam_query_audit</code>, <code>laam_metrics_digest</code>. They read LAAM's own monitoring store, not business data. The same nine are exposed to external agents through LAAM's MCP server.</td></tr>
+<tr><td>Web (2)</td><td><code>web_search</code> over self-hosted SearXNG (fails soft if the service is down); <code>web_read</code> fetches a URL as text, checking the host of the URL and of every redirect hop against a blocklist of private and metadata hostnames, capped at 6,000 characters.</td></tr>
+<tr><td>Utility (1)</td><td><code>util_calc</code>: deterministic arithmetic via a shunting-yard parser, no <code>eval</code>.</td></tr>
+</tbody>
+</table>
+
+<h3>6.2 Built-in connectors</h3>
+<p>Each built-in connector implements the same <code>Connector</code> interface: an id, an auth mode, and a list of tools that each declare <code>kind: "read" | "write"</code> and whether they are safe to run unattended in a workflow. Credentials are encrypted per user (AES-256-GCM with a key derived per user by HKDF-SHA256). OAuth token refresh runs at the single <code>execute()</code> chokepoint under a Postgres advisory lock, because several providers rotate single-use refresh tokens; a revoked grant flips the connector to "needs reconnect".</p>
+<table>
+<thead><tr><th style="width:18%">Connector</th><th style="width:9%">Tools</th><th style="width:9%">Writes</th><th style="width:26%">Auth</th><th>Write examples</th></tr></thead>
+<tbody>
+<tr><td>GitHub</td><td>8</td><td>2</td><td>Token</td><td>Create issue, comment</td></tr>
+<tr><td>Trello</td><td>7</td><td>3</td><td>Token, optional one-click authorise</td><td>Create / update card, comment</td></tr>
+<tr><td>Jira</td><td>6</td><td>2</td><td>Atlassian OAuth 3LO or API token</td><td>Create issue, comment</td></tr>
+<tr><td>Google Drive</td><td>5</td><td>1</td><td>Google OAuth</td><td>Create folder</td></tr>
+<tr><td>Google Calendar</td><td>4</td><td>1</td><td>Google OAuth</td><td>Create event</td></tr>
+<tr><td>Gmail</td><td>4</td><td>1</td><td>Google OAuth</td><td>Send (confirm in chat; recipient allow-list in workflows)</td></tr>
+<tr><td>Slack</td><td>3</td><td>1</td><td>Slack OAuth v2</td><td>Send message</td></tr>
+<tr><td>WhatsApp</td><td>1</td><td>1</td><td>Cloud API token</td><td>Send message</td></tr>
+<tr><td>Zalo</td><td>2</td><td>1</td><td>Zalo OA OAuth v4 (PKCE)</td><td>Send message</td></tr>
+<tr><td>APILayer catalog</td><td>2</td><td>0</td><td>One access key</td><td>— (9 catalogued APIs)</td></tr>
+<tr><td>Public-APIs catalog</td><td>2</td><td>0</td><td>None</td><td>— (8 hand-verified keyless APIs)</td></tr>
+<tr><td>Demo</td><td>2</td><td>1</td><td>None</td><td>Create task (offline write-gate demo)</td></tr>
+<tr><td><b>Total</b></td><td><b>46</b></td><td><b>14</b></td><td colspan="2"></td></tr>
+</tbody>
+</table>
+<p class="small">The two catalog connectors are SSRF-safe by construction: the model searches a hand-authored catalog and calls an entry, and each entry pins its own URL template, so the model can only request URLs LAAM wrote. OAuth flows are hidden until the operator configures the provider's client credentials; Jira also accepts an API token.</p>
+
+<h3>6.3 MCP client — the generic integration path</h3>
+<p>Any system that speaks the Model Context Protocol can be added by a user at runtime: a database gateway, a knowledge-graph server, a SaaS vendor's MCP endpoint. The MCP path is generic; a few model-facing strings still name one knowledge-graph server's tools (cleanup tracked). Server configuration (URL, bearer token, headers) is stored in the same encrypted per-user credential table as built-in connectors.</p>
+
+
+<table>
+<thead><tr><th style="width:24%">Property</th><th>Implementation and rationale</th></tr></thead>
+<tbody>
+<tr><td>Transports</td><td>Streamable HTTP first, one retry over SSE for older servers. Connections are per operation and always closed.</td></tr>
+<tr><td>SSRF guard</td><td>At connect time the server URL's hostname is resolved and every resulting address is checked against private, link-local, metadata, IPv6 unique-local and IPv4-mapped ranges before a transport opens. Hardening item before production: one DNS-pinned guard for all outbound fetches, adding the carrier-grade NAT range and a re-check on redirect.</td></tr>
+<tr><td>Namespacing</td><td>Each tool is exposed to the model as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, so servers cannot collide with each other or shadow built-ins. Server slugs stay stable when a server is renamed or re-pointed.</td></tr>
+<tr><td>Prefix de-collision</td><td>When one tool name is a strict prefix of another on the same server, the shorter name is padded. Measured on one provider: the longer tool was reached 0 of 6 times before the fix and 6 of 6 after; on one 49-tool server it made 11 tools reachable.</td></tr>
+<tr><td>Server instructions</td><td>Each server's <code>initialize</code> instructions are captured and placed in the system prompt, so scoping information a server publishes is not re-derived with extra list calls on every question.</td></tr>
+<tr><td>Limits</td><td>200 tools per server (logged truncation), 15-second call timeout, error text to the model capped at 300 characters, 200k-character raw backstop with a visible truncation marker; per-result shaping to 8k characters (local) or 120k (cloud).</td></tr>
+<tr><td>In-band errors</td><td>MCP's <code>isError</code> flag is carried through: the workflow runtime fail-stops on it and AI authoring discards such observations.</td></tr>
+</tbody>
+</table>
+
+<div class="figure" style="--mh:112mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  subgraph Connect["1. Connect"]
+    direction LR
+    CFG["User adds server:&lt;br/&gt;URL, token, headers"] --&gt; SSRF{{"IPs outside private/&lt;br/&gt;metadata ranges?"}}
+    SSRF --&gt;|"no"| REJ["Reject"]
+    SSRF --&gt;|"yes"| TR["Streamable HTTP,&lt;br/&gt;SSE retry"]
+  end
+  subgraph Discover["2. Discover"]
+    direction LR
+    LIST["tools/list (max 200)&lt;br/&gt;+ instructions"] --&gt; NS["Namespace per server,&lt;br/&gt;de-collide prefixes"]
+    NS --&gt; ALLOW["User's per-tool&lt;br/&gt;allow-list"]
+  end
+  subgraph Classify["3. Classify and call"]
+    direction LR
+    KIND{{"Trusted server AND&lt;br/&gt;readOnlyHint?"}}
+    KIND --&gt;|"yes"| RD["Read: runs&lt;br/&gt;directly"]
+    KIND --&gt;|"no"| WR["Write: confirm in chat,&lt;br/&gt;blocked in workflows"]
+    RD --&gt; CALL["tools/call, 15 s,&lt;br/&gt;bounded result"]
+    WR --&gt; CALL
+  end
+  Connect --&gt; Discover
+  Discover --&gt; Classify
+</pre>
+<div class="cap"><b>Figure 5.</b> MCP tool path. Classification fails closed: a tool is a read only when both the user and the server say so.</div>
+</div>
+
+<h3>6.4 Result handling: code-built tables and digests</h3>
+<p>MCP results arrive as text containing JSON, while internal tools return objects. A single unwrapping function normalises both, and every shape-inspecting step uses it; a guard that skipped it would silently never fire.</p>
+<ul>
+<li><b>Data panels.</b> When a result is tabular (at least 3 rows and 2 columns with a consistent key set, up to 500 rows), code builds a table and streams it as a <code>view</code> frame; a chart hint is added for up to 25 rows. The model is then told the table is on screen. The motivation was measured: on 13 test questions, only 2 results met the old size threshold for a panel; in the other 11, the numbers on screen were the model retyping the result, and it introduced errors (a truncated product name, a spurious space in an identifier, a lost cell and a repeated row).</li>
+<li><b>Digests for the model.</b> Large results reach the model as counts, columns, code-computed totals and sample rows. In one measured case a 62-row result took 103 seconds and 3,225 output tokens to retype, with errors; the digest removes that cost.</li>
+<li><b>Formatting rules.</b> Markdown tables are repaired by code; numbers use thousand separators and explicit currency units.</li>
+</ul>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">7</span>Reliability guards</h2>
+
+<p class="lede">Language models confabulate, pick near-miss tools and give up early. LAAM does not rely on prompting alone to prevent this. Each failure mode observed in testing has a structural guard in code, triggered by observable facts (a missing tool call, an empty result, a malformed name) rather than by classifying the user's intent.</p>
+
+<h3>7.1 Write confirmation round-trip</h3>
+<p>The write gate is the most important guard. Every dispatch passes through <code>withSafety</code>, which classifies the tool from its own declaration. Unknown tools are treated as writes. In chat, an unconfirmed write never executes: it raises a signal that the route turns into a suspended turn.</p>
+
+<p>Three design choices matter here. The preview shown to the user is built by code from the arguments, never from model prose, so the user approves what will actually be sent. The token is stateless (sealed with authenticated encryption) and carries the original model, so the narration after confirmation continues in the same voice. And the token's nonce is checked against the audit log before dispatch, so a confirm that has already been recorded is rejected. Hardening item before production: an atomic nonce claim and idempotent retry for confirmed MCP writes.</p>
+
+
+
+
+<h3>7.2 Grounding guards</h3>
+<table>
+<thead><tr><th style="width:21%">Guard</th><th style="width:31%">Trigger</th><th>Why it exists</th></tr></thead>
+<tbody>
+<tr><td>Grounding re-ask</td><td>Round 0, tools available, model answered with no tool call. Re-ask once (with an escape for small talk).</td><td>A model invented a complete project record, including a non-existent owner, instead of looking it up.</td></tr>
+<tr><td>Empty is not absent</td><td>A tool returned zero rows or a zero count.</td><td>On an anomaly query, one phrasing returned nothing while three other phrasings returned 9 to 18 rows. The model is told an empty result is not proof of absence, shown the query it used, and allowed one re-ask in the user's own words.</td></tr>
+<tr><td>Write-claim guard</td><td>User text looks like a write request; the answer claims success; no write tool executed.</td><td>Local models narrated writes they never made. When write intent is detected, output is buffered and unsupported success claims are replaced.</td></tr>
+<tr><td>Tool-intent reroute</td><td>The arguments fit exactly one other tool.</td><td>A model called a tool whose name was a prefix of the intended tool, with the intended tool's arguments.</td></tr>
+<tr><td>Tool-name repair</td><td>Formatting tokens leaked into the tool name.</td><td>An open-weight model's chat format occasionally leaked channel markers and suffixes into tool names.</td></tr>
+<tr><td>Question pin</td><td>A tool-using turn on the cloud (BytePlus or Cerebras) path.</td><td>An answer drifted to the previous question after a long tool sequence.</td></tr>
+<tr><td>Artifact strip</td><td>Tool-call JSON at the head of the answer.</td><td>Persisted answers occasionally began with raw JSON.</td></tr>
+<tr><td>Audit-misuse nudge</td><td>LAAM's own audit log queried for a business question.</td><td>The model read the wrong log and concluded "no data".</td></tr>
+<tr><td>Data-fetch guard <span class="pill off">PLANNED</span></td><td>Only structure or listing tools were called. Flag-off by default; configured per deployment.</td><td>A model inspected schemas repeatedly, then answered "no data" without fetching any.</td></tr>
+<tr><td>List-to-detail drill-down <span class="pill off">PLANNED</span></td><td>After a configured list tool, the question names exactly one entity from its result. Flag-off by default.</td><td>Code calls the paired detail tool. Pairs are configuration, so no connector name is hard-coded. In testing, 12 of 12 voice detail questions then reached the detail tool.</td></tr>
+</tbody>
+</table>
+<p class="small">Guards are one-shot per turn and fail soft: none of them can block an answer permanently, and the write signal always propagates through them.</p>
+
+<div class="figure" style="--mh:124mm">
+<pre class="mermaid">
+%%{init: {"sequence": {"actorMargin": 14, "width": 96, "boxMargin": 10, "noteMargin": 6, "messageMargin": 20, "height": 50, "messageFontSize": 14, "noteFontSize": 14, "actorFontSize": 14}}}%%
+sequenceDiagram
+  participant U as User
+  participant R as Chat route
+  participant G as Safety gate
+  participant C as Connector&lt;br/&gt;or MCP tool
+  participant D as Postgres
+  R-&gt;&gt;G: Model proposes&lt;br/&gt;a write call
+  G--&gt;&gt;R: PendingWriteSignal&lt;br/&gt;(nothing executed)
+  Note over R: Code-built preview,&lt;br/&gt;args sealed in token&lt;br/&gt;(AES-GCM, 5 min, nonce)
+  R--&gt;&gt;U: Preview, pending_write
+  U-&gt;&gt;R: Confirm (token)
+  R-&gt;&gt;D: Verify token,&lt;br/&gt;nonce unused
+  R-&gt;&gt;C: One dispatch,&lt;br/&gt;sealed args
+  C--&gt;&gt;R: Real result
+  R-&gt;&gt;D: Audit agent_write
+  R--&gt;&gt;U: Tools-less completion&lt;br/&gt;narrates the result
+</pre>
+<div class="cap"><b>Figure 6.</b> Write confirmation in chat. The confirmed call uses the sealed arguments, not a fresh model output, and the narrating completion has no tools, so it cannot start another write.</div>
+</div>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">8</span>Workflow engine</h2>
+
+<p class="lede">A workflow is a JSON graph of typed nodes stored per user. It can be run on demand, on a cron schedule, or as a dry-run test. Runs are journaled step by step so they survive a process restart, and writes are recorded in an idempotency ledger so a resumed run never sends twice.</p>
+
+<h3>8.1 Graph model</h3>
+<table>
+<thead><tr><th style="width:15%">Node kind</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td><code>agent</code></td><td>Runs the tool loop with LAAM's internal read tools only, then one final call through the internal router. Optional custom-agent preset (a missing preset fails loudly) and optional output schema. An <code>extract</code> mode pulls a field from an earlier step in code, with no model call; it was added because model-based extraction was the entire cost of some runs (about 3 s per call against 24–55 ms MCP calls).</td></tr>
+<tr><td><code>connector</code></td><td>Calls a built-in connector action with templated arguments (<code>{{steps.x.output}}</code>, <code>{{trigger}}</code>).</td></tr>
+<tr><td><code>mcp</code></td><td>Calls a tool on a user's MCP server. An optional <code>pollUntil</code> re-issues a status call until a field reaches a value; it is inferred by code from observed calls, never authored by the model.</td></tr>
+<tr><td><code>condition</code></td><td>Evaluates a predicate (10 operators, combinable with <code>all</code>/<code>any</code>) and follows the <code>true</code> or <code>false</code> edge.</td></tr>
+<tr><td><code>foreach</code></td><td>Runs a sub-graph once per item with <code>{{item}}</code> and <code>{{index}}</code>, sequentially.</td></tr>
+</tbody>
+</table>
+<p>External data enters a workflow only through connector and MCP nodes. The node kinds are fixed in code. Budgets: 200 steps and 100 for-each items per run; in parallel mode, fan-out of at most 12 edges per node.</p>
+
+<h3>8.2 Execution modes</h3>
+<ul>
+<li><b>Linear</b> (default): a recursive edge walker evaluates conditions, runs for-each bodies, shares one budget counter and stops at the first failure.</li>
+<li><b>Parallel</b> (per-graph flag): a topological DAG scheduler with fan-out and OR-join fan-in, multiple start nodes, and tri-state pruning of untaken branches. Two semaphores separate model-bound work (2 concurrent) from I/O (6 concurrent). Fail-stop, cancel and budget are cooperative: an abort flag, then a drain of in-flight nodes before finalising. A deadlock detector guards the scheduler, and a golden test proves that a linear graph at concurrency 1 produces a byte-identical run to the linear walker.</li>
+<li><b>Validation</b> uses Kahn's algorithm for cycle detection (a previous depth-first check falsely flagged diamond shapes), reachability across start nodes, and a family of lint rules that reject references a node cannot actually produce. The same validation gates Save.</li>
+</ul>
+
+<h3>8.3 Run lifecycle, durability and idempotent writes</h3>
+
+
+<ul>
+<li><b>Snapshot.</b> The graph is copied onto the run row at start, so editing a workflow never changes a run in progress.</li>
+<li><b>Journal.</b> Each node writes a <code>workflow_run_step</code> row (input, capped output, tokens, cost and the model actually used) and publishes a step event with a 280-character output preview for the live canvas.</li>
+<li><b>Idempotent writes.</b> Before a write, the executor claims a row keyed on (run, node, iteration) with a unique constraint. After success the row is marked done with the output. On resume, a done write replays its stored output; a claimed-but-unrecorded write fails loudly instead of risking a duplicate email or message.</li>
+<li><b>Crash resume.</b> On boot, runs still marked running become resumable. The next scheduler tick claims up to 25 of them with <code>FOR UPDATE SKIP LOCKED</code>, rebuilds context from the journal and skips completed nodes.</li>
+<li><b>Output gates.</b> An agent node with an output schema is checked for missing required keys (a null counts as missing) and for type mismatches; it gets one self-repair attempt with the exact field names, then fails at that node. The type check exists because a presence-only check once let an empty result list pass and a run finished all-green on no data.</li>
+<li><b>Recipient gate.</b> Writes that leave the organisation (email, Slack, WhatsApp, Zalo) require every resolved recipient to be in that channel's allow-list; an empty allow-list blocks. The recipient parser rejects header injection.</li>
+</ul>
+
+<div class="figure" style="--mh:67mm">
+<pre class="mermaid">
+%%{init: {"state": {"nodeSpacing": 70, "rankSpacing": 60}}}%%
+stateDiagram-v2
+  direction LR
+  [*] --&gt; queued: tick claims&lt;br/&gt;a due slot
+  [*] --&gt; running: manual or&lt;br/&gt;draft run
+  queued --&gt; running: executor&lt;br/&gt;picks up
+  running --&gt; succeeded
+  running --&gt; failed: node error,&lt;br/&gt;gate, budget
+  running --&gt; cancelled: user cancel
+  running --&gt; resumable: restart
+  resumable --&gt; running: next tick
+  succeeded --&gt; [*]
+  failed --&gt; [*]
+  cancelled --&gt; [*]
+</pre>
+<div class="cap"><b>Figure 7.</b> Workflow run states. A run interrupted by a process restart becomes resumable and continues from its journal on the next tick; a cancelled run is never resumed.</div>
+</div>
+
+<div class="figure" style="--mh:96mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  K{{"Next node's kind&lt;br/&gt;(cancel re-checked)"}}
+  K --&gt;|"agent"| AG["Preset, read-only&lt;br/&gt;tool loop, output&lt;br/&gt;schema gate"]
+  K --&gt;|"connector, mcp"| GT["Gates: workflow-safe,&lt;br/&gt;recipient and read&lt;br/&gt;allow-lists"]
+  GT --&gt; W{{"Read or write?"}}
+  W --&gt;|"read"| EX["Execute"]
+  W --&gt;|"write, dry run"| MOCK["Mock: record&lt;br/&gt;would-have-called"]
+  W --&gt;|"write, real run"| L{{"Ledger (run,&lt;br/&gt;node, iteration)"}}
+  L --&gt;|"new"| CLM["Claim, execute,&lt;br/&gt;mark done"]
+  L --&gt;|"done"| REP["Replay&lt;br/&gt;stored output"]
+  L --&gt;|"claimed,&lt;br/&gt;unrecorded"| LOUD["Fail loud,&lt;br/&gt;never resend"]
+</pre>
+<div class="cap"><b>Figure 8.</b> Per-node execution. Every step is journaled; every write goes through the idempotency ledger.</div>
+</div>
+
+<h3>8.4 Triggers and scheduler</h3>
+<table>
+<thead><tr><th style="width:15%">Trigger</th><th>Path</th></tr></thead>
+<tbody>
+<tr><td><code>manual</code></td><td><code>POST /api/workflows/[id]/run</code>, optionally <code>{dryRun:true}</code>: reads run for real, writes are mocked.</td></tr>
+<tr><td><code>draft</code></td><td>The same endpoint with an unsaved graph from the AI authoring panel. Accepted only with <code>dryRun:true</code>, then normalised and validated like a saved graph.</td></tr>
+<tr><td><code>schedule</code> <span class="pill warn">BUILT</span></td><td>Five-field cron per schedule. <code>POST /api/workflows/tick</code> claims due schedules atomically (insert the run and advance the next-run time in one transaction, unique per schedule slot), then executes queued and resumable runs. Missed slots fire once and are counted rather than back-filled.</td></tr>
+</tbody>
+</table>
+<p>The tick endpoint is driven by an external host scheduler once a minute and authenticated with a shared secret (constant-time comparison); there is no in-process timer. Runs can be cancelled at any time; the engine sees the cancel at its next pre-node check. Terminal states raise an in-app notification with a deep link. Six localised templates (overnight digest, stuck-agent alert, scheduled triage, judge-verified digest, multi-source report to email, and a demo) and a save-as-template action are included.</p>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">9</span>AI workflow authoring</h2>
+
+<p class="lede"><span class="pill warn">BUILT</span> Users can describe an automation in plain language and have LAAM build it. The authoring pipeline is <b>trace-grounded</b>: the model must first observe real tool calls on the user's own connectors, and it may only build a graph out of calls it has actually seen succeed. Code, not the model, compiles the final graph.</p>
+
+<table>
+<thead><tr><th style="width:22%">Stage</th><th>What it guarantees</th></tr></thead>
+<tbody>
+<tr><td>Probe</td><td>The model is shown parameter names but never real values, so it cannot copy a live identifier into a saved graph (an earlier bug did exactly that). Writes are blocked and recorded, never executed.</td></tr>
+<tr><td>Plan DSL</td><td>The plan schema cannot express a tool name, connector id or literal argument value. Plan nodes reference observed calls by opaque ref and wire arguments to earlier steps.</td></tr>
+<tr><td>planGuard</td><td>Rejects on the first failure, naming the real alternatives so the error doubles as the repair prompt: the ref must exist; argument keys must be real; values must be templated, not bare literals; sources must be grounded; extracted fields must exist in the observed payload; fan-out ≤12; no unused reads.</td></tr>
+<tr><td>Data closure</td><td>Pulls in the producer calls a plan depends on, including calls from earlier turns of the authoring conversation. Without it, "the first item" was frozen to one specific item forever.</td></tr>
+<tr><td>Compile</td><td>High-entropy literals become step references; recipient and body arguments of writes are stripped and re-asserted as code-owned; parallelism is inferred.</td></tr>
+<tr><td>Merge</td><td>Human-confirmed write nodes (id, arguments, recipient) stay invariant across rebuilds; hand-edited prompts are preserved when the step list only extends.</td></tr>
+<tr><td>Verify</td><td>Runs the graph for real with mocked writes (40 steps, 2 for-each items, 60-second deadline) and badges failing nodes on the canvas.</td></tr>
+</tbody>
+</table>
+
+
+
+
+<h3>Two authoring surfaces</h3>
+<ul>
+<li><b>One-shot generate</b> (<code>POST /api/workflows/generate</code>): probe, plan, verify; the editor applies the result as an undoable proposal behind a confirm card, even if some nodes are red, so the user sees exactly what failed.</li>
+<li><b>Multi-turn authoring panel</b> (<code>POST /api/workflows/generate/chat</code>): each turn runs a write-blocked tool loop, then overlaps a prose reply with the plan build (saving a median 2.6 s per turn). A no-data gate refuses to paint a graph if no read actually resolved to an answer and asks a clarifying question instead. Only a verified green graph is offered, with up to three observed sample rows. Writes are appended in a separate, human-confirmed step. A <b>test run</b> executes the proposed graph as a <code>draft</code> run and digests the outcome back into the conversation with identifier-shaped values masked, so the model can react to real outcomes (for example add a branch for a "clarification needed" status) without hard-coding values.</li>
+<li><b>Review</b> (<code>POST /api/workflows/review</code>): a plain-language review of the graph currently in the editor.</li>
+</ul>
+<div class="figure" style="--mh:117mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart LR
+  subgraph Observe["A. Observe"]
+    direction TB
+    REQ["User request"] --&gt; PR["1. Probe: tool loop,&lt;br/&gt;6 rounds, writes blocked"]
+    PR --&gt; FA["2. Facts sheet:&lt;br/&gt;calls as opaque refs,&lt;br/&gt;arg keys, fields"]
+    FA --&gt; Q{{"Anything&lt;br/&gt;observed?"}}
+    Q --&gt;|"no"| ASK["422 or&lt;br/&gt;clarifying question"]
+  end
+  subgraph Plan["B. Plan (if observed)"]
+    direction TB
+    PL["3. Model writes a Plan:&lt;br/&gt;no tool names, ids&lt;br/&gt;or literals possible"] --&gt; GD{{"4. planGuard:&lt;br/&gt;trace-grounded?"}}
+    GD --&gt;|"fail"| RP["One self-repair&lt;br/&gt;with the named error"]
+    RP --&gt; GD
+  end
+  subgraph Build["C. Build and verify (if grounded)"]
+    direction TB
+    CO["5-6. Close over data,&lt;br/&gt;compile, strip&lt;br/&gt;code-owned write args"] --&gt; NT["7. Derive&lt;br/&gt;agent-node tasks"]
+    NT --&gt; MG["8. Merge, keep&lt;br/&gt;confirmed writes invariant"]
+    MG --&gt; VF["9. Verify: dry-run,&lt;br/&gt;real reads, mocked writes"]
+  end
+  Observe --&gt; Plan
+  Plan --&gt; Build
+</pre>
+<div class="cap"><b>Figure 9.</b> Trace-grounded authoring. If the repaired plan still fails, the pipeline falls back loudly to an older trace compiler and says so.</div>
+</div>
+</section>
+
+<!-- ============================ 10 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">10</span>Voice pipeline</h2>
+
+<p class="lede">The voice surface is a full-screen command centre that runs the same chat engine hands-free. Custom agents sit on an inner ring and tool groups on an outer ring; disconnected connectors are dimmed. Speech in and out is streamed so that the assistant starts talking before the whole answer is synthesised.</p>
+
+
+<ul>
+<li><b>Same engine, different guide.</b> Voice turns use the chat route with <code>mode: "voice"</code>. The voice guide asks for a spoken register without identifiers, and states that brevity must not reduce lookup depth. It targets a measured problem: 3 of 17 voice turns were shallow or fabricated, against 0 of 6 in text mode. In a 12-turn retest, no voice turn skipped tool calls; 2 were still shallow because the model chose the wrong tool, which the (flag-off) list-to-detail drill-down addresses.</li>
+<li><b>Speech-to-text.</b> A swappable provider interface; the first implementation is the browser's Web Speech API. A self-hosted Whisper provider is <span class="pill off">PLANNED</span>.</li>
+<li><b>Barge-in.</b> Two gates: a voice-activity model served from LAAM itself, and a dynamic threshold tied to the current playback level so the assistant's own voice does not trigger an interruption.</li>
+<li><b>Text-to-speech.</b> A self-hosted VieNeu TTS service (Python, CPU) with a Vietnamese preset voice and a cloned English voice. The streaming endpoint pipes 48 kHz PCM unbuffered; sentence segmentation keeps every synthesis request well inside the route timeout regardless of answer length, and the next segment is fetched while the current one plays. The container's CPU cap is paired with matching thread limits; capping CPUs alone collapsed throughput. The browser's built-in speech synthesis is the fallback.</li>
+<li><b>Display panel.</b> The model may include at most one table or chart per voice answer; it is lifted out of the spoken text and shown on a non-modal panel. Result tables are collapsed by default on both chat and voice surfaces.</li>
+</ul>
+<div class="figure" style="--mh:121mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  subgraph Listen["1. Listen"]
+    direction LR
+    MIC["Microphone"] --&gt; STT["Speech-to-text&lt;br/&gt;(Web Speech API,&lt;br/&gt;swappable)"]
+    STT --&gt; SIL["Auto-send&lt;br/&gt;on silence"]
+    VAD["Barge-in:&lt;br/&gt;Silero VAD +&lt;br/&gt;TTS-level threshold"]
+  end
+  subgraph Think["2. Think"]
+    direction LR
+    CH["POST /api/chat,&lt;br/&gt;mode voice"] --&gt; FR["Frames: tool chips,&lt;br/&gt;data panels"]
+    CH --&gt; TXT["Answer text"]
+    FR --&gt; DISP["Glass display&lt;br/&gt;panel"]
+  end
+  subgraph Speak["3. Speak"]
+    direction LR
+    EX["Lift the one&lt;br/&gt;table or chart&lt;br/&gt;to the panel"] --&gt; SPL["Sentence&lt;br/&gt;segments,&lt;br/&gt;280 chars max"]
+    SPL --&gt; TTS["/api/tts/stream:&lt;br/&gt;unbuffered PCM"]
+    TTS --&gt; PLAY["Web Audio&lt;br/&gt;playback, next&lt;br/&gt;segment prefetched"]
+  end
+  Listen --&gt; Think
+  Think --&gt; Speak
+</pre>
+<div class="cap"><b>Figure 10.</b> Hands-free voice loop. After playback the surface listens again; barge-in stops playback as soon as the user speaks.</div>
+</div>
+</section>
+
+<!-- ============================ 11 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">11</span>Data model</h2>
+
+<p class="lede">LAAM stores everything in one PostgreSQL 16 database: 22 tables and one enum, managed by 19 versioned Drizzle migrations (migrations only; schema push is never used against real data). The model is a single organisation with roles, not multi-tenant; per-user data is isolated by foreign keys to <code>user</code> and ownership checks in every query.</p>
+
+<h3>11.1 Identity and governance</h3>
+<p>Access tokens are high-entropy random strings stored as SHA-256 hashes and shown once. One table serves three kinds: collector tokens (bound to a machine), personal API tokens and MCP tokens. Disabling a user is one transaction: set <code>disabledAt</code>, revoke every token, write an audit entry. Notifications de-duplicate on a partial unique index over (user, dedupe key).</p>
+<div class="figure" style="--mh:99mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  user ||--o{ access_token : owns
+  user ||--o{ audit_log : acts
+  user ||--o{ notification : receives
+  user {
+    text id PK
+    text email
+    text passwordHash
+    role role
+    timestamp disabledAt
+  }
+  access_token {
+    text kind
+    text tokenHash
+    text userId FK
+    text machineId FK
+    timestamp revokedAt
+  }
+  audit_log {
+    text userId FK
+    text action
+    text target
+  }
+  notification {
+    text userId FK
+    text severity
+    text dedupeKey
+    timestamp readAt
+  }
+</pre>
+<div class="cap"><b>Figure 11.</b> Identity and governance. Login uses JWT sessions; the Auth.js adapter tables (<code>account</code>, <code>session</code>, <code>verificationToken</code>) exist for compatibility and are not shown.</div>
+</div>
+
+
+<h3>11.2 Chat, agents and connectors</h3>
+<p><code>connector_credential</code> holds one encrypted blob per (user, connector) and also stores each user MCP server's configuration under a <code>mcp:&lt;slug&gt;</code> key. Blobs are encrypted with a per-user key, so a blob copied to another user's row does not decrypt. Custom-agent references from workspaces and workflow nodes are deliberately soft (no foreign key) so that a deleted preset is detected and reported at run time rather than cascading.</p>
+<div class="figure" style="--mh:103mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  workspace ||--o{ chat_conversation : groups
+  chat_conversation ||--o{ chat_message : contains
+  chat_conversation ||--o{ chat_tool_call : logs
+  workspace {
+    text customAgentId
+    text instructions
+  }
+  chat_conversation {
+    text workspaceId FK
+    text summary
+    text model
+  }
+  chat_message {
+    text role
+    int tokensIn
+    jsonb attachments
+  }
+  chat_tool_call {
+    text name
+    jsonb args
+    jsonb result
+  }
+  custom_agent {
+    text name
+    text system
+  }
+  connector_credential {
+    text connectorId
+    text secret
+  }
+</pre>
+<div class="cap"><b>Figure 12.</b> Chat, agents and connectors. Workspaces, conversations, custom agents and connector credentials each belong to one <code>user</code> (figure 11). Raw tool results are kept in <code>chat_tool_call</code> so tables can be rebuilt on reload.</div>
+</div>
+
+
+<h3>11.3 Workflows</h3>
+<div class="figure" style="--mh:124mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  workflow ||--o{ workflow_schedule : "scheduled by"
+  workflow ||--o{ workflow_run : runs
+  workflow_run ||--o{ workflow_run_step : journals
+  workflow_run ||--o{ workflow_node_idempotency : "write ledger"
+  workflow {
+    text userId FK
+    jsonb graph
+    text status
+    boolean isTemplate
+  }
+  workflow_schedule {
+    text cron
+    timestamp nextRunAt
+    int missedCount
+  }
+  workflow_run {
+    text scheduleId FK
+    text trigger
+    text status
+    jsonb graphSnapshot
+  }
+  workflow_run_step {
+    text nodeId
+    jsonb output
+    text model
+  }
+  workflow_node_idempotency {
+    text nodeId
+    int iterIndex
+    text status "claimed, done"
+  }
+</pre>
+<div class="cap"><b>Figure 13.</b> Workflows. A scheduled run references its schedule through <code>scheduleId</code>. Unique constraints on (schedule, scheduled-for) and on (run, node, iteration) make schedule claims and writes idempotent.</div>
+</div>
+
+<h3>11.4 Monitoring and evaluation</h3>
+<p>Agent sessions derived from coding-agent transcripts are shared across the organisation by design; sessions created through LAAM's API or MCP server are scoped to their principal. Each machine authenticates its collector with an <code>access_token</code> of kind <code>collector</code> (figure 11). Six trigram (GIN) indexes back global search; trigram matching was chosen over full-text search because PostgreSQL ships no Vietnamese or Chinese text-search configuration. Attribute lists in all four diagrams are abridged to the fields that matter architecturally.</p>
+<div class="figure" style="--mh:138mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  user ||--o{ machine : owns
+  machine ||--o{ agent_session : reports
+  project ||--o{ agent_session : groups
+  user ||--o{ agent_session : "principal (api, mcp)"
+  machine {
+    text id PK
+    text ownerUserId FK
+    timestamp lastSeen
+  }
+  project {
+    text id PK
+    text name
+  }
+  agent_session {
+    text source "coding agent, local, api, mcp"
+    text model
+    text status
+    numeric costUsd
+    jsonb tools
+  }
+  eval_run {
+    text model
+    int k
+    text gitSha
+    jsonb dims
+    jsonb scores
+  }
+</pre>
+<div class="cap"><b>Figure 14.</b> Monitoring and evaluation. <code>eval_run</code> is standalone: one row per offline evaluation run, charted on the Reliability page.</div>
+</div>
+
+
+</section>
+
+<!-- ============================ 12 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">12</span>API surface</h2>
+
+<p class="lede">The HTTP API consists of 64 route files and 88 method handlers under <code>/api</code>. It serves the LAAM UI; three endpoints are designed for machine callers (collector ingest, the MCP server and the workflow tick). State-changing business routes require a mutating role (member or above); some personal and helper routes (AI drafting, document parsing, notifications, own profile) need only a session. Administrative routes require owner or admin.</p>
+
+<table>
+<thead><tr><th style="width:18%">Group</th><th style="width:9%">Routes</th><th>Scope</th><th style="width:20%">Auth</th></tr></thead>
+<tbody>
+<tr><td>Auth and users</td><td>7</td><td>Auth.js handlers, registration (mode-gated, rate-limited), user administration, self-service profile, access tokens.</td><td>Public / session / owner-admin</td></tr>
+<tr><td>Chat and assistant</td><td>21</td><td>Chat turn and confirm, model and tool catalogues, conversations, workspaces, custom agents, document parsing (OCR, PDF, DOCX), guarded URL fetch, TTS proxies, geo and weather proxies.</td><td>Session; mutations need member+</td></tr>
+<tr><td>Connectors and MCP</td><td>5</td><td>Connector list, connect / disconnect / test / OAuth, per-user MCP servers and probe, LAAM's own MCP server.</td><td>Session; MCP server by token</td></tr>
+<tr><td>Monitoring</td><td>11</td><td>Collector ingest, local sync, SSE event stream, dashboard statistics, unified monitoring, session timeline, machines, host metrics, search, runtime config.</td><td>Session; ingest by token</td></tr>
+<tr><td>Workflows</td><td>17</td><td>CRUD, run, clone, templates, runs and cancel, schedules, tick, AI generate / chat / review / append-write.</td><td>Session; tick by secret</td></tr>
+<tr><td>Notifications</td><td>3</td><td>List, mark read, mark all read.</td><td>Session (own rows only)</td></tr>
+</tbody>
+</table>
+
+<h3>Conventions</h3>
+<ul>
+<li><b>Ownership.</b> Per-user resources are filtered by the caller's id in the query itself, so another user's record behaves as not found rather than forbidden.</li>
+<li><b>Validation.</b> Request bodies are validated with Zod or explicit parsers before any I/O; Claude model ids are checked against an allow-list.</li>
+<li><b>Secrets never echoed.</b> Credential and MCP-server responses mask secrets to their last four characters; tokens are shown once at creation.</li>
+<li><b>Streaming.</b> The chat turn streams framed text (chapter 4); live updates for sessions, workflow steps and notifications use SSE on <code>/api/events</code>, filtered per user.</li>
+<li><b>MCP server.</b> <code>POST /api/mcp</code> implements <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code> and <code>ping</code> as hand-written JSON-RPC over Streamable HTTP, exposing only read-only tools. No connector write is reachable through it.</li>
+</ul>
+<p>The complete endpoint list is in the appendix.</p>
+</section>
+
+<!-- ============================ 13 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">13</span>Evaluation harness</h2>
+
+<p class="lede">Beyond unit tests, LAAM has an offline evaluation harness that runs the real system prompt and the real tool loop against real models, scores behaviour with automated graders, and records each run in the database for trend tracking.</p>
+
+<h3>Method</h3>
+<ul>
+<li><b>What is real.</b> The production <code>buildSystemPrompt</code> and <code>runToolRounds</code>, and a live model from the configured provider (BytePlus, Cerebras or Ollama; a missing key fails rather than falling back).</li>
+<li><b>What is stubbed.</b> Tool dispatch. Tools return deterministic stub responses, so no connector or MCP server is called and runs are reproducible. Flag-off guards (drill-down) are not enabled.</li>
+<li><b>Main suite.</b> 17 scenarios across tool selection, arguments, restraint (not calling tools for small talk), rich rendering, write intent, termination, web research and utilities. Each scenario runs <i>k</i> times; 8 graders score 7 dimensions. Each run is stored in <code>eval_run</code> with the git SHA and shown on the Reliability page.</li>
+<li><b>Scale suite.</b> Measures tool-selection pass rate as the number of tools offered grows (4, 16, 32, 60), padding with a distractor pool drawn from the real tool union including a snapshot of a 48-tool MCP server, with Wilson 95% confidence intervals and no-call separated from wrong-call.</li>
+</ul>
+
+<h3>Latest measured results</h3>
+<p>Main suite, 2026-09-03: <code>gpt-oss-120b</code> on BytePlus, k = 5, 17 scenarios, 85 runs, stubbed dispatch.</p>
+<table>
+<thead><tr><th>Tool selection</th><th>Arguments</th><th>Grounding</th><th>Restraint</th><th>Termination</th><th>Write intent</th><th>Rich block</th></tr></thead>
+<tbody><tr><td>86%</td><td>97%</td><td>67%</td><td>100%</td><td>90%</td><td>100%</td><td>100%</td></tr></tbody>
+</table>
+<p>Weak spots named by the scorecard: one scenario consistently prefers a digest tool over the expected statistics tool; one restraint scenario calls the wrong read tool; an open-ended web-research scenario runs 10–16 tool rounds before answering; one detail lookup terminates late. Grounding is the lowest dimension because the grader requires specific values from the stub to appear verbatim in the answer.</p>
+
+<p>Scale suite, <code>gpt-oss-120b</code>: an early low-sample run (k = 3) suggested that tool selection stayed stable as the number of offered tools grew from 4 to 60; a later 60-tool run (k = 8, 2026-08-03) averaged 67%, so scaling is still being measured. At k = 16, the three highest-risk probes (voice-mode detail lookup, and two variants with a misleading earlier conversation) each passed 16 of 16, run without the drill-down safety net.</p>
+
+<div class="callout"><span class="t">How to read these numbers</span>They are grader pass rates on scenarios with stubbed tool responses, not end-to-end accuracy on customer data. Real payloads are larger and noisier than stubs, and the harness does not exercise live connectors. The harness exists to catch regressions in prompt and loop behaviour when models, prompts or guards change, and to make those changes measurable.</div>
+
+<h3>Other test assets</h3>
+<p>363 test files cover the libraries, routes and UI components (Vitest with Testing Library). Notable invariant tests: the no-code-execution guard, durable workflow resume, tick authentication, UI contrast and i18n dictionary drift across the three languages. Additional A/B scripts compare providers and reasoning settings, and a replay harness re-runs multi-turn workflow-authoring conversations.</p>
+</section>
+
+<!-- ============================ APPENDIX ============================ -->
+<section class="chapter cont">
+<h2><span class="n">A</span>Appendix — API endpoint reference</h2>
+<p class="small">Auth legend: <b>Pub</b> public · <b>S</b> session · <b>M</b> session, mutations require member or above · <b>R</b> owner or admin · <b>T</b> bearer access token · <b>Tick</b> shared secret. All paths are under <code>/api</code>.</p>
+
+<table class="api">
+<thead><tr><th style="width:17%">Method</th><th style="width:36%">Path</th><th>Purpose</th><th style="width:7%">Auth</th></tr></thead>
+<tbody>
+<tr><td colspan="4"><b>Auth and users</b></td></tr>
+<tr><td>GET, POST</td><td><code>/auth/[...nextauth]</code></td><td>Auth.js handlers</td><td>Pub</td></tr>
+<tr><td>POST</td><td><code>/register</code></td><td>Sign-up (open / invite / closed; 10 per hour per IP)</td><td>Pub</td></tr>
+<tr><td>GET</td><td><code>/users</code></td><td>User list (safe column projection)</td><td>R</td></tr>
+<tr><td>PATCH</td><td><code>/users/[id]</code></td><td>Change role (owner; last-owner guard) or disable (off-boarding transaction)</td><td>R</td></tr>
+<tr><td>PATCH</td><td><code>/users/me</code></td><td>Edit own profile</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/access-tokens</code></td><td>List own tokens; mint (admins may mint for another user)</td><td>M</td></tr>
+<tr><td>DELETE</td><td><code>/access-tokens/[id]</code></td><td>Revoke</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Chat and assistant</b></td></tr>
+<tr><td>POST</td><td><code>/chat</code></td><td>Streaming chat turn, or confirm / reject a pending write</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/chat/info</code></td><td>Default model and available model lists</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/chat/tools</code></td><td>Caller's tool catalogue (internal, connectors, MCP)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/conversations</code></td><td>List (search by title or content) / create</td><td>M</td></tr>
+<tr><td>GET, PATCH, DELETE</td><td><code>/conversations/[id]</code></td><td>Messages with rebuilt tables / rename / delete</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/workspaces</code></td><td>List / create chat workspaces</td><td>M</td></tr>
+<tr><td>PATCH, DELETE</td><td><code>/workspaces/[id]</code></td><td>Edit / delete (conversations become ungrouped)</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/custom-agents</code></td><td>List / create presets</td><td>M</td></tr>
+<tr><td>PATCH, DELETE</td><td><code>/custom-agents/[id]</code></td><td>Edit / delete</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/ollama/models</code></td><td>Local model list</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/fetch-url</code></td><td>Server-side URL fetch (hostname blocklist)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/ocr</code></td><td>OCR availability / recognise (vi, en, zh)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/pdf</code></td><td>PDF text extraction (text layer, then OCR, then vision)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/docx</code></td><td>DOCX text extraction</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/tts</code></td><td>Text-to-speech (WAV)</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/tts/stream</code></td><td>Streaming text-to-speech (PCM)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/geocode</code>, <code>/reverse</code>, <code>/route</code>, <code>/nearby</code></td><td>Geocoding, reverse geocoding, routing, nearby places (cached, throttled)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/weather</code></td><td>Current weather</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Connectors and MCP</b></td></tr>
+<tr><td>GET</td><td><code>/connectors</code></td><td>Connector list with masked credentials</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/connectors/[id]/[action]</code></td><td>Connect / disconnect / test / OAuth start and callback</td><td>M</td></tr>
+<tr><td>GET, POST, PATCH, DELETE</td><td><code>/connectors/mcp</code></td><td>Per-user MCP servers (token never echoed)</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/connectors/mcp/test</code></td><td>Probe a server before saving</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/mcp</code></td><td>LAAM as MCP server (read-only tools)</td><td>T</td></tr>
+
+<tr><td colspan="4"><b>Monitoring</b></td></tr>
+<tr><td>POST</td><td><code>/ingest</code></td><td>Collector push (5 MB streamed body cap)</td><td>T</td></tr>
+<tr><td>POST</td><td><code>/sync</code></td><td>Scan local transcripts into the database</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/events</code></td><td>SSE: sessions, workflow steps, per-user notifications</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/stats</code></td><td>Dashboard aggregates</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/monitoring</code></td><td>Unified monitored runs (agent, chat, workflow)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/agents/[id]/timeline</code></td><td>Session message and tool log</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/machines</code></td><td>List / create machine and issue collector token</td><td>S / R</td></tr>
+<tr><td>DELETE</td><td><code>/machines/[id]</code></td><td>Revoke collector token</td><td>R</td></tr>
+<tr><td>GET</td><td><code>/host/metrics</code></td><td>Host CPU, RAM, GPU (fail-soft)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/config</code></td><td>Client runtime configuration</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/search</code></td><td>Global search</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Workflows</b></td></tr>
+<tr><td>GET, POST</td><td><code>/workflows</code></td><td>List (paged, with total) / create</td><td>M</td></tr>
+<tr><td>GET, PATCH, DELETE</td><td><code>/workflows/[id]</code></td><td>Read / update / delete (cascades schedules and runs)</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/[id]/run</code></td><td>Run now; dry-run; draft graph (dry-run only)</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/[id]/clone</code></td><td>Clone own workflow or template</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/[id]/save-as-template</code></td><td>Save graph as template</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/workflows/templates</code></td><td>Template catalogue / instantiate</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/templates/[id]/instantiate</code></td><td>Instantiate a template</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/workflows/runs</code></td><td>Caller's runs (filter by workflow, status, latest)</td><td>S</td></tr>
+<tr><td>GET, PATCH</td><td><code>/workflows/runs/[id]</code></td><td>Run detail with steps / cancel</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/workflows/schedules</code></td><td>List / create schedule (cron validated)</td><td>M</td></tr>
+<tr><td>PATCH, DELETE</td><td><code>/workflows/schedules/[id]</code></td><td>Enable, modify, delete</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/tick</code></td><td>Claim due schedules, execute queued and resumable runs</td><td>Tick</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate</code></td><td>One-shot AI generation (probe, plan, verify)</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate/chat</code></td><td>Multi-turn AI authoring turn</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate/compile</code></td><td>Compile an observed trace into a graph (legacy path)</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate/append-write</code></td><td>Append a human-confirmed write step</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/review</code></td><td>Plain-language review of the current graph</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Notifications</b></td></tr>
+<tr><td>GET</td><td><code>/notifications</code></td><td>Caller's notifications and unread count</td><td>S</td></tr>
+<tr><td>PATCH</td><td><code>/notifications/[id]</code></td><td>Mark one read</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/notifications/read-all</code></td><td>Mark all read</td><td>S</td></tr>
+</tbody>
+</table>
+</section>
+
+<script src="../../tooling/node_modules/mermaid/dist/mermaid.min.js"></script>
+<script src="../../tooling/mermaid-init.js"></script>
+</body>
+</html>

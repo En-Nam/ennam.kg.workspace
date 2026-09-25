@@ -1,0 +1,185 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* =====================================================================
+   Tokens. Each pack sets its brand on <body class="p-daab"> / "p-laam".
+   ===================================================================== */
+:root {
+  --ink: #0f1b2d;
+  --ink-soft: #3a4a63;
+  --muted: #6b7686;
+  --rule: #dfe4ec;
+  --panel: #f4f6fa;
+  --ok: #117a4b;   --ok-bg: #e2f5ec;
+  --warn: #9a5b00; --warn-bg: #fdf0d6;
+  --off: #5b6472;  --off-bg: #eceff4;
+  --font: 'Be Vietnam Pro', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'JetBrains Mono', Menlo, monospace;
+
+  /* DAAB — deep ocean + teal, amber spark */
+  --b-900: #062a3f; --b-800: #0a3a56; --b-700: #0e4c6e; --b-600: #146389;
+  --b-300: #8cc3d8; --b-100: #d9edf4; --b-50: #eef7fa;
+  --accent: #0e9f8e; --accent-100: #d3f1ec; --accent-50: #ecfaf7;
+  --spark: #f2a93b;
+  --navy: var(--b-700);          /* legacy alias used by local styles */
+  --accent-soft: var(--accent-50);
+}
+body.p-laam {
+  /* LAAM — deep indigo + violet, coral spark */
+  --b-900: #1a1040; --b-800: #261759; --b-700: #36207c; --b-600: #4c31a8;
+  --b-300: #b3a4e6; --b-100: #e7e1f8; --b-50: #f5f2fd;
+  --accent: #7b4fe0; --accent-100: #e9e0fb; --accent-50: #f6f2fe;
+  --spark: #f2704b;
+}
+
+@page { size: A4; margin: 16mm 16mm 18mm; }
+@page cover { margin: 0; }
+
+* { box-sizing: border-box; }
+html { font-size: 10pt; }
+body { font-family: var(--font); color: var(--ink); line-height: 1.55; margin: 0; background: #fff;
+       -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+/* =====================================================================
+   Cover — full-bleed brand page with a knowledge-graph motif
+   ===================================================================== */
+.cover {
+  page: cover; page-break-after: always;
+  width: 210mm; height: 297mm; padding: 26mm 22mm 20mm;
+  display: flex; flex-direction: column; justify-content: space-between;
+  color: #fff; position: relative; overflow: hidden;
+  background:
+    radial-gradient(120mm 120mm at 100% 0%, color-mix(in srgb, var(--accent) 55%, transparent) 0%, transparent 70%),
+    radial-gradient(140mm 110mm at 0% 100%, color-mix(in srgb, var(--b-600) 70%, transparent) 0%, transparent 70%),
+    linear-gradient(160deg, var(--b-900) 0%, var(--b-800) 55%, var(--b-700) 100%);
+}
+.cover::before { /* graph motif */
+  content: ""; position: absolute; right: -40mm; top: 120mm; width: 150mm; height: 150mm; opacity: .16;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 300'><g stroke='white' stroke-width='1.2' fill='none'><path d='M40 70L120 40L200 90L260 50M120 40L140 140L200 90L230 180L140 140L60 170L40 70M60 170L110 240L180 250L230 180L270 250M140 140L180 250M200 90L270 130L230 180'/></g><g fill='white'><circle cx='40' cy='70' r='5'/><circle cx='120' cy='40' r='7'/><circle cx='200' cy='90' r='9'/><circle cx='260' cy='50' r='4'/><circle cx='140' cy='140' r='11'/><circle cx='60' cy='170' r='5'/><circle cx='230' cy='180' r='7'/><circle cx='110' cy='240' r='5'/><circle cx='180' cy='250' r='8'/><circle cx='270' cy='250' r='4'/><circle cx='270' cy='130' r='5'/></g></svg>") no-repeat center / contain;
+}
+.cover::after { /* spark rule at the foot */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5mm;
+  background: linear-gradient(90deg, var(--spark), var(--accent) 45%, var(--b-600));
+}
+.cover .band { position: relative; margin-top: 34mm; border: 0; padding: 0; }
+.cover .band::before { content: ""; display: block; width: 22mm; height: 3px; background: var(--spark); margin-bottom: 9mm; }
+.cover .kicker { font-size: 9.5pt; letter-spacing: .2em; text-transform: uppercase; color: color-mix(in srgb, #fff 78%, var(--spark)); font-weight: 600; }
+.cover h1 { font-size: 64pt; line-height: 1; margin: 6mm 0 3mm; font-weight: 800; color: #fff; letter-spacing: -.03em; }
+.cover .sub { font-size: 20pt; color: #fff; font-weight: 300; max-width: 150mm; line-height: 1.25; }
+.cover .lede { color: rgba(255,255,255,.82) !important; font-size: 11pt; font-weight: 300; line-height: 1.6; }
+.cover .meta { position: relative; display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 10px;
+  border-top: 1px solid rgba(255,255,255,.28); padding-top: 12px; font-size: 9.5pt; color: rgba(255,255,255,.92); margin-bottom: 8mm; }
+.cover .meta > div { overflow-wrap: normal; }
+.cover .meta b { display: block; font-size: 7.5pt; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: rgba(255,255,255,.6); margin-bottom: 2px; }
+
+/* =====================================================================
+   Table of contents
+   ===================================================================== */
+.toc { page-break-after: always; }
+.toc h2 { border: 0; font-size: 26pt; margin-bottom: 14px; }
+.toc h2::after { content: ""; display: block; width: 18mm; height: 3px; background: var(--accent); margin-top: 8px; }
+.toc ol { list-style: none; padding: 0; margin: 0; }
+.toc li { padding: 6px 0; border-bottom: 1px solid var(--rule); font-weight: 600; font-size: 10.5pt; color: var(--b-800); display: block; }
+.toc li span.n { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-right: 10px;
+  border-radius: 6px; background: var(--b-700); color: #fff; font-size: 9pt; font-weight: 700; vertical-align: middle; }
+.toc li ul { list-style: none; padding-left: 32px; margin: 3px 0 0; font-weight: 400; color: var(--muted); font-size: 8.8pt; }
+.toc li ul li { border: 0; padding: 0; font-weight: 400; font-size: 8.8pt; color: var(--muted); }
+
+/* =====================================================================
+   Headings
+   ===================================================================== */
+h2 { font-size: 19pt; color: var(--b-800); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--rule);
+     page-break-after: avoid; letter-spacing: -.015em; line-height: 1.2; position: relative; }
+h2::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 22mm; height: 3px; background: var(--accent); }
+h2 .n { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px;
+  margin-right: 10px; border-radius: 8px; background: linear-gradient(135deg, var(--b-700), var(--b-600)); color: #fff;
+  font-size: 13pt; font-weight: 800; vertical-align: 3px; box-shadow: 0 2px 0 var(--spark); }
+section.chapter { page-break-before: always; }
+h3 { font-size: 12.5pt; color: var(--b-700); margin: 18px 0 6px; page-break-after: avoid; font-weight: 700; }
+h3::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; background: var(--accent);
+  margin-right: 8px; vertical-align: 2px; }
+h4 { font-size: 10.5pt; margin: 12px 0 4px; color: var(--b-800); page-break-after: avoid; }
+p { margin: 0 0 8px; }
+.lede { font-size: 11pt; color: var(--ink-soft); }
+b, strong { color: var(--ink); font-weight: 600; }
+
+/* =====================================================================
+   Inline + lists
+   ===================================================================== */
+code, .mono { font-family: var(--mono); font-size: 8.2pt; background: var(--b-50); padding: 1px 4px; border-radius: 3px; color: var(--b-800); }
+pre.code { font-family: var(--mono); font-size: 8pt; background: var(--panel); border: 1px solid var(--rule); padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; page-break-inside: avoid; }
+ul, ol { margin: 0 0 8px; padding-left: 18px; }
+ol { padding-left: 24px; }
+li { margin: 2px 0; }
+ul li::marker { color: var(--accent); }
+ol li::marker { color: var(--b-600); font-weight: 700; }
+
+/* =====================================================================
+   Tables
+   ===================================================================== */
+table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 6px 0 12px; font-size: 8.8pt; page-break-inside: auto;
+        border-bottom: 2px solid var(--b-100); }
+thead th:first-child { border-top-left-radius: 6px; }
+thead th:last-child { border-top-right-radius: 6px; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+th { text-align: left; background: var(--b-800); color: #fff; font-weight: 600; padding: 5px 7px; font-size: 8.4pt; letter-spacing: .02em; }
+td { padding: 4px 7px; border-top: 1px solid var(--rule); vertical-align: top; }
+tbody tr:first-child td { border-top: 0; }
+tbody tr:nth-child(even) td { background: var(--b-50); }
+td code { font-size: 7.6pt; }
+td > b:first-child { color: var(--b-800); }
+
+/* =====================================================================
+   Callouts, KPIs, pills
+   ===================================================================== */
+.callout { border: 1px solid color-mix(in srgb, var(--spark) 45%, transparent); border-left: 4px solid var(--spark);
+  background: color-mix(in srgb, var(--spark) 9%, #fff); padding: 9px 13px; margin: 8px 0 12px; border-radius: 6px; page-break-inside: avoid; }
+.callout.info { border-color: var(--b-100); border-left-color: var(--b-600); background: var(--b-50); }
+.callout .t, .callout > b:first-child { font-weight: 700; display: block; margin-bottom: 2px; color: var(--b-800); }
+
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 14px; }
+.kpi { position: relative; padding: 8px 10px 7px; border-radius: 8px; overflow: hidden;
+  background: linear-gradient(160deg, var(--b-50), #fff 70%); border: 1px solid var(--b-100); }
+.kpi::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), var(--spark)); }
+.kpi .v { font-size: 19pt; font-weight: 800; color: var(--b-700); line-height: 1.1; letter-spacing: -.02em; }
+.kpi .l { font-size: 7.6pt; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+
+.pill { white-space: nowrap; display: inline-block; font-size: 7.3pt; font-weight: 700; padding: 1px 7px; border-radius: 10px; letter-spacing: .04em; border: 1px solid transparent; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); border-color: #bfe6d2; }
+.pill.warn { background: var(--warn-bg); color: var(--warn); border-color: #f3d9a6; }
+.pill.off { background: var(--off-bg); color: var(--off); border-color: #d9dee6; }
+
+/* =====================================================================
+   Figures
+   ===================================================================== */
+.figure { page-break-inside: avoid; margin: 10px 0 14px; border: 1px solid var(--b-100); border-radius: 10px; padding: 9px 10px 6px;
+  background: linear-gradient(180deg, #fff, var(--b-50)); }
+.figure .cap { font-size: 8.4pt; color: var(--muted); margin-top: 5px; text-align: center; }
+.figure .cap b { color: var(--b-700); }
+.diagram { display: flex; justify-content: center; }
+.diagram svg { max-width: 100% !important; height: auto; max-height: 215mm; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.small { font-size: 8.5pt; color: var(--muted); }
+.avoid { page-break-inside: avoid; }
+
+/* =====================================================================
+   Technical Brief header band (01 docs) — overrides the docs' local styles
+   ===================================================================== */
+body .brief-head { position: relative; overflow: hidden; border: 0; border-radius: 10px; padding: 9px 14px 10px; margin-bottom: 9px;
+  background:
+    radial-gradient(70mm 40mm at 100% 0%, color-mix(in srgb, var(--accent) 50%, transparent), transparent 70%),
+    linear-gradient(135deg, var(--b-900), var(--b-700)); }
+body .brief-head::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, var(--spark), var(--accent) 45%, var(--b-600)); }
+body .brief-head .kicker { color: color-mix(in srgb, #fff 70%, var(--spark)); }
+body .brief-head h1 { color: #fff; }
+body .brief-head h1 span { color: rgba(255,255,255,.82); font-weight: 300; }
+body .brief-head .meta { color: rgba(255,255,255,.75); }
+body .brief-head .meta code { background: rgba(255,255,255,.14); color: #fff; }
+body .brief-head ~ * h3, body .brief-head ~ h3 { border-left-color: var(--accent); color: var(--b-800); }
+
+/* Trailing margins must not push an otherwise-full page into a blank one before a chapter break. */
+section.chapter > :last-child, .two > * > :last-child, .two > :last-child { margin-bottom: 0; }
+/* Never strand a table's last row alone at the top of a page. */
+tbody tr:last-child { break-before: avoid-page; page-break-before: avoid; }

@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>LAAM — Kiến trúc hệ thống</title>
+<link rel="stylesheet" href="../../tooling/doc.css">
+<style>
+  .figure .diagram svg { max-height: var(--mh, 150mm); }
+  table.api { font-size: 7.8pt; }
+  table.api td { padding: 1px 5px; line-height: 1.3; }
+  table.api tr:has(td[colspan]) { break-after: avoid; page-break-after: avoid; }
+  section.chapter.cont { page-break-before: auto; margin-top: 26px; }
+  .kpis .kpi { break-inside: avoid; page-break-inside: avoid; }
+</style>
+</head>
+<body class="p-laam">
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div class="band">
+    <div class="kicker">Bộ tài liệu kỹ thuật · Tài liệu 02</div>
+    <h1>LAAM</h1>
+    <div class="sub">Kiến trúc hệ thống</div>
+    <p class="lede" style="margin-top:18px;max-width:150mm">Các thành phần, luồng xử lý request, engine agent và engine workflow, tầng mô hình và tầng connector, mô hình dữ liệu và bề mặt tích hợp của một trợ lý AI cho công việc, tự host và đa người dùng.</p>
+  </div>
+  <div class="meta">
+    <div><b>Phiên bản</b>1.0</div>
+    <div><b>Ngày</b>2026-09-24</div>
+    <div><b>Phiên bản mã nguồn</b>LAAM @ 7eb0724</div>
+  </div>
+</section>
+
+<!-- ============================ TOC ============================ -->
+<section class="toc">
+  <h2>Mục lục</h2>
+  <ol>
+    <li><span class="n">1</span>Tổng quan và nguyên tắc thiết kế</li>
+    <li><span class="n">2</span>Bối cảnh hệ thống</li>
+    <li><span class="n">3</span>Kiến trúc thành phần</li>
+    <li><span class="n">4</span>Engine chat và agent
+      <ul><li>Vòng đời một lượt hỏi · thứ tự ưu tiên prompt và persona · vòng lặp tool · giao thức streaming · mức độ suy luận · quản lý ngữ cảnh</li></ul></li>
+    <li><span class="n">5</span>Tầng nhà cung cấp mô hình</li>
+    <li><span class="n">6</span>Tool và connector
+      <ul><li>Tool nội bộ · connector tích hợp sẵn · MCP client · xử lý kết quả</li></ul></li>
+    <li><span class="n">7</span>Các guard độ tin cậy</li>
+    <li><span class="n">8</span>Engine workflow
+      <ul><li>Mô hình graph · chế độ thực thi · độ bền vững và ghi idempotent · trigger và bộ lập lịch</li></ul></li>
+    <li><span class="n">9</span>Soạn workflow bằng AI</li>
+    <li><span class="n">10</span>Pipeline giọng nói</li>
+    <li><span class="n">11</span>Mô hình dữ liệu</li>
+    <li><span class="n">12</span>Bề mặt API</li>
+    <li><span class="n">13</span>Bộ công cụ đánh giá</li>
+    <li><span class="n">A</span>Phụ lục — Tham chiếu endpoint API</li>
+  </ol>
+  <p class="small" style="margin-top:16px">Thuật ngữ trạng thái dùng trong toàn bộ tài liệu:
+    <span class="pill ok">LIVE</span> đã hiện thực, đã tích hợp và đã chạy với dữ liệu thật ·
+    <span class="pill warn">BUILT</span> đã hiện thực và đã tích hợp, chưa chạy với dữ liệu production ·
+    <span class="pill off">PLANNED</span> nằm trong lộ trình, tắt mặc định qua cờ cấu hình, hoặc mới chỉ có interface.
+    Trạng thái triển khai: <b>giai đoạn tiền production (chưa triển khai production)</b> — hiện LAAM chạy dưới dạng stack Docker Compose tự host, phục vụ phát triển, sử dụng nội bộ và trình diễn.</p>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section class="chapter">
+<h2><span class="n">1</span>Tổng quan và nguyên tắc thiết kế</h2>
+
+<p class="lede">LAAM là trợ lý AI cho công việc, tự host và đa người dùng. Người dùng đặt câu hỏi nghiệp vụ qua chat hoặc giọng nói; LAAM trả lời dựa trên dữ liệu thực bằng cách gọi tool trên các hệ thống đã kết nối. Trong chat, mọi thao tác ghi lên một hệ thống đã kết nối đều chờ người dùng xác nhận một bản xem trước do mã dựng; workflow chạy theo lịch chỉ được ghi qua các tool được đánh dấu an toàn cho workflow và chỉ tới những người nhận nằm trong whitelist. Cùng tầng tool này vận hành các graph workflow bền vững, có thể lập lịch, do AI soạn và chạy thử thay cho người dùng.</p>
+
+<p>LAAM là một ứng dụng Next.js 16 duy nhất (React 19, TypeScript strict) dùng PostgreSQL 16 làm cơ sở dữ liệu. Ứng dụng cung cấp bảy bề mặt sản phẩm:</p>
+
+<table>
+<thead><tr><th style="width:22%">Bề mặt</th><th>Chức năng</th><th style="width:11%">Trạng thái</th></tr></thead>
+<tbody>
+<tr><td><b>Chat</b> <code>/chat</code></td><td>Trợ lý LLM đa nhà cung cấp, gọi tool qua connector và MCP server, thẻ xác nhận thao tác ghi, đính kèm tệp (PDF, DOCX, hình ảnh, OCR), hiển thị phong phú (bảng, biểu đồ, bản đồ) và workspace riêng cho từng người dùng với persona dùng chung.</td><td><span class="pill ok">LIVE</span></td></tr>
+<tr><td><b>Giọng nói</b> <code>/constellation</code></td><td>Trung tâm điều khiển bằng giọng nói toàn màn hình, không cần chạm tay: nhận dạng giọng nói trên trình duyệt, ngắt lời dựa trên phát hiện giọng nói, chuyển văn bản thành giọng nói bằng mạng nơ-ron dạng streaming từ một dịch vụ tự host.</td><td><span class="pill ok">LIVE</span></td></tr>
+<tr><td><b>Workflow</b> <code>/workflows</code></td><td>Tự động hoá dạng graph bền vững (các node agent, connector, MCP, điều kiện, for-each; tuỳ chọn thực thi song song), lịch cron, chạy thử (dry-run), và soạn bằng AI có chạy thử các graph mà AI đề xuất. Engine workflow ở trạng thái LIVE; bộ lập lịch cron và tính năng soạn bằng AI ở trạng thái BUILT.</td><td><span class="pill ok">LIVE</span> / <span class="pill warn">BUILT</span></td></tr>
+<tr><td><b>Connector</b> <code>/connectors</code></td><td>12 connector tích hợp sẵn (11 tích hợp và 1 bản demo offline) cùng số lượng tuỳ ý MCP server từ xa cho từng người dùng, với thông tin xác thực mã hoá theo từng người dùng và OAuth khi nhà cung cấp hỗ trợ.</td><td><span class="pill ok">LIVE</span> / <span class="pill warn">BUILT</span></td></tr>
+<tr><td><b>Tìm kiếm</b> <code>/search</code></td><td>Tìm kiếm toàn cục trên các phiên được giám sát, các cuộc hội thoại của người gọi (bao gồm nội dung tin nhắn) và workflow, dùng index trigram.</td><td><span class="pill warn">BUILT</span></td></tr>
+<tr><td><b>Quyền truy cập</b> <code>/settings/*</code></td><td>Kiểm soát truy cập theo vai trò (owner / admin / member / viewer), thu hồi quyền khi nghỉ việc, token truy cập API và MCP cá nhân, khoá do admin cấp, agent tuỳ chỉnh theo từng người dùng.</td><td><span class="pill ok">LIVE</span></td></tr>
+<tr><td><b>Giám sát</b> <code>/monitoring</code></td><td>Xem theo thời gian thực các phiên của AI coding agent (được collector nạp từ các tệp transcript) và các lượt chat, lượt chạy workflow của chính LAAM, bao gồm mô hình, tool, token và chi phí.</td><td><span class="pill ok">LIVE</span></td></tr>
+</tbody>
+</table>
+
+<p>LAAM cũng là một MCP <i>server</i> <span class="pill warn">BUILT</span>: agent bên ngoài có token truy cập có thể gọi chín tool chỉ đọc qua <code>POST /api/mcp</code>.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">26</div><div class="l">Route trang</div></div>
+  <div class="kpi"><div class="v">88</div><div class="l">Handler phương thức API (64 tệp route)</div></div>
+  <div class="kpi"><div class="v">22</div><div class="l">Bảng Postgres · 19 migration</div></div>
+  <div class="kpi"><div class="v">363</div><div class="l">Tệp test (Vitest)</div></div>
+  <div class="kpi"><div class="v">12</div><div class="l">Connector tích hợp sẵn · 46 tool</div></div>
+  <div class="kpi"><div class="v">12</div><div class="l">Tool nội bộ của agent</div></div>
+  <div class="kpi"><div class="v">5</div><div class="l">Nhà cung cấp LLM được hỗ trợ</div></div>
+  <div class="kpi"><div class="v">3</div><div class="l">Ngôn ngữ giao diện (vi · en · zh)</div></div>
+</div>
+<p class="small">Mọi số liệu được đếm từ cây mã nguồn tại commit <code>7eb0724</code>. 12 connector tích hợp sẵn gồm 11 tích hợp và 1 bản demo offline; 14 trong 46 tool của chúng là tool ghi. Bộ Vitest gồm 3,573 test case trong 363 tệp (3,567 pass khi chạy lại trên phiên bản mã nguồn này, ngày 2026-09-24).</p>
+
+<h3>Nguyên tắc thiết kế</h3>
+<p>Năm nguyên tắc lặp lại xuyên suốt mã nguồn và giải thích phần lớn kiến trúc được mô tả ở các chương sau. Mỗi nguyên tắc được hỗ trợ bằng mã hoặc test, không chỉ dựa vào quy ước.</p>
+
+<table>
+<thead><tr><th style="width:26%">Nguyên tắc</th><th>Cách thực thi</th></tr></thead>
+<tbody>
+<tr><td><b>Chỉ dùng mô hình cho các quyết định cần phán đoán</b></td><td>Định tuyến, thử lại, trích xuất, tính toán số học, dựng bảng và thực thi thao tác ghi đều do mã đảm nhiệm. Mô hình quyết định gọi <i>tool nào</i> và diễn đạt câu trả lời ra sao. Ví dụ: bảng kết quả được mã dựng từ các dòng dữ liệu của tool và stream thành một frame riêng, nên mô hình không bao giờ phải gõ lại các con số.</td></tr>
+<tr><td><b>Con người xác nhận thao tác ghi trong chat</b></td><td>Một tool chỉ được coi là tool đọc khi được khai báo chỉ đọc bởi một connector tích hợp sẵn, hoặc bởi một MCP server mà người dùng đã đánh dấu tin cậy; mọi tool khác được coi là tool ghi. Trong chat, mọi thao tác ghi lên một hệ thống đã kết nối đều tạm dừng lượt hỏi và chờ người dùng xác nhận một bản xem trước do mã dựng; lần gọi đã xác nhận chạy bằng mã với các tham số đã niêm phong, và nonce của nó được đối chiếu với nhật ký audit. Workflow chạy theo lịch hoặc không có người giám sát chỉ được thực thi thao tác ghi với các tool được đánh dấu an toàn cho workflow và chỉ tới những người nhận nằm trong whitelist; mọi thao tác ghi khác bị chặn (fail closed).</td></tr>
+<tr><td><b>Báo lỗi rõ ràng</b></td><td>Không tự động chuyển sang nhà cung cấp khác một cách âm thầm, không trả lời rỗng, không báo "thành công" khi chưa có thao tác ghi nào được thực thi. Mỗi đường lỗi tạo ra một thông báo có mã, bằng ba ngôn ngữ, hoặc một bước thất bại nêu rõ nguyên nhân.</td></tr>
+<tr><td><b>Không phụ thuộc nhà cung cấp mô hình</b></td><td>Năm nhà cung cấp nằm sau một hợp đồng adapter nội bộ duy nhất. Người dùng chat tự chọn mô hình; các tác vụ nền xác định mô hình qua một bộ định tuyến tất định. Năng lực (tool, thị giác, đầu ra có cấu trúc) được kiểm tra theo từng nhà cung cấp.</td></tr>
+<tr><td><b>Không phụ thuộc connector</b></td><td>Hệ thống bên ngoài được cắm vào qua interface <code>Connector</code> chung hoặc dưới dạng MCP server do người dùng thêm, và tầng tích hợp là tầng chung. Hành vi riêng của từng connector (ví dụ các cặp đi sâu từ danh sách đến chi tiết) được cung cấp qua cấu hình. Một vài chuỗi prompt gửi cho mô hình vẫn nhắc đến tool của một knowledge graph server cụ thể; việc dọn dẹp các chuỗi này đang được theo dõi.</td></tr>
+</tbody>
+</table>
+
+<div class="callout info"><span class="t">Agent không thực thi mã</span>Một test trong bộ unit test sẽ thất bại nếu việc tạo tiến trình, <code>eval</code>, <code>new Function</code> hoặc module <code>vm</code> xuất hiện ở bất kỳ đâu trong engine agent hoặc engine workflow; hiện chưa có CI, nên bộ test được chạy thủ công. Các tool nội bộ và các loại node workflow được cố định trong mã, và test này cũng kiểm tra tên và số lượng tool. Trợ lý chỉ có thể hành động thông qua các tool đã khai báo.</div>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">2</span>Bối cảnh hệ thống</h2>
+
+<p>LAAM chạy dưới dạng một container ứng dụng trên host do khách hàng kiểm soát, bên cạnh cơ sở dữ liệu và hai dịch vụ sidecar tuỳ chọn. Mọi thông tin trợ lý biết về thế giới bên ngoài đều đến qua một trong bốn kênh: nhà cung cấp LLM, connector (tích hợp sẵn hoặc MCP), tìm kiếm web, và các dịch vụ địa lý, thời tiết công khai. Người dùng truy cập từ trình duyệt trên máy tính hoặc thiết bị di động.</p>
+
+<table>
+<thead><tr><th style="width:24%">Tác nhân bên ngoài</th><th>Tương tác</th><th style="width:22%">Thông tin xác thực</th></tr></thead>
+<tbody>
+<tr><td>Người dùng</td><td>Lượt chat, lượt giọng nói, soạn và chạy workflow, quản lý connector, quản trị.</td><td>Email và mật khẩu (bcrypt), phiên JWT</td></tr>
+<tr><td>AI agent bên ngoài</td><td>Gọi chín tool giám sát chỉ đọc của LAAM qua MCP; bản thân mỗi lần gọi cũng được ghi lại thành một phiên được giám sát.</td><td>Token truy cập cá nhân (loại <code>api</code> hoặc <code>mcp</code>)</td></tr>
+<tr><td>Nhà cung cấp LLM</td><td>Chat completion, gọi tool, đầu ra có cấu trúc. Khoá chỉ nằm phía server; không bao giờ gửi xuống trình duyệt.</td><td>API key của đơn vị vận hành (biến môi trường)</td></tr>
+<tr><td>Connector tích hợp sẵn</td><td>Đọc và ghi qua REST API của từng nhà cung cấp.</td><td>Token hoặc quyền OAuth theo từng người dùng, mã hoá khi lưu trữ</td></tr>
+<tr><td>MCP server</td><td>Khám phá tool (<code>tools/list</code>), gọi tool, chỉ dẫn của server.</td><td>Bearer token và header theo từng người dùng, mã hoá khi lưu trữ</td></tr>
+<tr><td>Collector</td><td>Đẩy metadata phiên coding agent đã được phân tích, kèm các đoạn văn bản ngắn đã được che theo mẫu (không bao giờ gửi toàn bộ transcript), từ máy của lập trình viên.</td><td>Token truy cập của collector</td></tr>
+<tr><td>Bộ lập lịch của host</td><td>Gọi endpoint tick của workflow mỗi phút một lần.</td><td>Secret dùng chung (so sánh thời gian hằng)</td></tr>
+</tbody>
+</table>
+
+<div class="figure" style="--mh:110mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart LR
+  subgraph People["Bên gọi"]
+    direction TB
+    U["Người dùng (trình duyệt)&lt;br/&gt;qua HTTPS"]
+    EA["AI agent bên ngoài&lt;br/&gt;qua MCP"]
+    COL["Collector&lt;br/&gt;đẩy tới endpoint nạp dữ liệu"]
+    HS["Bộ lập lịch host&lt;br/&gt;gọi tick"]
+  end
+  L["LAAM"]
+  subgraph Out["Phụ thuộc gọi ra ngoài"]
+    direction TB
+    CL["LLM cloud: BytePlus,&lt;br/&gt;Cerebras, DeepSeek, Anthropic"]
+    OL["LLM cục bộ: Ollama"]
+    BI["Connector tích hợp sẵn (12)"]
+    MCP["MCP server do&lt;br/&gt;người dùng thêm"]
+    SX["Tìm kiếm web SearXNG"]
+    TTS["Dịch vụ TTS nơ-ron"]
+    GEO["API địa lý và thời tiết"]
+  end
+  U --&gt; L
+  EA --&gt; L
+  COL --&gt; L
+  HS --&gt; L
+  L --&gt; CL
+  L --&gt; OL
+  L --&gt; BI
+  L --&gt; MCP
+  L --&gt; SX
+  L --&gt; TTS
+  L --&gt; GEO
+</pre>
+<div class="cap"><b>Hình 1.</b> Bối cảnh hệ thống. LAAM là thành phần duy nhất người dùng giao tiếp trực tiếp; mọi thông tin xác thực của mô hình và connector đều nằm phía server.</div>
+</div>
+
+
+
+<h3>Mô hình triển khai</h3>
+<p>Triển khai tham chiếu là một stack Docker Compose trên một host duy nhất có GPU: container ứng dụng LAAM (image <code>node:24-alpine</code> dựng nhiều giai đoạn, đầu ra standalone của Next.js, chạy bằng người dùng không phải root, có health check; kèm sẵn các binary OCR và PDF), dịch vụ TTS, SearXNG và một giao diện quản trị cơ sở dữ liệu. PostgreSQL 16 là một instance bên ngoài, dùng chung với các dịch vụ khác trên mạng của host. Ollama và một agent nhỏ thu thập số liệu host chạy trực tiếp trên host để truy cập được GPU. Lưu lượng vào đi qua một mạng VPN dạng lưới riêng, và có thể tuỳ chọn công khai ra internet qua tính năng tunnel của chính VPN đó. Hạ tầng, bảo mật và vận hành được trình bày trong tài liệu 03 của bộ tài liệu này.</p>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">3</span>Kiến trúc thành phần</h2>
+
+<p>Bên trong ứng dụng, một tầng HTTP mỏng (các trang App Router và route handler của API) nằm trên một tập module thư viện trong <code>src/lib</code>. Route handler đảm nhiệm xác thực, kiểm tra request và streaming; các module thư viện đảm nhiệm toàn bộ hành vi và được unit test mà không cần server.</p>
+
+<div class="figure" style="--mh:137mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  subgraph Edge["Tầng HTTP (Next.js 16)"]
+    PX["proxy.ts:&lt;br/&gt;kiểm tra phiên"]
+    UI["26 trang&lt;br/&gt;(React 19)"]
+    API["64 tệp&lt;br/&gt;route API"]
+  end
+  subgraph Lib["Module thư viện (src/lib)"]
+    MON["monitoring:&lt;br/&gt;parser, bảng giá"]
+    BUS["event bus,&lt;br/&gt;thông báo"]
+    CON["connectors:&lt;br/&gt;OAuth, mã hoá,&lt;br/&gt;MCP client"]
+    AG["agent: vòng lặp tool,&lt;br/&gt;guard,&lt;br/&gt;cổng an toàn"]
+    LLM["llm: adapter,&lt;br/&gt;bộ định tuyến nội bộ"]
+    WF["workflow:&lt;br/&gt;engine, nhật ký chạy,&lt;br/&gt;bộ lập lịch"]
+  end
+  subgraph Data["Dịch vụ có trạng thái"]
+    PG[("PostgreSQL 16&lt;br/&gt;+ pg_trgm")]
+    SX["SearXNG"]
+    TT["VieNeu TTS"]
+    OL["Ollama"]
+  end
+  PX --&gt; UI
+  PX --&gt; API
+  API --&gt; AG
+  API --&gt; WF
+  WF --&gt; AG
+  AG --&gt; LLM
+  AG --&gt; CON
+  WF --&gt; CON
+  WF --&gt; BUS
+  MON --&gt; BUS
+  AG --&gt; SX
+  API --&gt; TT
+  LLM --&gt; OL
+  Lib --&gt; PG
+</pre>
+<div class="cap"><b>Hình 2.</b> Kiến trúc thành phần. Nhà cung cấp LLM cloud và API của connector (không thể hiện trên hình) được gọi từ các module <code>llm</code> và <code>connectors</code>; các module <code>auth</code> và <code>mcp-server</code> được lược bỏ cho dễ đọc.</div>
+</div>
+
+<table>
+<thead><tr><th style="width:20%">Thành phần</th><th>Trách nhiệm</th><th style="width:21%">Vị trí</th></tr></thead>
+<tbody>
+<tr><td>Bảo vệ route</td><td>Kiểm tra phiên (tương thích edge) trên mọi đường dẫn không phải tệp tĩnh; một danh sách công khai ngắn (trang giới thiệu, đăng nhập, đăng ký, và ba endpoint xác thực bằng token hoặc secret: nạp dữ liệu, MCP, tick của workflow).</td><td><code>src/proxy.ts</code></td></tr>
+<tr><td>Route chat</td><td>Một lượt chat: kiểm tra đầu vào, nạp hội thoại, giới hạn độ dài lịch sử, tập tool, prompt, rẽ nhánh theo nhà cung cấp, các frame streaming, tạm dừng thao tác ghi và xác nhận.</td><td><code>app/api/chat/route.ts</code></td></tr>
+<tr><td>Engine agent</td><td>Vòng lặp tool (<code>runToolRounds</code>), cổng an toàn, guard và nudge, bảng dữ liệu và bản tóm lược (digest) kết quả, loại bỏ ngữ cảnh, tóm tắt.</td><td><code>lib/agent</code></td></tr>
+<tr><td>Tầng nhà cung cấp</td><td>Adapter cho Ollama, BytePlus, Cerebras, DeepSeek và Anthropic; bộ định tuyến mô hình nội bộ; các chiến lược đầu ra có cấu trúc.</td><td><code>lib/llm</code></td></tr>
+<tr><td>Tầng connector</td><td>12 connector tích hợp sẵn sau một interface duy nhất; luồng OAuth và làm mới token dưới advisory lock của Postgres; kho thông tin xác thực AES-256-GCM; MCP client chung có khám phá tool, đặt namespace và guard SSRF.</td><td><code>lib/connectors</code></td></tr>
+<tr><td>Engine workflow</td><td>Bộ duyệt tuần tự và bộ lập lịch DAG song song, executor của node, nhật ký chạy, sổ cái idempotency, khôi phục sau sự cố, bộ lập lịch cron, và pipeline soạn bằng AI.</td><td><code>lib/workflow</code></td></tr>
+<tr><td>Xác thực</td><td>Đăng nhập bằng thông tin xác thực qua Auth.js v5 với phiên JWT được làm mới từ cơ sở dữ liệu; các helper RBAC; khoá đăng nhập sau nhiều lần sai và giới hạn tốc độ (rate limiting) đăng ký.</td><td><code>lib/auth</code>, <code>src/auth.ts</code></td></tr>
+<tr><td>Giám sát</td><td>Parser transcript (dùng chung với collector), bảng giá, phát hiện phiên bị kẹt, read model thống nhất cho các lượt chạy của agent, chat và workflow.</td><td><code>lib/monitoring</code></td></tr>
+<tr><td>Event bus</td><td>Publish/subscribe trong tiến trình, gắn trên đối tượng global; phân phối tới endpoint SSE (<code>/api/events</code>) cho phiên, bước workflow và thông báo theo từng người dùng.</td><td><code>lib/events-bus.ts</code></td></tr>
+<tr><td>Hook khởi động</td><td>Khi khởi động, đánh dấu các lượt chạy workflow bị bỏ dở ở trạng thái <code>running</code> thành <code>resumable</code> để bộ lập lịch tiếp tục chúng.</td><td><code>src/instrumentation.ts</code></td></tr>
+<tr><td>Collector / agent host</td><td>Hai script Node không phụ thuộc thư viện ngoài: collector đẩy metadata phiên đã phân tích từ máy của lập trình viên; agent host cung cấp số liệu CPU, RAM và GPU cho bề mặt giọng nói.</td><td><code>collector/</code>, <code>host-agent/</code></td></tr>
+</tbody>
+</table>
+
+<h3>Công nghệ sử dụng</h3>
+<table>
+<thead><tr><th style="width:24%">Tầng</th><th>Công nghệ</th></tr></thead>
+<tbody>
+<tr><td>Runtime và framework</td><td>Node.js 24, Next.js 16.2 App Router (đầu ra standalone), React 19.2, TypeScript 6 (strict), Tailwind CSS 4</td></tr>
+<tr><td>Xác thực</td><td>Auth.js v5 beta (<code>next-auth</code> 5.0.0-beta.31) với adapter Drizzle, băm mật khẩu bằng bcrypt, chiến lược phiên JWT</td></tr>
+<tr><td>Dữ liệu</td><td>PostgreSQL 16 với <code>pg_trgm</code>; Drizzle ORM và migration bằng Drizzle Kit; driver <code>node-postgres</code>; kiểm tra dữ liệu bằng Zod 4</td></tr>
+<tr><td>LLM</td><td>Anthropic SDK cho Claude; HTTP tương thích OpenAI (không dùng SDK) cho BytePlus ModelArk, Cerebras và DeepSeek; Ollama HTTP API</td></tr>
+<tr><td>MCP</td><td>Client: <code>@modelcontextprotocol/sdk</code> chính thức (Streamable HTTP, dự phòng bằng SSE). Server: JSON-RPC viết tay qua Streamable HTTP</td></tr>
+<tr><td>Thư viện giao diện</td><td>React Flow (trình soạn workflow, graph phiên), Recharts, Leaflet với OpenStreetMap, three.js / react-three-fiber (hiệu ứng hình ảnh cho giọng nói), react-markdown có làm sạch nội dung</td></tr>
+<tr><td>Giọng nói</td><td>Web Speech API (chuyển giọng nói thành văn bản), Silero VAD trên trình duyệt, VieNeu TTS tự host (Python, FastAPI)</td></tr>
+<tr><td>Tài liệu</td><td>Tesseract OCR (tiếng Việt, tiếng Anh, tiếng Trung giản thể), trích xuất PDF bằng Poppler, trích xuất văn bản DOCX</td></tr>
+<tr><td>Kiểm thử</td><td>Vitest, Testing Library, jsdom; một cấu hình đánh giá riêng chỉ chạy trên host, gọi mô hình thật</td></tr>
+</tbody>
+</table>
+
+<div class="callout info"><span class="t">Thiết kế một tiến trình</span>Event bus, bộ giới hạn tốc độ và logic tiếp tục workflow giả định chỉ có một tiến trình ứng dụng. Điều này giữ cho stack đơn giản với các triển khai tự host; khi cần mở rộng theo chiều ngang, bước đầu tiên là chuyển bus và bộ giới hạn sang một kho dùng chung (ví dụ Redis).</div>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">4</span>Engine chat và agent</h2>
+
+<p class="lede">Một lượt chat là một request <code>POST /api/chat</code>. Route xác thực người gọi, tập hợp ngữ cảnh, chạy vòng lặp tool với mô hình đã chọn, và stream câu trả lời về trong khi lưu lại mọi tin nhắn và lần gọi tool. Cùng engine này phục vụ bề mặt giọng nói, chỉ khác ở hướng dẫn đầu ra.</p>
+
+<h3>4.1 Vòng đời một lượt hỏi</h3>
+
+
+<p>Route thực hiện các bước sau theo thứ tự:</p>
+<ol>
+<li><b>Phân quyền.</b> Yêu cầu có phiên, sau đó yêu cầu vai trò được phép thay đổi dữ liệu (viewer chỉ được đọc). Trước mọi thao tác I/O, id mô hình Claude được đối chiếu với whitelist (nếu không khớp thì trả về 400); id của BytePlus và Cerebras được nhận diện theo danh sách, và mọi id khác được chuyển tới runtime cục bộ.</li>
+<li><b>Kiểm tra đầu vào.</b> Từ chối tin nhắn rỗng, loại bỏ byte NUL, giới hạn tối đa hai hình ảnh mỗi lượt và khoảng 2.8 MB (base64) mỗi hình.</li>
+<li><b>Nạp ngữ cảnh.</b> Nạp hoặc tạo hội thoại. Hội thoại mới được gắn với workspace của nó sau khi kiểm tra quyền sở hữu; workspace không bao giờ thay đổi sau đó.</li>
+<li><b>Giới hạn độ dài lịch sử.</b> Phát lại lịch sử trong một ngân sách ký tự tuỳ theo nhà cung cấp. Phần tràn được gộp vào một bản tóm tắt cuốn chiếu bởi mô hình nội bộ (chương 5) và lưu trên dòng dữ liệu của hội thoại.</li>
+<li><b>Dựng tập tool.</b> Tool nội bộ, cộng với tool của các connector tích hợp sẵn mà người dùng đã kết nối, cộng với mọi tool từ các MCP server của người dùng, đặt namespace theo từng server (chương 6).</li>
+<li><b>Điều phối trước một tool nhanh</b> (tuỳ chọn). Nếu người dùng chọn một tool cụ thể trên giao diện, mã sẽ chạy nó một cách tất định trước vòng lặp mô hình, qua cùng cổng an toàn.</li>
+<li><b>Tập hợp system prompt</b> (mục 4.2), sau đó thêm cảnh báo chủ động (phiên được giám sát bị kẹt hoặc tốn kém, khử trùng lặp theo từng hội thoại với thời gian chờ 6 giờ) dưới dạng một frame riêng, không bao giờ nằm trong văn bản do mô hình viết.</li>
+<li><b>Chạy vòng lặp tool</b> (mục 4.3), sau đó là completion cuối (mục 4.6).</li>
+<li><b>Hoàn tất.</b> Loại bỏ JSON gọi tool bị lọt vào câu trả lời, lưu tin nhắn trợ lý kèm số token, lưu mọi lần gọi tool và kết quả, phát các frame cuối.</li>
+<li><b>Hoặc tạm dừng.</b> Nếu mô hình đề xuất một thao tác ghi, lượt hỏi kết thúc bằng một thẻ xác nhận (chương 7).</li>
+</ol>
+
+<div class="figure" style="--mh:167mm">
+<pre class="mermaid">
+%%{init: {"sequence": {"actorMargin": 14, "width": 96, "boxMargin": 10, "noteMargin": 6, "messageMargin": 20, "height": 50, "diagramMarginX": 8}}}%%
+sequenceDiagram
+  participant B as Trình duyệt
+  participant R as Route chat
+  participant D as Postgres
+  participant A as Vòng lặp&lt;br/&gt;agent
+  participant M as LLM
+  participant T as Tool,&lt;br/&gt;cổng an toàn
+  B-&gt;&gt;R: POST /api/chat
+  Note over R: Phiên, RBAC,&lt;br/&gt;kiểm tra đầu vào
+  R-&gt;&gt;D: Nạp hội thoại,&lt;br/&gt;lưu tin nhắn
+  Note over R: Giới hạn lịch sử,&lt;br/&gt;prompt, tool
+  R-&gt;&gt;A: runToolRounds
+  loop Đến khi hết lần gọi tool (tối đa 25)
+    A-&gt;&gt;M: Completion&lt;br/&gt;+ tool
+    M--&gt;&gt;A: Lần gọi tool
+    A-&gt;&gt;T: Điều phối (ghi&lt;br/&gt;thì tạm dừng)
+    T--&gt;&gt;A: Kết quả&lt;br/&gt;có giới hạn
+    A--&gt;&gt;B: Frame tool, view
+  end
+  A-&gt;&gt;M: Completion cuối
+  M--&gt;&gt;B: Stream câu trả lời
+  R-&gt;&gt;D: Lưu câu trả lời,&lt;br/&gt;lần gọi tool
+  R--&gt;&gt;B: Frame cite, tokens
+</pre>
+<div class="cap"><b>Hình 3.</b> Một lượt chat. Hoạt động của tool và bảng kết quả được stream xuống trình duyệt ngay khi diễn ra, trước câu trả lời cuối cùng.</div>
+</div>
+
+<h3>4.2 System prompt và thứ tự ưu tiên persona</h3>
+<p>System prompt được mã tập hợp từ sáu phần theo thứ tự cố định: persona cơ sở, ngày hôm nay, gợi ý ngôn ngữ (tiếng Việt, tiếng Anh hoặc tiếng Trung), khối tool (chỉ khi có tool), chỉ dẫn riêng của từng MCP server (lấy từ phản hồi <code>initialize</code> của server, có giới hạn độ dài), và một hướng dẫn đầu ra. Hướng dẫn cho văn bản quy định hợp đồng về khối bảng, biểu đồ và bản đồ; hướng dẫn cho giọng nói đặt văn phong nói, cấm đọc to các định danh và chỉ cho phép tối đa một bảng hoặc biểu đồ.</p>
+<p>Khối tool chứa các quy tắc hành vi đã được đo lường, được diễn đạt theo cách chung: thao tác ghi phải đi qua tool và không bao giờ được báo thành công khi không có tool; "tìm lại" buộc phải gọi mới; số đếm lấy từ dữ liệu có cấu trúc; so sánh nhiều chỉ số được tách thành các lần gọi riêng; tool dữ liệu dạng ngôn ngữ tự nhiên nhận nguyên văn câu chữ của người dùng; SQL không bao giờ được đặt vào trường ngôn ngữ tự nhiên.</p>
+
+<table>
+<thead><tr><th style="width:11%">Ưu tiên</th><th style="width:30%">Nguồn</th><th>Tác động</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Ghi đè system prompt tường minh</td><td>Thay thế toàn bộ prompt; các khối tool, ngày, ngôn ngữ và cảnh báo chủ động bị bỏ. Dùng cho người dùng nâng cao và các đường xử lý nội bộ.</td></tr>
+<tr><td>2</td><td>Persona của workspace</td><td>Chỉ thay persona cơ sở; các khối tool, ngày và ngôn ngữ vẫn giữ. Được xác định phía server từ dòng dữ liệu của hội thoại, nên một lượt giọng nói tiếp tục ở nơi khác vẫn có cùng persona.</td></tr>
+<tr><td>3</td><td>Agent tuỳ chỉnh do người dùng chọn</td><td>Chỉ thay persona cơ sở.</td></tr>
+<tr><td>4</td><td>Mặc định của hệ thống</td><td>Persona trợ lý tích hợp sẵn.</td></tr>
+</tbody>
+</table>
+<p class="small">Persona của workspace là một agent tuỳ chỉnh hoặc chỉ dẫn dạng văn bản tự do, không bao giờ là cả hai (API từ chối trường hợp có cả hai với mã 400). Agent tuỳ chỉnh đã bị xoá sẽ quay về mặc định và giao diện hiển thị nhãn cảnh báo.</p>
+
+<h3>4.3 Vòng lặp tool</h3>
+<p><code>runToolRounds</code> (<code>lib/agent/orchestrator.ts</code>) chạy <b>cho đến khi mô hình ngừng gọi tool</b>. Từ phiên bản 2.5.0, cơ chế này đã thay thế giới hạn cố định bốn vòng, vốn cắt ngang mọi tác vụ cần hơn ba vòng tool (ví dụ tóm tắt mười email rồi gửi báo cáo).</p>
+<table>
+<thead><tr><th style="width:26%">Cơ chế</th><th>Hành vi</th></tr></thead>
+<tbody>
+<tr><td>Chặn chạy vô hạn</td><td>Mặc định 25 vòng (có thể cấu hình, trần cứng 50). Vòng cuối bị buộc trả về văn bản.</td></tr>
+<tr><td>Chặn lặp lại</td><td>Cùng một tool với tham số giống hệt ba lần được coi là bị kẹt (tám lần với các tool thăm dò trạng thái). Vòng lặp ngừng điều phối và yêu cầu mô hình trả lời với những gì đã có. "Bị kẹt" và "hết số vòng" được báo cáo riêng để đơn vị vận hành tinh chỉnh.</td></tr>
+<tr><td>Loại bỏ ngữ cảnh</td><td>Khi hội thoại tích luỹ vượt quá ngân sách ký tự (khoảng 37k ký tự với mô hình cục bộ, khoảng 400k với mô hình cloud), các kết quả tool cũ nhất được thay bằng một bản rút gọn, giữ lại ba kết quả gần nhất. Cách làm này theo mẫu xoá kết quả tool mà các nhà cung cấp mô hình lớn đang dùng.</td></tr>
+<tr><td>Xử lý từng kết quả</td><td>Mỗi kết quả được bóc tách, kiểm tra rỗng, chuyển thành bảng dữ liệu nếu có dạng bảng, và được chú thích để mô hình không gõ lại một bảng đã hiển thị trên màn hình (chương 6).</td></tr>
+<tr><td>Nudge một lần</td><td>Mỗi loại tối đa một lần mỗi lượt: đọc một trang sau khi tìm kiếm web trả về URL; hỏi lại khi mô hình trả lời từ trí nhớ ở vòng 0 dù có tool; ngừng dùng nhật ký audit của chính LAAM cho câu hỏi nghiệp vụ. Node agent trong workflow tắt nudge vì prompt của node chính là chỉ dẫn.</td></tr>
+</tbody>
+</table>
+
+<h3>4.4 Giao thức streaming</h3>
+<p>Phản hồi chat là một stream <code>text/plain</code>, không phải Server-Sent Events. Văn bản trả lời thuần được xen kẽ với các frame điều khiển JSON, phân tách bằng ký tự record separator ASCII (U+001E), ký tự không bao giờ xuất hiện trong văn bản thông thường. Id của hội thoại được truyền trong một header của phản hồi. Ngược lại, các lượt chạy workflow phát sự kiện qua bus SSE tại <code>/api/events</code>.</p>
+<table>
+<thead><tr><th style="width:18%">Frame</th><th>Mục đích</th></tr></thead>
+<tbody>
+<tr><td><code>tool</code></td><td>Một lần gọi tool bắt đầu hoặc trả về (vết trực tiếp trên giao diện).</td></tr>
+<tr><td><code>view</code></td><td>Một bảng dữ liệu do mã dựng (bảng, tuỳ chọn gợi ý biểu đồ) từ kết quả của tool.</td></tr>
+<tr><td><code>cite</code></td><td>Các nguồn được câu trả lời sử dụng.</td></tr>
+<tr><td><code>pending_write</code></td><td>Một thao tác ghi đang chờ con người xác nhận: bản xem trước do mã dựng và token đã niêm phong.</td></tr>
+<tr><td><code>proactive</code></td><td>Cảnh báo về các phiên được giám sát bị kẹt hoặc tốn kém.</td></tr>
+<tr><td><code>tokens</code></td><td>Mức sử dụng token, chỉ gửi khi nhà cung cấp thực sự báo cáo (không bịa ra chi phí bằng 0).</td></tr>
+<tr><td><code>hb</code></td><td>Heartbeat trong khi mô hình suy luận đang suy nghĩ, để các proxy không ngắt kết nối vì nhàn rỗi.</td></tr>
+</tbody>
+</table>
+
+<h3>4.5 Mức độ suy luận theo giai đoạn</h3>
+<p>Với các mô hình suy luận trên BytePlus và Cerebras, LAAM đặt mức độ suy luận riêng cho <b>các vòng tool</b> và cho <b>câu trả lời cuối</b> (mỗi giai đoạn quay về một thiết lập dùng chung; chỉ các giá trị <code>low</code>, <code>medium</code> và <code>high</code> được chuyển tiếp). Điều này cho phép một bản triển khai đánh đổi giữa độ trễ và độ sâu ở đúng chỗ cần thiết. Cấu hình mẫu đi kèm đặt giai đoạn cuối ở mức <code>low</code> và cố ý để các vòng tool ở mặc định của nhà cung cấp: trong thử nghiệm, mức thấp khi chọn tool đã dẫn đến câu trả lời sai "không tìm thấy gì" cho một câu hỏi tra cứu dữ liệu. DeepSeek có thiết lập riêng, và chế độ "thinking" của nó bị tắt ở các vòng tool sau khi truy vết được một lần gọi kéo dài hơn 100 giây.</p>
+
+<h3>4.6 Câu trả lời cuối và quản lý ngữ cảnh</h3>
+<ul>
+<li><b>Bản tóm lược trước completion cuối.</b> Kết quả dạng bảng lớn đến với mô hình dưới dạng bản tóm lược (số dòng, các cột, tổng theo từng cột do mã tính trên toàn bộ các dòng, một vài dòng mẫu). Các dòng thô vẫn nằm trong <code>chat_tool_call</code>, nên khi nạp lại hội thoại, các bảng được dựng lại chính xác.</li>
+<li><b>Ghim câu hỏi.</b> Sau một lượt có dùng tool trên nhánh cloud (BytePlus hoặc Cerebras), câu hỏi của người dùng được nhắc lại trước completion cuối. Cơ chế này được thêm sau một trường hợp đo được, khi câu trả lời trôi sang một chủ đề trước đó.</li>
+<li><b>Khôi phục khi câu trả lời rỗng.</b> Nếu stream cuối của một mô hình cloud rỗng, engine thử lại đúng một lần với nudge "trả lời ngay từ những gì đã có"; nếu vẫn rỗng, engine gửi một thông báo có mã. Không bao giờ hiển thị bong bóng trống.</li>
+<li><b>Tóm tắt cuốn chiếu.</b> LAAM không có kho bộ nhớ dài hạn riêng. Bộ nhớ hội thoại là bản tóm tắt cuốn chiếu trên dòng dữ liệu của hội thoại cộng với các lượt tool đã lưu. Mọi bộ nhớ dùng chung mà khách hàng muốn đều đi qua một MCP server đã kết nối như mọi tool khác.</li>
+</ul>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">5</span>Tầng nhà cung cấp mô hình</h2>
+
+<p class="lede">LAAM giao tiếp với năm nhà cung cấp mô hình qua một hợp đồng adapter duy nhất. Người dùng chọn mô hình chat trong bộ chọn; các tác vụ nền (tóm tắt, node agent của workflow, soạn bằng AI) không có bộ chọn và xác định mô hình qua một bộ định tuyến tất định.</p>
+
+<table>
+<thead><tr><th style="width:17%">Nhà cung cấp</th><th style="width:18%">Giao thức truyền</th><th style="width:14%">Bộ chọn chat</th><th style="width:13%">Vòng lặp tool</th><th style="width:10%">Thị giác</th><th>Ghi chú</th></tr></thead>
+<tbody>
+<tr><td>Ollama (cục bộ)</td><td>Ollama HTTP API</td><td>Luôn có</td><td>Có</td><td>Có (≤2 hình)</td><td>Chi phí biên bằng 0; chạy trên GPU của host.</td></tr>
+<tr><td>BytePlus ModelArk</td><td>HTTP tương thích OpenAI</td><td>Khi có khoá (chọn sẵn)</td><td>Có</td><td>Chưa kết nối</td><td>Tám mô hình trong whitelist, mặc định <code>gpt-oss-120b</code>.</td></tr>
+<tr><td>Cerebras</td><td>HTTP tương thích OpenAI</td><td>Khi có khoá</td><td>Có</td><td>Chưa kết nối</td><td>Dùng chung đường mã với BytePlus.</td></tr>
+<tr><td>DeepSeek</td><td>HTTP tương thích OpenAI</td><td>Không</td><td>Có</td><td>Không</td><td>Chỉ dùng cho tác vụ nền.</td></tr>
+<tr><td>Anthropic Claude</td><td>Anthropic SDK</td><td>Khi có khoá</td><td><b>Không</b></td><td>Không</td><td>Chỉ chat văn bản; yêu cầu nó điều khiển tool sẽ báo lỗi rõ ràng.</td></tr>
+</tbody>
+</table>
+
+<div class="figure" style="--mh:115mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart LR
+  subgraph Chat["Lượt chat: người dùng chọn mô hình"]
+    direction TB
+    P["Id Claude có trong&lt;br/&gt;whitelist? (nếu không: 400)"] --&gt; BR{{"Nhà cung cấp"}}
+    BR --&gt;|"Claude"| C1["Stream văn bản,&lt;br/&gt;không có tool"]
+    BR --&gt;|"BytePlus,&lt;br/&gt;Cerebras"| C2["Vòng lặp&lt;br/&gt;tool đầy đủ"]
+    BR --&gt;|"id khác"| C3["Vòng lặp tool&lt;br/&gt;đầy đủ, Ollama&lt;br/&gt;cục bộ"]
+  end
+  subgraph Internal["Tác vụ nền: bộ định tuyến nội bộ"]
+    direction TB
+    I0["Ghi đè INTERNAL_MODEL"] --&gt; I1["BytePlus"]
+    I1 --&gt; I2["Cerebras"]
+    I2 --&gt; I3["DeepSeek"]
+    I3 --&gt; I4["Anthropic"]
+    I4 --&gt; I5["Ollama cục bộ"]
+  end
+  Chat ~~~ Internal
+</pre>
+<div class="cap"><b>Hình 4.</b> Định tuyến chat và bộ định tuyến mô hình nội bộ. Bộ định tuyến xác định đúng một mô hình cho mỗi lần gọi; tầng đầu tiên đã được cấu hình sẽ được chọn.</div>
+</div>
+
+<h3>Quy tắc định tuyến</h3>
+<ul>
+<li><b>Mặc định ưu tiên cloud.</b> Bộ chọn chat chọn sẵn BytePlus nếu đã cấu hình, sau đó đến Cerebras, nếu không thì mô hình cục bộ. Một bản triển khai không có khoá cloud sẽ chạy hoàn toàn trên mô hình cục bộ.</li>
+<li><b>Không âm thầm chuyển sang nhà cung cấp khác.</b> Lỗi từ nhà cung cấp tạo ra một thông báo có mã, bằng ba ngôn ngữ (xác thực, giới hạn tốc độ, quá tải, kết nối, API) và lượt hỏi vẫn được lưu lại. BytePlus và Cerebras thử lại một lần khi gặp 429, 503 hoặc 529 sau một khoảng trễ có thể cấu hình.</li>
+<li><b>Ba điểm vào nội bộ.</b> <code>callModelText</code> (không có tool), <code>callModelChat</code> (vòng lặp tool) và <code>callModelGenerate</code> (JSON có cấu trúc).</li>
+<li><b>Kiểm tra năng lực.</b> Claude có thể tóm tắt nhưng không thể chạy node agent của workflow; lượt chạy thất bại tại node đó với lỗi tường minh thay vì tạo ra một câu trả lời không dùng tool.</li>
+</ul>
+
+
+<h3>Đầu ra có cấu trúc theo từng nhà cung cấp</h3>
+<p>Việc soạn workflow cần JSON đáng tin cậy. Mức hỗ trợ khác nhau giữa các nhà cung cấp và mô hình, nên chiến lược được chọn theo từng nhà cung cấp dựa trên số liệu đo: chế độ JSON khi được hỗ trợ; JSON chỉ qua prompt khi mô hình từ chối tham số <code>response_format</code>; buộc gọi tool ("structured tool") làm mặc định cho việc suy ra nhánh trên BytePlus <code>gpt-oss-120b</code> (10 trên 10 trong thử nghiệm); JSON schema nghiêm ngặt trên Cerebras. Function calling nghiêm ngặt của DeepSeek cho kết quả đo kém hơn và chỉ bật khi chủ động chọn.</p>
+
+<h3>Hạch toán chi phí</h3>
+<p>Một bảng giá (USD trên một triệu token đầu vào và đầu ra) bao phủ các mô hình Claude, BytePlus, Cerebras và DeepSeek. Mô hình không khớp mục nào được tính theo mức giá ước lượng mặc định ngang Sonnet; các mô hình chưa công bố giá không hiển thị chi phí thay vì một con số phỏng đoán. Token được ghi nhận theo từng tin nhắn chat và từng bước workflow, cùng với mô hình thực sự đã trả lời, và chi phí được tính tại thời điểm ghi. Phần giám sát hiển thị mô hình, tool và chi phí của các lượt chat và lượt chạy workflow bên cạnh các phiên agent được giám sát.</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">6</span>Tool và connector</h2>
+
+<p class="lede">Mọi việc trợ lý có thể làm đều là một tool. Tool đến từ ba nguồn: một tập tool nội bộ khép kín, các connector tích hợp sẵn mà người dùng đã kết nối, và các MCP server do người dùng thêm. Cả ba dùng chung một đường điều phối và một cổng an toàn.</p>
+
+<h3>6.1 Tool nội bộ (luôn sẵn có)</h3>
+<table>
+<thead><tr><th style="width:26%">Nhóm</th><th>Tool</th></tr></thead>
+<tbody>
+<tr><td>Giám sát (9, chỉ đọc)</td><td><code>laam_list_agents</code>, <code>laam_get_agent</code>, <code>laam_query_stats</code>, <code>laam_list_machines</code>, <code>laam_find_stuck</code>, <code>laam_search_sessions</code>, <code>laam_get_timeline</code>, <code>laam_query_audit</code>, <code>laam_metrics_digest</code>. Các tool này đọc kho dữ liệu giám sát của chính LAAM, không phải dữ liệu nghiệp vụ. Chính chín tool này được cung cấp cho agent bên ngoài qua MCP server của LAAM.</td></tr>
+<tr><td>Web (2)</td><td><code>web_search</code> qua SearXNG tự host (suy giảm êm nếu dịch vụ ngừng); <code>web_read</code> tải một URL dưới dạng văn bản, đối chiếu host của URL và của mọi bước chuyển hướng với một blocklist tên máy riêng tư và metadata, giới hạn 6,000 ký tự.</td></tr>
+<tr><td>Tiện ích (1)</td><td><code>util_calc</code>: tính toán số học tất định bằng bộ phân tích shunting-yard, không dùng <code>eval</code>.</td></tr>
+</tbody>
+</table>
+
+<h3>6.2 Connector tích hợp sẵn</h3>
+<p>Mỗi connector tích hợp sẵn triển khai cùng interface <code>Connector</code>: một id, một chế độ xác thực, và danh sách tool, mỗi tool khai báo <code>kind: "read" | "write"</code> và có an toàn để chạy không giám sát trong workflow hay không. Thông tin xác thực được mã hoá theo từng người dùng (AES-256-GCM với khoá dẫn xuất riêng cho từng người dùng bằng HKDF-SHA256). Việc làm mới token OAuth chạy tại một điểm chặn duy nhất <code>execute()</code> dưới advisory lock của Postgres, vì một số nhà cung cấp xoay vòng refresh token chỉ dùng một lần; quyền bị thu hồi sẽ chuyển connector sang trạng thái "cần kết nối lại".</p>
+<table>
+<thead><tr><th style="width:18%">Connector</th><th style="width:9%">Tool</th><th style="width:9%">Ghi</th><th style="width:26%">Xác thực</th><th>Ví dụ thao tác ghi</th></tr></thead>
+<tbody>
+<tr><td>GitHub</td><td>8</td><td>2</td><td>Token</td><td>Tạo issue, bình luận</td></tr>
+<tr><td>Trello</td><td>7</td><td>3</td><td>Token, tuỳ chọn uỷ quyền một cú nhấp</td><td>Tạo / cập nhật thẻ, bình luận</td></tr>
+<tr><td>Jira</td><td>6</td><td>2</td><td>Atlassian OAuth 3LO hoặc API token</td><td>Tạo issue, bình luận</td></tr>
+<tr><td>Google Drive</td><td>5</td><td>1</td><td>Google OAuth</td><td>Tạo thư mục</td></tr>
+<tr><td>Google Calendar</td><td>4</td><td>1</td><td>Google OAuth</td><td>Tạo sự kiện</td></tr>
+<tr><td>Gmail</td><td>4</td><td>1</td><td>Google OAuth</td><td>Gửi (xác nhận trong chat; whitelist người nhận trong workflow)</td></tr>
+<tr><td>Slack</td><td>3</td><td>1</td><td>Slack OAuth v2</td><td>Gửi tin nhắn</td></tr>
+<tr><td>WhatsApp</td><td>1</td><td>1</td><td>Cloud API token</td><td>Gửi tin nhắn</td></tr>
+<tr><td>Zalo</td><td>2</td><td>1</td><td>Zalo OA OAuth v4 (PKCE)</td><td>Gửi tin nhắn</td></tr>
+<tr><td>Danh mục APILayer</td><td>2</td><td>0</td><td>Một access key</td><td>— (9 API trong danh mục)</td></tr>
+<tr><td>Danh mục Public-APIs</td><td>2</td><td>0</td><td>Không có</td><td>— (8 API không cần khoá, kiểm tra thủ công)</td></tr>
+<tr><td>Demo</td><td>2</td><td>1</td><td>Không có</td><td>Tạo tác vụ (demo cổng ghi ngoại tuyến)</td></tr>
+<tr><td><b>Tổng</b></td><td><b>46</b></td><td><b>14</b></td><td colspan="2"></td></tr>
+</tbody>
+</table>
+<p class="small">Hai connector danh mục an toàn trước SSRF ngay từ thiết kế: mô hình tìm kiếm trong một danh mục do con người soạn và gọi một mục, và mỗi mục cố định mẫu URL của riêng nó, nên mô hình chỉ có thể yêu cầu những URL do LAAM viết. Các luồng OAuth được ẩn cho đến khi đơn vị vận hành cấu hình client credentials của nhà cung cấp; Jira cũng chấp nhận API token.</p>
+
+<h3>6.3 MCP client — đường tích hợp chung</h3>
+<p>Bất kỳ hệ thống nào hỗ trợ Model Context Protocol đều có thể được người dùng thêm vào lúc runtime: một cổng cơ sở dữ liệu, một server knowledge graph, một endpoint MCP của nhà cung cấp SaaS. Đường MCP là đường chung; một vài chuỗi gửi cho mô hình vẫn nêu tên tool của một knowledge graph server cụ thể (việc dọn dẹp đang được theo dõi). Cấu hình server (URL, bearer token, header) được lưu trong cùng bảng thông tin xác thực mã hoá theo từng người dùng như các connector tích hợp sẵn.</p>
+
+
+<table>
+<thead><tr><th style="width:24%">Thuộc tính</th><th>Cách triển khai và lý do</th></tr></thead>
+<tbody>
+<tr><td>Giao thức truyền</td><td>Ưu tiên Streamable HTTP, thử lại một lần qua SSE cho các server cũ. Kết nối được mở theo từng thao tác và luôn được đóng.</td></tr>
+<tr><td>Guard SSRF</td><td>Khi kết nối, tên máy trong URL của server được phân giải DNS và mọi địa chỉ thu được đều được đối chiếu với các dải riêng tư, link-local, metadata, IPv6 unique-local và IPv4-mapped trước khi mở kết nối. Hạng mục gia cố trước production: một guard ghim DNS duy nhất cho mọi yêu cầu ra ngoài, bổ sung dải carrier-grade NAT và kiểm tra lại khi chuyển hướng.</td></tr>
+<tr><td>Namespace</td><td>Mỗi tool được cung cấp cho mô hình dưới dạng <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, nên các server không thể xung đột với nhau hoặc che khuất tool tích hợp sẵn. Slug của server giữ ổn định khi server được đổi tên hoặc trỏ sang địa chỉ khác.</td></tr>
+<tr><td>Khử trùng tiền tố</td><td>Khi tên một tool là tiền tố chặt của tên tool khác trên cùng server, tên ngắn hơn được thêm phần đệm. Đo trên một nhà cung cấp: tool có tên dài hơn được gọi đúng 0 trên 6 lần trước khi sửa và 6 trên 6 sau khi sửa; trên một server có 49 tool, thay đổi này giúp 11 tool có thể được gọi tới.</td></tr>
+<tr><td>Chỉ dẫn của server</td><td>Chỉ dẫn trong <code>initialize</code> của từng server được thu lại và đặt vào system prompt, nên thông tin phạm vi mà server công bố không phải suy ra lại bằng các lần gọi liệt kê thêm ở mỗi câu hỏi.</td></tr>
+<tr><td>Giới hạn</td><td>200 tool mỗi server (ghi log khi cắt bớt), timeout 15 giây mỗi lần gọi, văn bản lỗi gửi cho mô hình giới hạn 300 ký tự, chặn trên 200k ký tự cho dữ liệu thô kèm dấu hiệu cắt bớt hiển thị rõ; định hình mỗi kết quả còn 8k ký tự (cục bộ) hoặc 120k (cloud).</td></tr>
+<tr><td>Lỗi trong phản hồi</td><td>Cờ <code>isError</code> của MCP được truyền tiếp: runtime của workflow dừng khi gặp cờ này và pipeline soạn bằng AI loại bỏ các quan sát như vậy.</td></tr>
+</tbody>
+</table>
+
+<div class="figure" style="--mh:112mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  subgraph Connect["1. Kết nối"]
+    direction LR
+    CFG["Người dùng thêm server:&lt;br/&gt;URL, token, header"] --&gt; SSRF{{"IP nằm ngoài dải&lt;br/&gt;riêng tư/metadata?"}}
+    SSRF --&gt;|"không"| REJ["Từ chối"]
+    SSRF --&gt;|"có"| TR["Streamable HTTP,&lt;br/&gt;thử lại qua SSE"]
+  end
+  subgraph Discover["2. Khám phá"]
+    direction LR
+    LIST["tools/list (tối đa 200)&lt;br/&gt;+ chỉ dẫn"] --&gt; NS["Namespace theo server,&lt;br/&gt;khử trùng tiền tố"]
+    NS --&gt; ALLOW["Whitelist từng tool&lt;br/&gt;của người dùng"]
+  end
+  subgraph Classify["3. Phân loại và gọi"]
+    direction LR
+    KIND{{"Server tin cậy VÀ&lt;br/&gt;có readOnlyHint?"}}
+    KIND --&gt;|"có"| RD["Đọc: chạy&lt;br/&gt;trực tiếp"]
+    KIND --&gt;|"không"| WR["Ghi: xác nhận trong chat,&lt;br/&gt;bị chặn trong workflow"]
+    RD --&gt; CALL["tools/call, 15 s,&lt;br/&gt;kết quả có giới hạn"]
+    WR --&gt; CALL
+  end
+  Connect --&gt; Discover
+  Discover --&gt; Classify
+</pre>
+<div class="cap"><b>Hình 5.</b> Đường xử lý tool MCP. Việc phân loại mặc định an toàn (fail closed): một tool chỉ được coi là tool đọc khi cả người dùng và server đều xác nhận như vậy.</div>
+</div>
+
+<h3>6.4 Xử lý kết quả: bảng và bản tóm lược do mã dựng</h3>
+<p>Kết quả MCP đến dưới dạng văn bản chứa JSON, còn tool nội bộ trả về đối tượng. Một hàm bóc tách duy nhất chuẩn hoá cả hai, và mọi bước kiểm tra hình dạng dữ liệu đều dùng hàm này; một guard bỏ qua bước này sẽ âm thầm không bao giờ kích hoạt.</p>
+<ul>
+<li><b>Bảng dữ liệu.</b> Khi kết quả có dạng bảng (ít nhất 3 dòng và 2 cột với tập khoá nhất quán, tối đa 500 dòng), mã dựng một bảng và stream nó thành frame <code>view</code>; gợi ý biểu đồ được thêm cho tối đa 25 dòng. Sau đó mô hình được báo rằng bảng đã hiển thị trên màn hình. Động lực đến từ số liệu đo: trên 13 câu hỏi thử nghiệm, chỉ 2 kết quả đạt ngưỡng kích thước cũ để tạo bảng; ở 11 câu còn lại, các con số trên màn hình là do mô hình gõ lại kết quả, và nó đã gây lỗi (tên sản phẩm bị cắt, khoảng trắng thừa trong một định danh, mất một ô và lặp một dòng).</li>
+<li><b>Bản tóm lược cho mô hình.</b> Kết quả lớn đến với mô hình dưới dạng số đếm, các cột, tổng do mã tính và các dòng mẫu. Trong một trường hợp đo được, việc gõ lại một kết quả 62 dòng mất 103 giây và 3,225 token đầu ra, kèm lỗi; bản tóm lược loại bỏ chi phí đó.</li>
+<li><b>Quy tắc định dạng.</b> Bảng Markdown được mã sửa lại; số dùng dấu phân cách hàng nghìn và đơn vị tiền tệ tường minh.</li>
+</ul>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">7</span>Các guard độ tin cậy</h2>
+
+<p class="lede">Mô hình ngôn ngữ có thể bịa đặt, chọn nhầm tool gần giống và bỏ cuộc sớm. LAAM không chỉ dựa vào prompt để ngăn chặn điều này. Mỗi kiểu lỗi quan sát được trong thử nghiệm đều có một guard mang tính cấu trúc trong mã, được kích hoạt bởi các dữ kiện quan sát được (thiếu lần gọi tool, kết quả rỗng, tên sai định dạng) thay vì phân loại ý định của người dùng.</p>
+
+<h3>7.1 Vòng xác nhận thao tác ghi</h3>
+<p>Cổng ghi là guard quan trọng nhất. Mọi lần điều phối đều đi qua <code>withSafety</code>, hàm phân loại tool dựa trên chính khai báo của tool. Tool không xác định được coi là tool ghi. Trong chat, một thao tác ghi chưa được xác nhận không bao giờ được thực thi: nó phát ra một tín hiệu mà route chuyển thành lượt hỏi bị tạm dừng.</p>
+
+<p>Có ba lựa chọn thiết kế quan trọng ở đây. Bản xem trước hiển thị cho người dùng được mã dựng từ các tham số, không bao giờ từ văn bản của mô hình, nên người dùng phê duyệt đúng nội dung sẽ được gửi. Token không lưu trạng thái (được niêm phong bằng mã hoá có xác thực) và mang theo mô hình ban đầu, nên phần tường thuật sau khi xác nhận tiếp tục với cùng giọng văn. Và nonce của token được đối chiếu với nhật ký audit trước khi điều phối, nên một lần xác nhận đã được ghi nhận sẽ bị từ chối. Hạng mục gia cố trước production: nhận nonce một cách nguyên tử (atomic) và thử lại idempotent cho các thao tác ghi MCP đã xác nhận.</p>
+
+
+
+
+<h3>7.2 Guard bám sát dữ liệu</h3>
+<table>
+<thead><tr><th style="width:21%">Guard</th><th style="width:31%">Điều kiện kích hoạt</th><th>Lý do tồn tại</th></tr></thead>
+<tbody>
+<tr><td>Hỏi lại để bám dữ liệu</td><td>Vòng 0, có tool, mô hình trả lời mà không gọi tool. Hỏi lại một lần (có ngoại lệ cho trò chuyện xã giao).</td><td>Một mô hình đã bịa ra toàn bộ hồ sơ dự án, kể cả một người phụ trách không tồn tại, thay vì tra cứu.</td></tr>
+<tr><td>Rỗng không có nghĩa là không có</td><td>Tool trả về 0 dòng hoặc số đếm bằng 0.</td><td>Trên một truy vấn tìm bất thường, một cách diễn đạt không trả về gì trong khi ba cách diễn đạt khác trả về 9 đến 18 dòng. Mô hình được báo rằng kết quả rỗng không phải bằng chứng của việc không tồn tại, được cho xem truy vấn đã dùng, và được phép hỏi lại một lần bằng chính câu chữ của người dùng.</td></tr>
+<tr><td>Guard chống báo ghi sai</td><td>Văn bản người dùng trông như yêu cầu ghi; câu trả lời báo thành công; không có tool ghi nào được thực thi.</td><td>Các mô hình cục bộ đã tường thuật những thao tác ghi chưa từng thực hiện. Khi phát hiện ý định ghi, đầu ra được đệm lại và các tuyên bố thành công không có căn cứ bị thay thế.</td></tr>
+<tr><td>Định tuyến lại theo ý định tool</td><td>Tham số khớp chính xác với đúng một tool khác.</td><td>Một mô hình đã gọi một tool có tên là tiền tố của tool dự định, với tham số của tool dự định.</td></tr>
+<tr><td>Sửa tên tool</td><td>Token định dạng bị lọt vào tên tool.</td><td>Định dạng chat của một mô hình open-weight đôi khi làm lọt các ký hiệu kênh và hậu tố vào tên tool.</td></tr>
+<tr><td>Ghim câu hỏi</td><td>Một lượt có dùng tool trên nhánh cloud (BytePlus hoặc Cerebras).</td><td>Một câu trả lời đã trôi sang câu hỏi trước sau một chuỗi tool dài.</td></tr>
+<tr><td>Loại bỏ phần thừa</td><td>JSON gọi tool ở đầu câu trả lời.</td><td>Các câu trả lời đã lưu đôi khi bắt đầu bằng JSON thô.</td></tr>
+<tr><td>Nudge chống dùng sai audit</td><td>Nhật ký audit của chính LAAM bị truy vấn cho một câu hỏi nghiệp vụ.</td><td>Mô hình đọc nhầm nhật ký và kết luận "không có dữ liệu".</td></tr>
+<tr><td>Guard buộc lấy dữ liệu <span class="pill off">PLANNED</span></td><td>Chỉ có các tool cấu trúc hoặc liệt kê được gọi. Tắt mặc định qua cờ cấu hình; cấu hình theo từng bản triển khai.</td><td>Một mô hình đã kiểm tra schema nhiều lần, rồi trả lời "không có dữ liệu" mà không lấy dữ liệu nào.</td></tr>
+<tr><td>Đi sâu từ danh sách đến chi tiết <span class="pill off">PLANNED</span></td><td>Sau một tool danh sách đã cấu hình, câu hỏi nêu tên đúng một thực thể từ kết quả của nó. Tắt mặc định qua cờ cấu hình.</td><td>Mã gọi tool chi tiết đi kèm. Các cặp tool là cấu hình, nên không có tên connector nào bị hard-code. Trong thử nghiệm, sau đó 12 trên 12 câu hỏi chi tiết bằng giọng nói đã đến được tool chi tiết.</td></tr>
+</tbody>
+</table>
+<p class="small">Các guard chỉ kích hoạt một lần mỗi lượt và suy giảm êm: không guard nào có thể chặn vĩnh viễn một câu trả lời, và tín hiệu ghi luôn được truyền qua chúng.</p>
+
+<div class="figure" style="--mh:127mm">
+<pre class="mermaid">
+%%{init: {"sequence": {"actorMargin": 14, "width": 96, "boxMargin": 10, "noteMargin": 6, "messageMargin": 20, "height": 50, "diagramMarginX": 8}}}%%
+sequenceDiagram
+  participant U as Người dùng
+  participant R as Route chat
+  participant G as Cổng an toàn
+  participant C as Connector&lt;br/&gt;hoặc tool MCP
+  participant D as Postgres
+  R-&gt;&gt;G: Mô hình đề xuất&lt;br/&gt;một lần gọi ghi
+  G--&gt;&gt;R: PendingWriteSignal&lt;br/&gt;(chưa thực thi gì)
+  Note over R: Mã dựng bản xem trước,&lt;br/&gt;niêm phong tham số trong token&lt;br/&gt;(AES-GCM, 5 phút, nonce)
+  R--&gt;&gt;U: Bản xem trước,&lt;br/&gt;pending_write
+  U-&gt;&gt;R: Xác nhận (token)
+  R-&gt;&gt;D: Kiểm tra token,&lt;br/&gt;nonce chưa dùng
+  R-&gt;&gt;C: Một lần điều phối,&lt;br/&gt;tham số đã niêm phong
+  C--&gt;&gt;R: Kết quả thực
+  R-&gt;&gt;D: Audit agent_write
+  R--&gt;&gt;U: Completion không có tool&lt;br/&gt;tường thuật kết quả
+</pre>
+<div class="cap"><b>Hình 6.</b> Xác nhận thao tác ghi trong chat. Lần gọi đã xác nhận dùng các tham số đã niêm phong, không phải đầu ra mới của mô hình, và completion tường thuật không có tool, nên nó không thể khởi động thêm thao tác ghi nào.</div>
+</div>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">8</span>Engine workflow</h2>
+
+<p class="lede">Một workflow là một graph JSON gồm các node có kiểu, lưu theo từng người dùng. Workflow có thể chạy theo yêu cầu, theo lịch cron, hoặc chạy thử (dry-run). Các lượt chạy được ghi nhật ký từng bước nên vẫn tồn tại qua một lần khởi động lại tiến trình, và các thao tác ghi được lưu trong một sổ cái idempotency nên một lượt chạy được tiếp tục không bao giờ gửi hai lần.</p>
+
+<h3>8.1 Mô hình graph</h3>
+<table>
+<thead><tr><th style="width:15%">Loại node</th><th>Hành vi</th></tr></thead>
+<tbody>
+<tr><td><code>agent</code></td><td>Chạy vòng lặp tool chỉ với các tool đọc nội bộ của LAAM, sau đó một lần gọi cuối qua bộ định tuyến nội bộ. Tuỳ chọn preset agent tuỳ chỉnh (preset bị thiếu sẽ báo lỗi rõ ràng) và tuỳ chọn schema đầu ra. Chế độ <code>extract</code> lấy một trường từ bước trước bằng mã, không gọi mô hình; chế độ này được thêm vì việc trích xuất bằng mô hình chiếm toàn bộ chi phí của một số lượt chạy (khoảng 3 s mỗi lần gọi so với 24–55 ms cho mỗi lần gọi MCP).</td></tr>
+<tr><td><code>connector</code></td><td>Gọi một hành động của connector tích hợp sẵn với tham số dạng template (<code>{{steps.x.output}}</code>, <code>{{trigger}}</code>).</td></tr>
+<tr><td><code>mcp</code></td><td>Gọi một tool trên MCP server của người dùng. Tuỳ chọn <code>pollUntil</code> gọi lại một lệnh kiểm tra trạng thái cho đến khi một trường đạt giá trị mong muốn; tuỳ chọn này do mã suy ra từ các lần gọi đã quan sát, không bao giờ do mô hình soạn.</td></tr>
+<tr><td><code>condition</code></td><td>Đánh giá một vị từ (10 toán tử, có thể kết hợp bằng <code>all</code>/<code>any</code>) và đi theo cạnh <code>true</code> hoặc <code>false</code>.</td></tr>
+<tr><td><code>foreach</code></td><td>Chạy một graph con cho từng phần tử với <code>{{item}}</code> và <code>{{index}}</code>, lần lượt từng phần tử.</td></tr>
+</tbody>
+</table>
+<p>Dữ liệu bên ngoài chỉ đi vào workflow qua các node connector và MCP. Các loại node được cố định trong mã. Ngân sách: 200 bước và 100 phần tử for-each mỗi lượt chạy; ở chế độ song song, mỗi node rẽ ra tối đa 12 cạnh.</p>
+
+<h3>8.2 Chế độ thực thi</h3>
+<ul>
+<li><b>Tuần tự</b> (mặc định): một bộ duyệt cạnh đệ quy đánh giá điều kiện, chạy thân for-each, dùng chung một bộ đếm ngân sách và dừng ở lỗi đầu tiên.</li>
+<li><b>Song song</b> (cờ theo từng graph): một bộ lập lịch DAG theo thứ tự tô-pô với rẽ nhánh (fan-out) và hội tụ kiểu OR (fan-in), nhiều node bắt đầu, và cắt tỉa ba trạng thái cho các nhánh không được chọn. Hai semaphore tách công việc phụ thuộc mô hình (2 đồng thời) khỏi I/O (6 đồng thời). Dừng khi lỗi, huỷ và ngân sách đều mang tính hợp tác: một cờ huỷ, sau đó chờ các node đang chạy hoàn tất trước khi kết thúc. Một bộ phát hiện deadlock bảo vệ bộ lập lịch, và một golden test chứng minh rằng graph tuần tự ở mức đồng thời 1 tạo ra lượt chạy giống hệt từng byte so với bộ duyệt tuần tự.</li>
+<li><b>Kiểm tra hợp lệ</b> dùng thuật toán Kahn để phát hiện chu trình (một bản kiểm tra theo chiều sâu trước đây đã báo nhầm các hình thoi), kiểm tra khả năng tiếp cận từ các node bắt đầu, và một nhóm quy tắc lint từ chối các tham chiếu mà một node thực tế không thể tạo ra. Cùng bước kiểm tra này chặn thao tác Lưu.</li>
+</ul>
+
+<h3>8.3 Vòng đời lượt chạy, độ bền vững và ghi idempotent</h3>
+
+
+<ul>
+<li><b>Snapshot.</b> Graph được sao chép vào dòng dữ liệu của lượt chạy khi bắt đầu, nên việc chỉnh sửa workflow không bao giờ làm thay đổi một lượt chạy đang diễn ra.</li>
+<li><b>Nhật ký.</b> Mỗi node ghi một dòng <code>workflow_run_step</code> (đầu vào, đầu ra có giới hạn, token, chi phí và mô hình thực sự được dùng) và phát một sự kiện bước kèm bản xem trước đầu ra 280 ký tự cho canvas trực tiếp.</li>
+<li><b>Ghi idempotent.</b> Trước một thao tác ghi, executor nhận một dòng có khoá (run, node, iteration) với ràng buộc unique. Sau khi thành công, dòng được đánh dấu hoàn tất kèm đầu ra. Khi tiếp tục, thao tác ghi đã hoàn tất sẽ phát lại đầu ra đã lưu; thao tác ghi đã nhận nhưng chưa ghi nhận kết quả sẽ báo lỗi rõ ràng thay vì mạo hiểm gửi trùng email hoặc tin nhắn.</li>
+<li><b>Tiếp tục sau sự cố.</b> Khi khởi động, các lượt chạy vẫn được đánh dấu running chuyển thành resumable. Tick kế tiếp của bộ lập lịch nhận tối đa 25 lượt với <code>FOR UPDATE SKIP LOCKED</code>, dựng lại ngữ cảnh từ nhật ký và bỏ qua các node đã hoàn tất.</li>
+<li><b>Cổng kiểm tra đầu ra.</b> Node agent có schema đầu ra được kiểm tra các khoá bắt buộc bị thiếu (null được tính là thiếu) và sai kiểu; node có một lần tự sửa với tên trường chính xác, sau đó thất bại tại node đó. Việc kiểm tra kiểu tồn tại vì từng có lần một bản kiểm tra chỉ xét sự hiện diện đã để lọt một danh sách kết quả rỗng và một lượt chạy kết thúc toàn màu xanh mà không có dữ liệu.</li>
+<li><b>Cổng người nhận.</b> Các thao tác ghi gửi ra ngoài tổ chức (email, Slack, WhatsApp, Zalo) yêu cầu mọi người nhận đã phân giải phải nằm trong whitelist của kênh đó; whitelist rỗng sẽ chặn. Bộ phân tích người nhận từ chối header injection.</li>
+</ul>
+
+<div class="figure" style="--mh:67mm">
+<pre class="mermaid">
+%%{init: {"state": {"nodeSpacing": 70, "rankSpacing": 60}}}%%
+stateDiagram-v2
+  direction LR
+  [*] --&gt; queued: tick nhận&lt;br/&gt;khe đến hạn
+  [*] --&gt; running: chạy thủ công&lt;br/&gt;hoặc bản nháp
+  queued --&gt; running: executor&lt;br/&gt;tiếp nhận
+  running --&gt; succeeded
+  running --&gt; failed: lỗi node,&lt;br/&gt;cổng, ngân sách
+  running --&gt; cancelled: người&lt;br/&gt;dùng huỷ
+  running --&gt; resumable: khởi động lại
+  resumable --&gt; running: tick kế tiếp
+  succeeded --&gt; [*]
+  failed --&gt; [*]
+  cancelled --&gt; [*]
+</pre>
+<div class="cap"><b>Hình 7.</b> Các trạng thái lượt chạy workflow. Lượt chạy bị gián đoạn do tiến trình khởi động lại sẽ chuyển sang resumable và chạy tiếp từ nhật ký ở tick kế tiếp; lượt chạy đã huỷ không bao giờ được tiếp tục.</div>
+</div>
+
+<div class="figure" style="--mh:96mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  K{{"Loại của node kế tiếp&lt;br/&gt;(đã kiểm tra lệnh huỷ)"}}
+  K --&gt;|"agent"| AG["Preset, vòng lặp&lt;br/&gt;tool chỉ đọc,&lt;br/&gt;cổng schema đầu ra"]
+  K --&gt;|"connector, mcp"| GT["Cổng: an toàn cho&lt;br/&gt;workflow, whitelist&lt;br/&gt;người nhận và đọc"]
+  GT --&gt; W{{"Đọc hay ghi?"}}
+  W --&gt;|"đọc"| EX["Thực thi"]
+  W --&gt;|"ghi, chạy thử"| MOCK["Giả lập: ghi lại&lt;br/&gt;lệnh lẽ ra đã gọi"]
+  W --&gt;|"ghi, chạy thật"| L{{"Sổ cái (run,&lt;br/&gt;node, iteration)"}}
+  L --&gt;|"mới"| CLM["Nhận, thực thi,&lt;br/&gt;đánh dấu hoàn tất"]
+  L --&gt;|"đã hoàn tất"| REP["Phát lại&lt;br/&gt;đầu ra đã lưu"]
+  L --&gt;|"đã nhận,&lt;br/&gt;chưa ghi nhận"| LOUD["Báo lỗi rõ ràng,&lt;br/&gt;không gửi lại"]
+</pre>
+<div class="cap"><b>Hình 8.</b> Thực thi theo từng node. Mọi bước đều được ghi nhật ký; mọi thao tác ghi đều đi qua sổ cái idempotency.</div>
+</div>
+
+<h3>8.4 Trigger và bộ lập lịch</h3>
+<table>
+<thead><tr><th style="width:15%">Trigger</th><th>Đường xử lý</th></tr></thead>
+<tbody>
+<tr><td><code>manual</code></td><td><code>POST /api/workflows/[id]/run</code>, tuỳ chọn <code>{dryRun:true}</code>: thao tác đọc chạy thật, thao tác ghi được giả lập.</td></tr>
+<tr><td><code>draft</code></td><td>Cùng endpoint với một graph chưa lưu từ khung soạn bằng AI. Chỉ chấp nhận với <code>dryRun:true</code>, sau đó được chuẩn hoá và kiểm tra hợp lệ như một graph đã lưu.</td></tr>
+<tr><td><code>schedule</code> <span class="pill warn">BUILT</span></td><td>Cron năm trường cho mỗi lịch. <code>POST /api/workflows/tick</code> nhận các lịch đến hạn một cách nguyên tử (chèn lượt chạy và đẩy thời điểm chạy kế tiếp trong cùng một transaction, unique theo từng khe lịch), sau đó thực thi các lượt chạy đang chờ và có thể tiếp tục. Các khe bị lỡ chỉ chạy một lần và được ghi nhận vào bộ đếm (missedCount) thay vì chạy bù.</td></tr>
+</tbody>
+</table>
+<p>Endpoint tick được một bộ lập lịch bên ngoài trên host gọi mỗi phút một lần và xác thực bằng secret dùng chung (so sánh thời gian hằng); không có bộ hẹn giờ trong tiến trình. Lượt chạy có thể bị huỷ bất cứ lúc nào; engine nhận biết lệnh huỷ ở lần kiểm tra trước node kế tiếp. Các trạng thái kết thúc tạo ra một thông báo trong ứng dụng kèm liên kết trực tiếp. Có sẵn sáu template đã bản địa hoá (bản tổng hợp qua đêm, cảnh báo agent bị kẹt, phân loại theo lịch, bản tổng hợp được kiểm chứng bởi mô hình chấm, báo cáo đa nguồn gửi qua email, và một bản demo) cùng thao tác lưu thành template.</p>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">9</span>Soạn workflow bằng AI</h2>
+
+<p class="lede"><span class="pill warn">BUILT</span> Người dùng có thể mô tả một quy trình tự động hoá bằng ngôn ngữ thông thường và để LAAM dựng nó. Pipeline soạn thảo <b>bám theo vết thực thi</b>: mô hình trước hết phải quan sát các lần gọi tool thực trên chính connector của người dùng, và chỉ được dựng graph từ những lần gọi mà nó đã thực sự thấy thành công. Mã, không phải mô hình, biên dịch graph cuối cùng.</p>
+
+<table>
+<thead><tr><th style="width:22%">Giai đoạn</th><th>Điều được bảo đảm</th></tr></thead>
+<tbody>
+<tr><td>Thăm dò</td><td>Mô hình được thấy tên tham số nhưng không bao giờ thấy giá trị thực, nên không thể sao chép một định danh đang dùng vào graph đã lưu (một lỗi trước đây đã làm đúng như vậy). Thao tác ghi bị chặn và được ghi lại, không bao giờ được thực thi.</td></tr>
+<tr><td>Plan DSL</td><td>Schema của kế hoạch không thể biểu diễn tên tool, id connector hay giá trị tham số dạng literal. Node của kế hoạch tham chiếu các lần gọi đã quan sát bằng tham chiếu mờ và nối tham số tới các bước trước.</td></tr>
+<tr><td>planGuard</td><td>Từ chối ngay ở lỗi đầu tiên, nêu tên các lựa chọn thực để thông báo lỗi đồng thời là prompt sửa: tham chiếu phải tồn tại; khoá tham số phải có thật; giá trị phải dạng template, không phải literal trần; nguồn phải bám theo dữ liệu đã quan sát; trường được trích xuất phải tồn tại trong payload đã quan sát; rẽ nhánh ≤12; không có thao tác đọc thừa.</td></tr>
+<tr><td>Bao đóng dữ liệu</td><td>Kéo vào các lần gọi tạo dữ liệu mà kế hoạch phụ thuộc, kể cả các lần gọi từ những lượt trước của cuộc hội thoại soạn thảo. Nếu không có bước này, "phần tử đầu tiên" từng bị cố định vĩnh viễn vào một phần tử cụ thể.</td></tr>
+<tr><td>Biên dịch</td><td>Literal có entropy cao trở thành tham chiếu bước; tham số người nhận và nội dung của thao tác ghi bị loại bỏ và được khẳng định lại do mã sở hữu; tính song song được suy ra.</td></tr>
+<tr><td>Gộp</td><td>Các node ghi đã được con người xác nhận (id, tham số, người nhận) giữ nguyên qua các lần dựng lại; prompt đã chỉnh tay được giữ lại khi danh sách bước chỉ được nối dài thêm.</td></tr>
+<tr><td>Kiểm chứng</td><td>Chạy thật graph với thao tác ghi được giả lập (40 bước, 2 phần tử for-each, hạn chót 60 giây) và gắn nhãn cho các node lỗi trên canvas.</td></tr>
+</tbody>
+</table>
+
+
+
+
+<h3>Hai bề mặt soạn thảo</h3>
+<ul>
+<li><b>Sinh một lần</b> (<code>POST /api/workflows/generate</code>): thăm dò, lập kế hoạch, kiểm chứng; trình soạn áp dụng kết quả như một đề xuất có thể hoàn tác sau thẻ xác nhận, kể cả khi một số node báo đỏ, để người dùng thấy chính xác phần nào thất bại.</li>
+<li><b>Khung soạn thảo nhiều lượt</b> (<code>POST /api/workflows/generate/chat</code>): mỗi lượt chạy một vòng lặp tool bị chặn ghi, sau đó chạy song song câu trả lời dạng văn bản với việc dựng kế hoạch (tiết kiệm trung vị 2.6 s mỗi lượt). Một cổng không-có-dữ-liệu từ chối vẽ graph nếu không có thao tác đọc nào thực sự trả về câu trả lời, và thay vào đó đặt câu hỏi làm rõ. Chỉ graph đã được kiểm chứng toàn xanh mới được đề xuất, kèm tối đa ba dòng mẫu đã quan sát. Thao tác ghi được nối thêm trong một bước riêng do con người xác nhận. <b>Chạy thử</b> thực thi graph đề xuất như một lượt chạy <code>draft</code> và tóm lược kết quả trở lại cuộc hội thoại với các giá trị có dạng định danh bị che, để mô hình có thể phản ứng với kết quả thực (ví dụ thêm nhánh cho trạng thái "cần làm rõ") mà không hard-code giá trị.</li>
+<li><b>Rà soát</b> (<code>POST /api/workflows/review</code>): rà soát bằng ngôn ngữ thông thường đối với graph đang có trong trình soạn.</li>
+</ul>
+<div class="figure" style="--mh:117mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart LR
+  subgraph Observe["A. Quan sát"]
+    direction TB
+    REQ["Yêu cầu của người dùng"] --&gt; PR["1. Thăm dò: vòng lặp tool,&lt;br/&gt;6 vòng, chặn ghi"]
+    PR --&gt; FA["2. Bảng dữ kiện:&lt;br/&gt;lần gọi dạng tham chiếu mờ,&lt;br/&gt;khoá tham số, trường"]
+    FA --&gt; Q{{"Có quan sát&lt;br/&gt;được gì?"}}
+    Q --&gt;|"không"| ASK["422 hoặc&lt;br/&gt;câu hỏi làm rõ"]
+  end
+  subgraph Plan["B. Lập kế hoạch&lt;br/&gt;(nếu có quan sát)"]
+    direction TB
+    PL["3. Mô hình viết Plan:&lt;br/&gt;không thể chứa tên tool,&lt;br/&gt;id hay literal"] --&gt; GD{{"4. planGuard: bám&lt;br/&gt;theo vết thực thi?"}}
+    GD --&gt;|"lỗi"| RP["Một lần tự sửa&lt;br/&gt;với lỗi được nêu tên"]
+    RP --&gt; GD
+  end
+  subgraph Build["C. Dựng và kiểm chứng&lt;br/&gt;(nếu hợp lệ)"]
+    direction TB
+    CO["5-6. Bao đóng dữ liệu,&lt;br/&gt;biên dịch, loại tham số&lt;br/&gt;ghi do mã sở hữu"] --&gt; NT["7. Suy ra tác vụ&lt;br/&gt;của node agent"]
+    NT --&gt; MG["8. Gộp, giữ nguyên&lt;br/&gt;thao tác ghi đã xác nhận"]
+    MG --&gt; VF["9. Kiểm chứng: chạy thử,&lt;br/&gt;đọc thật, ghi giả lập"]
+  end
+  Observe --&gt; Plan
+  Plan --&gt; Build
+</pre>
+<div class="cap"><b>Hình 9.</b> Soạn thảo bám theo vết thực thi. Nếu kế hoạch đã sửa vẫn thất bại, pipeline chuyển sang bộ biên dịch vết cũ hơn và thông báo rõ điều đó.</div>
+</div>
+</section>
+
+<!-- ============================ 10 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">10</span>Pipeline giọng nói</h2>
+
+<p class="lede">Bề mặt giọng nói là một trung tâm điều khiển toàn màn hình chạy cùng engine chat ở chế độ không cần chạm tay. Các agent tuỳ chỉnh nằm trên vòng trong và các nhóm tool nằm trên vòng ngoài; connector chưa kết nối được làm mờ. Giọng nói vào và ra đều được stream để trợ lý bắt đầu nói trước khi toàn bộ câu trả lời được tổng hợp xong.</p>
+
+
+<ul>
+<li><b>Cùng engine, khác hướng dẫn.</b> Lượt giọng nói dùng route chat với <code>mode: "voice"</code>. Hướng dẫn giọng nói yêu cầu văn phong nói không có định danh, và nêu rõ sự ngắn gọn không được làm giảm độ sâu tra cứu. Hướng dẫn này nhắm vào một vấn đề đo được: 3 trên 17 lượt giọng nói trả lời hời hợt hoặc bịa đặt, so với 0 trên 6 ở chế độ văn bản. Trong lần kiểm tra lại với 12 lượt, không lượt giọng nói nào bỏ qua lần gọi tool; 2 lượt vẫn hời hợt do mô hình chọn sai tool, vấn đề mà cơ chế đi sâu từ danh sách đến chi tiết (đang tắt qua cờ cấu hình) giải quyết.</li>
+<li><b>Chuyển giọng nói thành văn bản.</b> Một interface nhà cung cấp có thể thay thế; bản triển khai đầu tiên là Web Speech API của trình duyệt. Nhà cung cấp Whisper tự host đang ở trạng thái <span class="pill off">PLANNED</span>.</li>
+<li><b>Ngắt lời.</b> Hai cổng: một mô hình phát hiện giọng nói được phục vụ từ chính LAAM, và một ngưỡng động gắn với mức âm lượng phát hiện tại để giọng nói của chính trợ lý không kích hoạt việc ngắt lời.</li>
+<li><b>Chuyển văn bản thành giọng nói.</b> Dịch vụ VieNeu TTS tự host (Python, CPU) với một giọng tiếng Việt có sẵn và một giọng tiếng Anh nhân bản. Endpoint streaming truyền PCM 48 kHz không đệm; việc phân đoạn theo câu giữ mọi yêu cầu tổng hợp nằm trong timeout của route bất kể câu trả lời dài bao nhiêu, và đoạn kế tiếp được tải trong khi đoạn hiện tại đang phát. Giới hạn CPU của container được đặt kèm giới hạn số luồng tương ứng; chỉ giới hạn CPU đã làm thông lượng sụt giảm mạnh. Tính năng tổng hợp giọng nói có sẵn của trình duyệt là phương án dự phòng.</li>
+<li><b>Bảng hiển thị.</b> Mô hình có thể đưa tối đa một bảng hoặc biểu đồ vào mỗi câu trả lời giọng nói; nó được tách khỏi văn bản nói và hiển thị trên một bảng không chặn thao tác. Bảng kết quả được thu gọn mặc định trên cả bề mặt chat và giọng nói.</li>
+</ul>
+<div class="figure" style="--mh:124mm">
+<pre class="mermaid">
+%%{init: {"flowchart": {"nodeSpacing": 28, "rankSpacing": 34, "subGraphTitleMargin": {"top": 4, "bottom": 8}}}}%%
+flowchart TB
+  subgraph Listen["1. Nghe"]
+    direction LR
+    MIC["Micro"] --&gt; STT["Giọng nói thành&lt;br/&gt;văn bản (Web Speech&lt;br/&gt;API, thay thế được)"]
+    STT --&gt; SIL["Tự gửi&lt;br/&gt;khi im lặng"]
+    VAD["Ngắt lời:&lt;br/&gt;Silero VAD + ngưỡng&lt;br/&gt;theo mức âm TTS"]
+  end
+  subgraph Think["2. Suy nghĩ"]
+    direction LR
+    CH["POST /api/chat,&lt;br/&gt;mode voice"] --&gt; FR["Frame: chip tool,&lt;br/&gt;bảng dữ liệu"]
+    CH --&gt; TXT["Văn bản&lt;br/&gt;trả lời"]
+    FR --&gt; DISP["Bảng hiển thị&lt;br/&gt;dạng kính"]
+  end
+  subgraph Speak["3. Nói"]
+    direction LR
+    EX["Tách một bảng&lt;br/&gt;hoặc biểu đồ ra&lt;br/&gt;bảng hiển thị"] --&gt; SPL["Phân đoạn&lt;br/&gt;theo câu, tối đa&lt;br/&gt;280 ký tự"]
+    SPL --&gt; TTS["/api/tts/stream:&lt;br/&gt;PCM không đệm"]
+    TTS --&gt; PLAY["Phát bằng&lt;br/&gt;Web Audio, tải trước&lt;br/&gt;đoạn kế tiếp"]
+  end
+  Listen --&gt; Think
+  Think --&gt; Speak
+</pre>
+<div class="cap"><b>Hình 10.</b> Vòng lặp giọng nói không cần chạm tay. Sau khi phát xong, bề mặt lại lắng nghe; tính năng ngắt lời dừng phát ngay khi người dùng lên tiếng.</div>
+</div>
+</section>
+
+<!-- ============================ 11 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">11</span>Mô hình dữ liệu</h2>
+
+<p class="lede">LAAM lưu mọi thứ trong một cơ sở dữ liệu PostgreSQL 16: 22 bảng và một enum, được quản lý bởi 19 migration Drizzle có phiên bản (chỉ dùng migration; không bao giờ dùng schema push trên dữ liệu thực). Mô hình là một tổ chức duy nhất có phân vai trò, không phải multi-tenant; dữ liệu theo từng người dùng được cô lập bằng khoá ngoại tới <code>user</code> và kiểm tra quyền sở hữu trong mọi truy vấn.</p>
+
+<h3>11.1 Định danh và quản trị</h3>
+<p>Token truy cập là chuỗi ngẫu nhiên entropy cao, lưu dưới dạng băm SHA-256 và chỉ hiển thị một lần. Một bảng phục vụ ba loại: token của collector (gắn với một máy), token API cá nhân và token MCP. Vô hiệu hoá một người dùng là một transaction: đặt <code>disabledAt</code>, thu hồi mọi token, ghi một mục audit. Thông báo được khử trùng lặp bằng một partial unique index trên (user, dedupe key).</p>
+<div class="figure" style="--mh:99mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  user ||--o{ access_token : "sở hữu"
+  user ||--o{ audit_log : "thực hiện"
+  user ||--o{ notification : "nhận"
+  user {
+    text id PK
+    text email
+    text passwordHash
+    role role
+    timestamp disabledAt
+  }
+  access_token {
+    text kind
+    text tokenHash
+    text userId FK
+    text machineId FK
+    timestamp revokedAt
+  }
+  audit_log {
+    text userId FK
+    text action
+    text target
+  }
+  notification {
+    text userId FK
+    text severity
+    text dedupeKey
+    timestamp readAt
+  }
+</pre>
+<div class="cap"><b>Hình 11.</b> Định danh và quản trị. Đăng nhập dùng phiên JWT; các bảng adapter của Auth.js (<code>account</code>, <code>session</code>, <code>verificationToken</code>) tồn tại để tương thích và không được thể hiện trên hình.</div>
+</div>
+
+
+<h3>11.2 Chat, agent và connector</h3>
+<p><code>connector_credential</code> lưu một blob mã hoá cho mỗi cặp (user, connector) và cũng lưu cấu hình MCP server của từng người dùng dưới khoá <code>mcp:&lt;slug&gt;</code>. Các blob được mã hoá bằng khoá riêng của từng người dùng, nên một blob bị sao chép sang dòng dữ liệu của người dùng khác sẽ không giải mã được. Tham chiếu tới agent tuỳ chỉnh từ workspace và node workflow được cố ý để ở dạng mềm (không có khoá ngoại) để preset bị xoá được phát hiện và báo cáo lúc chạy thay vì xoá lan truyền.</p>
+<div class="figure" style="--mh:103mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  workspace ||--o{ chat_conversation : "nhóm"
+  chat_conversation ||--o{ chat_message : "chứa"
+  chat_conversation ||--o{ chat_tool_call : "ghi log"
+  workspace {
+    text customAgentId
+    text instructions
+  }
+  chat_conversation {
+    text workspaceId FK
+    text summary
+    text model
+  }
+  chat_message {
+    text role
+    int tokensIn
+    jsonb attachments
+  }
+  chat_tool_call {
+    text name
+    jsonb args
+    jsonb result
+  }
+  custom_agent {
+    text name
+    text system
+  }
+  connector_credential {
+    text connectorId
+    text secret
+  }
+</pre>
+<div class="cap"><b>Hình 12.</b> Chat, agent và connector. Workspace, hội thoại, agent tuỳ chỉnh và thông tin xác thực connector đều thuộc về một <code>user</code> (hình 11). Kết quả thô của tool được giữ trong <code>chat_tool_call</code> để các bảng có thể được dựng lại khi nạp lại.</div>
+</div>
+
+
+<h3>11.3 Workflow</h3>
+<div class="figure" style="--mh:124mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  workflow ||--o{ workflow_schedule : "được lập lịch bởi"
+  workflow ||--o{ workflow_run : "chạy"
+  workflow_run ||--o{ workflow_run_step : "ghi nhật ký"
+  workflow_run ||--o{ workflow_node_idempotency : "sổ cái ghi"
+  workflow {
+    text userId FK
+    jsonb graph
+    text status
+    boolean isTemplate
+  }
+  workflow_schedule {
+    text cron
+    timestamp nextRunAt
+    int missedCount
+  }
+  workflow_run {
+    text scheduleId FK
+    text trigger
+    text status
+    jsonb graphSnapshot
+  }
+  workflow_run_step {
+    text nodeId
+    jsonb output
+    text model
+  }
+  workflow_node_idempotency {
+    text nodeId
+    int iterIndex
+    text status "claimed, done"
+  }
+</pre>
+<div class="cap"><b>Hình 13.</b> Workflow. Một lượt chạy theo lịch tham chiếu tới lịch của nó qua <code>scheduleId</code>. Các ràng buộc unique trên (schedule, scheduled-for) và trên (run, node, iteration) làm cho việc nhận lịch và thao tác ghi có tính idempotent.</div>
+</div>
+
+<h3>11.4 Giám sát và đánh giá</h3>
+<p>Phiên agent được dẫn xuất từ transcript của coding agent được chia sẻ trong toàn tổ chức theo thiết kế; phiên được tạo qua API hoặc MCP server của LAAM được giới hạn trong phạm vi chủ thể của nó. Mỗi máy xác thực collector của mình bằng một <code>access_token</code> loại <code>collector</code> (hình 11). Sáu index trigram (GIN) phục vụ tìm kiếm toàn cục; so khớp trigram được chọn thay cho tìm kiếm toàn văn vì PostgreSQL không có sẵn cấu hình tìm kiếm văn bản cho tiếng Việt hoặc tiếng Trung. Danh sách thuộc tính trong cả bốn sơ đồ đã được rút gọn, chỉ giữ các trường có ý nghĩa về mặt kiến trúc.</p>
+<div class="figure" style="--mh:138mm">
+<pre class="mermaid">
+%%{init: {"er": {"nodeSpacing": 50, "rankSpacing": 45}}}%%
+erDiagram
+  user ||--o{ machine : "sở hữu"
+  machine ||--o{ agent_session : "báo cáo"
+  project ||--o{ agent_session : "nhóm"
+  user ||--o{ agent_session : "chủ thể (api, mcp)"
+  machine {
+    text id PK
+    text ownerUserId FK
+    timestamp lastSeen
+  }
+  project {
+    text id PK
+    text name
+  }
+  agent_session {
+    text source "coding agent, local, api, mcp"
+    text model
+    text status
+    numeric costUsd
+    jsonb tools
+  }
+  eval_run {
+    text model
+    int k
+    text gitSha
+    jsonb dims
+    jsonb scores
+  }
+</pre>
+<div class="cap"><b>Hình 14.</b> Giám sát và đánh giá. <code>eval_run</code> đứng độc lập: mỗi dòng là một lượt đánh giá ngoại tuyến, được vẽ biểu đồ trên trang Reliability.</div>
+</div>
+
+
+</section>
+
+<!-- ============================ 12 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">12</span>Bề mặt API</h2>
+
+<p class="lede">HTTP API gồm 64 tệp route và 88 handler phương thức dưới <code>/api</code>. API phục vụ giao diện LAAM; ba endpoint được thiết kế cho bên gọi là máy (nạp dữ liệu từ collector, MCP server và tick của workflow). Các route nghiệp vụ làm thay đổi trạng thái yêu cầu vai trò được phép thay đổi dữ liệu (member trở lên); một số route cá nhân và route trợ giúp (soạn bằng AI, phân tích tài liệu, thông báo, hồ sơ của chính mình) chỉ cần phiên đăng nhập. Các route quản trị yêu cầu owner hoặc admin.</p>
+
+<table>
+<thead><tr><th style="width:18%">Nhóm</th><th style="width:9%">Route</th><th>Phạm vi</th><th style="width:20%">Xác thực</th></tr></thead>
+<tbody>
+<tr><td>Xác thực và người dùng</td><td>7</td><td>Handler của Auth.js, đăng ký (theo chế độ, có giới hạn tốc độ), quản trị người dùng, tự quản lý hồ sơ, token truy cập.</td><td>Công khai / phiên / owner-admin</td></tr>
+<tr><td>Chat và trợ lý</td><td>21</td><td>Lượt chat và xác nhận, danh mục mô hình và tool, hội thoại, workspace, agent tuỳ chỉnh, phân tích tài liệu (OCR, PDF, DOCX), tải URL có guard, proxy TTS, proxy địa lý và thời tiết.</td><td>Phiên; thay đổi cần member trở lên</td></tr>
+<tr><td>Connector và MCP</td><td>5</td><td>Danh sách connector, kết nối / ngắt kết nối / kiểm tra / OAuth, MCP server theo từng người dùng và thăm dò, MCP server của chính LAAM.</td><td>Phiên; MCP server bằng token</td></tr>
+<tr><td>Giám sát</td><td>11</td><td>Nạp dữ liệu từ collector, đồng bộ cục bộ, luồng sự kiện SSE, thống kê dashboard, giám sát thống nhất, dòng thời gian phiên, máy, số liệu host, tìm kiếm, cấu hình runtime.</td><td>Phiên; nạp dữ liệu bằng token</td></tr>
+<tr><td>Workflow</td><td>17</td><td>CRUD, chạy, nhân bản, template, lượt chạy và huỷ, lịch, tick, AI sinh / chat / rà soát / nối thêm thao tác ghi.</td><td>Phiên; tick bằng secret</td></tr>
+<tr><td>Thông báo</td><td>3</td><td>Liệt kê, đánh dấu đã đọc, đánh dấu tất cả đã đọc.</td><td>Phiên (chỉ dòng của chính mình)</td></tr>
+</tbody>
+</table>
+
+<h3>Quy ước</h3>
+<ul>
+<li><b>Quyền sở hữu.</b> Tài nguyên theo từng người dùng được lọc theo id của người gọi ngay trong truy vấn, nên bản ghi của người dùng khác được xử lý như không tồn tại thay vì bị cấm truy cập.</li>
+<li><b>Kiểm tra đầu vào.</b> Body của request được kiểm tra bằng Zod hoặc bộ phân tích tường minh trước mọi thao tác I/O; id mô hình Claude được đối chiếu với whitelist.</li>
+<li><b>Không bao giờ trả lại secret.</b> Phản hồi về thông tin xác thực và MCP server che secret, chỉ để lộ bốn ký tự cuối; token chỉ hiển thị một lần khi tạo.</li>
+<li><b>Streaming.</b> Lượt chat stream văn bản có frame (chương 4); cập nhật trực tiếp cho phiên, bước workflow và thông báo dùng SSE trên <code>/api/events</code>, lọc theo từng người dùng.</li>
+<li><b>MCP server.</b> <code>POST /api/mcp</code> triển khai <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code> và <code>ping</code> dưới dạng JSON-RPC viết tay qua Streamable HTTP, chỉ cung cấp các tool chỉ đọc. Không thao tác ghi nào của connector có thể được gọi qua đây.</li>
+</ul>
+<p>Danh sách endpoint đầy đủ nằm trong phụ lục.</p>
+</section>
+
+<!-- ============================ 13 ============================ -->
+<section class="chapter cont">
+<h2><span class="n">13</span>Bộ công cụ đánh giá</h2>
+
+<p class="lede">Ngoài unit test, LAAM có một bộ công cụ đánh giá ngoại tuyến chạy system prompt thật và vòng lặp tool thật với các mô hình thật, chấm điểm hành vi bằng các bộ chấm tự động, và ghi mỗi lượt chạy vào cơ sở dữ liệu để theo dõi xu hướng.</p>
+
+<h3>Phương pháp</h3>
+<ul>
+<li><b>Phần chạy thật.</b> <code>buildSystemPrompt</code> và <code>runToolRounds</code> của production, cùng một mô hình thật từ nhà cung cấp đã cấu hình (BytePlus, Cerebras hoặc Ollama; thiếu khoá sẽ báo lỗi thay vì chuyển sang phương án khác).</li>
+<li><b>Phần giả lập.</b> Việc điều phối tool. Tool trả về phản hồi giả lập tất định, nên không có connector hay MCP server nào được gọi và các lượt chạy có thể tái lập. Các guard đang tắt qua cờ cấu hình (đi sâu đến chi tiết) không được bật.</li>
+<li><b>Bộ chính.</b> 17 kịch bản bao gồm chọn tool, tham số, kiềm chế (không gọi tool khi trò chuyện xã giao), hiển thị phong phú, ý định ghi, kết thúc, nghiên cứu web và tiện ích. Mỗi kịch bản chạy <i>k</i> lần; 8 bộ chấm cho điểm 7 khía cạnh. Mỗi lượt chạy được lưu trong <code>eval_run</code> kèm git SHA và hiển thị trên trang Reliability.</li>
+<li><b>Bộ đo quy mô.</b> Đo tỷ lệ chọn đúng tool khi số tool được cung cấp tăng lên (4, 16, 32, 60), bổ sung bằng một nhóm tool gây nhiễu lấy từ tập hợp tool thật, bao gồm snapshot của một MCP server có 48 tool, với khoảng tin cậy Wilson 95% và tách riêng trường hợp không gọi với gọi sai.</li>
+</ul>
+
+<h3>Kết quả đo gần nhất</h3>
+<p>Bộ chính, ngày 2026-09-03: <code>gpt-oss-120b</code> trên BytePlus, k = 5, 17 kịch bản, 85 lượt chạy, điều phối giả lập.</p>
+<table>
+<thead><tr><th>Chọn tool</th><th>Tham số</th><th>Bám dữ liệu</th><th>Kiềm chế</th><th>Kết thúc</th><th>Ý định ghi</th><th>Khối hiển thị</th></tr></thead>
+<tbody><tr><td>86%</td><td>97%</td><td>67%</td><td>100%</td><td>90%</td><td>100%</td><td>100%</td></tr></tbody>
+</table>
+<p>Các điểm yếu được bảng điểm nêu ra: một kịch bản luôn ưu tiên tool tóm lược thay cho tool thống kê được kỳ vọng; một kịch bản kiềm chế gọi sai tool đọc; một kịch bản nghiên cứu web mở chạy 10–16 vòng tool trước khi trả lời; một tra cứu chi tiết kết thúc muộn. Bám dữ liệu là khía cạnh thấp nhất vì bộ chấm yêu cầu các giá trị cụ thể từ dữ liệu giả lập phải xuất hiện nguyên văn trong câu trả lời.</p>
+
+<p>Bộ đo quy mô, <code>gpt-oss-120b</code>: một lượt chạy ban đầu với ít mẫu (k = 3) cho thấy việc chọn tool vẫn ổn định khi số tool được cung cấp tăng từ 4 lên 60; một lượt chạy sau đó với 60 tool (k = 8, ngày 2026-08-03) đạt trung bình 67%, nên khả năng mở rộng vẫn đang được đo lường. Với k = 16, ba phép thử rủi ro cao nhất (tra cứu chi tiết ở chế độ giọng nói, và hai biến thể có cuộc hội thoại trước đó gây nhầm lẫn) đều đạt 16 trên 16, khi chạy không có lưới an toàn đi sâu đến chi tiết.</p>
+
+<div class="callout"><span class="t">Cách đọc các con số này</span>Đây là tỷ lệ đạt của bộ chấm trên các kịch bản có phản hồi tool giả lập, không phải độ chính xác đầu-cuối trên dữ liệu khách hàng. Payload thực lớn hơn và nhiễu hơn dữ liệu giả lập, và bộ công cụ không chạy với connector thật. Bộ công cụ tồn tại để phát hiện hồi quy trong hành vi của prompt và vòng lặp khi mô hình, prompt hoặc guard thay đổi, và để những thay đổi đó đo lường được.</div>
+
+<h3>Tài sản kiểm thử khác</h3>
+<p>363 tệp test bao phủ các thư viện, route và component giao diện (Vitest với Testing Library). Các test bất biến đáng chú ý: guard không thực thi mã, tiếp tục workflow bền vững, xác thực tick, độ tương phản giao diện và độ lệch từ điển i18n giữa ba ngôn ngữ. Các script A/B bổ sung so sánh nhà cung cấp và thiết lập suy luận, và một bộ công cụ phát lại chạy lại các cuộc hội thoại soạn workflow nhiều lượt.</p>
+</section>
+
+<!-- ============================ APPENDIX ============================ -->
+<section class="chapter cont">
+<h2><span class="n">A</span>Phụ lục — Tham chiếu endpoint API</h2>
+<p class="small">Chú giải xác thực: <b>Pub</b> công khai · <b>S</b> phiên · <b>M</b> phiên, thao tác thay đổi yêu cầu member trở lên · <b>R</b> owner hoặc admin · <b>T</b> bearer access token · <b>Tick</b> secret dùng chung. Mọi đường dẫn nằm dưới <code>/api</code>.</p>
+
+<table class="api">
+<thead><tr><th style="width:14%">Phương thức</th><th style="width:31%">Đường dẫn</th><th>Mục đích</th><th style="width:10%">Xác thực</th></tr></thead>
+<tbody>
+<tr><td colspan="4"><b>Xác thực và người dùng</b></td></tr>
+<tr><td>GET, POST</td><td><code>/auth/[...nextauth]</code></td><td>Handler của Auth.js</td><td>Pub</td></tr>
+<tr><td>POST</td><td><code>/register</code></td><td>Đăng ký (mở / theo lời mời / đóng; 10 lần mỗi giờ mỗi IP)</td><td>Pub</td></tr>
+<tr><td>GET</td><td><code>/users</code></td><td>Danh sách người dùng (chỉ chiếu các cột an toàn)</td><td>R</td></tr>
+<tr><td>PATCH</td><td><code>/users/[id]</code></td><td>Đổi vai trò (owner; chặn mất owner cuối cùng) hoặc vô hiệu hoá (transaction thu hồi quyền)</td><td>R</td></tr>
+<tr><td>PATCH</td><td><code>/users/me</code></td><td>Sửa hồ sơ của chính mình</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/access-tokens</code></td><td>Liệt kê token của mình; tạo token (admin có thể tạo cho người dùng khác)</td><td>M</td></tr>
+<tr><td>DELETE</td><td><code>/access-tokens/[id]</code></td><td>Thu hồi</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Chat và trợ lý</b></td></tr>
+<tr><td>POST</td><td><code>/chat</code></td><td>Lượt chat dạng stream, hoặc xác nhận / từ chối một thao tác ghi đang chờ</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/chat/info</code></td><td>Mô hình mặc định và danh sách mô hình khả dụng</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/chat/tools</code></td><td>Danh mục tool của người gọi (nội bộ, connector, MCP)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/conversations</code></td><td>Liệt kê (tìm theo tiêu đề hoặc nội dung) / tạo</td><td>M</td></tr>
+<tr><td>GET, PATCH, DELETE</td><td><code>/conversations/[id]</code></td><td>Tin nhắn kèm bảng dựng lại / đổi tên / xoá</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/workspaces</code></td><td>Liệt kê / tạo workspace chat</td><td>M</td></tr>
+<tr><td>PATCH, DELETE</td><td><code>/workspaces/[id]</code></td><td>Sửa / xoá (hội thoại trở thành không thuộc nhóm nào)</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/custom-agents</code></td><td>Liệt kê / tạo preset</td><td>M</td></tr>
+<tr><td>PATCH, DELETE</td><td><code>/custom-agents/[id]</code></td><td>Sửa / xoá</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/ollama/models</code></td><td>Danh sách mô hình cục bộ</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/fetch-url</code></td><td>Tải URL phía server (blocklist tên máy)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/ocr</code></td><td>Tình trạng sẵn sàng của OCR / nhận dạng (vi, en, zh)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/pdf</code></td><td>Trích xuất văn bản PDF (lớp văn bản, sau đó OCR, sau đó thị giác)</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/docx</code></td><td>Trích xuất văn bản DOCX</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/tts</code></td><td>Chuyển văn bản thành giọng nói (WAV)</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/tts/stream</code></td><td>Chuyển văn bản thành giọng nói dạng stream (PCM)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/geocode</code>, <code>/reverse</code>, <code>/route</code>, <code>/nearby</code></td><td>Geocoding, reverse geocoding, chỉ đường, địa điểm lân cận (có cache, có điều tiết tần suất)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/weather</code></td><td>Thời tiết hiện tại</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Connector và MCP</b></td></tr>
+<tr><td>GET</td><td><code>/connectors</code></td><td>Danh sách connector với thông tin xác thực đã che</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/connectors/[id]/[action]</code></td><td>Kết nối / ngắt kết nối / kiểm tra / bắt đầu OAuth và callback</td><td>M</td></tr>
+<tr><td>GET, POST, PATCH, DELETE</td><td><code>/connectors/mcp</code></td><td>MCP server theo từng người dùng (không bao giờ trả lại token)</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/connectors/mcp/test</code></td><td>Thăm dò server trước khi lưu</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/mcp</code></td><td>LAAM đóng vai MCP server (tool chỉ đọc)</td><td>T</td></tr>
+
+<tr><td colspan="4"><b>Giám sát</b></td></tr>
+<tr><td>POST</td><td><code>/ingest</code></td><td>Collector đẩy dữ liệu (giới hạn body dạng stream 5 MB)</td><td>T</td></tr>
+<tr><td>POST</td><td><code>/sync</code></td><td>Quét transcript cục bộ vào cơ sở dữ liệu</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/events</code></td><td>SSE: phiên, bước workflow, thông báo theo từng người dùng</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/stats</code></td><td>Số liệu tổng hợp cho dashboard</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/monitoring</code></td><td>Các lượt chạy được giám sát thống nhất (agent, chat, workflow)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/agents/[id]/timeline</code></td><td>Nhật ký tin nhắn và tool của phiên</td><td>S</td></tr>
+<tr><td>GET, POST</td><td><code>/machines</code></td><td>Liệt kê / tạo máy và cấp token cho collector</td><td>S / R</td></tr>
+<tr><td>DELETE</td><td><code>/machines/[id]</code></td><td>Thu hồi token của collector</td><td>R</td></tr>
+<tr><td>GET</td><td><code>/host/metrics</code></td><td>CPU, RAM, GPU của host (suy giảm êm)</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/config</code></td><td>Cấu hình runtime cho client</td><td>S</td></tr>
+<tr><td>GET</td><td><code>/search</code></td><td>Tìm kiếm toàn cục</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Workflow</b></td></tr>
+<tr><td>GET, POST</td><td><code>/workflows</code></td><td>Liệt kê (phân trang, kèm tổng số) / tạo</td><td>M</td></tr>
+<tr><td>GET, PATCH, DELETE</td><td><code>/workflows/[id]</code></td><td>Đọc / cập nhật / xoá (xoá lan truyền lịch và lượt chạy)</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/[id]/run</code></td><td>Chạy ngay; chạy thử; graph nháp (chỉ chạy thử)</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/[id]/clone</code></td><td>Nhân bản workflow của mình hoặc template</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/[id]/save-as-template</code></td><td>Lưu graph thành template</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/workflows/templates</code></td><td>Danh mục template / khởi tạo</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/templates/[id]/instantiate</code></td><td>Khởi tạo từ một template</td><td>M</td></tr>
+<tr><td>GET</td><td><code>/workflows/runs</code></td><td>Các lượt chạy của người gọi (lọc theo workflow, trạng thái, mới nhất)</td><td>S</td></tr>
+<tr><td>GET, PATCH</td><td><code>/workflows/runs/[id]</code></td><td>Chi tiết lượt chạy kèm các bước / huỷ</td><td>M</td></tr>
+<tr><td>GET, POST</td><td><code>/workflows/schedules</code></td><td>Liệt kê / tạo lịch (kiểm tra cron hợp lệ)</td><td>M</td></tr>
+<tr><td>PATCH, DELETE</td><td><code>/workflows/schedules/[id]</code></td><td>Bật, sửa, xoá</td><td>M</td></tr>
+<tr><td>POST</td><td><code>/workflows/tick</code></td><td>Nhận các lịch đến hạn, thực thi các lượt chạy đang chờ và có thể tiếp tục</td><td>Tick</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate</code></td><td>Sinh bằng AI một lần (thăm dò, lập kế hoạch, kiểm chứng)</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate/chat</code></td><td>Một lượt trong phiên soạn workflow nhiều lượt bằng AI</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate/compile</code></td><td>Biên dịch vết đã quan sát thành graph (đường cũ)</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/generate/append-write</code></td><td>Nối thêm một bước ghi đã được con người xác nhận</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/workflows/review</code></td><td>Rà soát graph hiện tại bằng ngôn ngữ thông thường</td><td>S</td></tr>
+
+<tr><td colspan="4"><b>Thông báo</b></td></tr>
+<tr><td>GET</td><td><code>/notifications</code></td><td>Thông báo của người gọi và số chưa đọc</td><td>S</td></tr>
+<tr><td>PATCH</td><td><code>/notifications/[id]</code></td><td>Đánh dấu một thông báo đã đọc</td><td>S</td></tr>
+<tr><td>POST</td><td><code>/notifications/read-all</code></td><td>Đánh dấu tất cả đã đọc</td><td>S</td></tr>
+</tbody>
+</table>
+</section>
+
+<script src="../../tooling/node_modules/mermaid/dist/mermaid.min.js"></script>
+<script src="../../tooling/mermaid-init.js"></script>
+</body>
+</html>

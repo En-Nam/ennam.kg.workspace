@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LAAM — Technical Brief</title>
+<link rel="stylesheet" href="../../tooling/doc.css">
+<style>
+  html { font-size: 9pt; }
+  .brief-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid var(--navy); padding-bottom: 8px; margin-bottom: 10px; }
+  .brief-head .kicker { font-size: 8pt; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  .brief-head h1 { font-size: 26pt; margin: 2px 0 0; color: var(--navy); font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+  .brief-head h1 span { font-size: 13pt; color: var(--ink-soft); font-weight: 500; letter-spacing: 0; margin-left: 8px; }
+  .brief-head .meta { text-align: right; font-size: 7.5pt; color: var(--muted); line-height: 1.5; }
+  h3 { font-size: 11pt; margin: 10px 0 4px; border-left: 3px solid var(--accent); padding-left: 6px; }
+  .kpis { grid-template-columns: .8fr 1fr 1.9fr 1fr 1.1fr .9fr; gap: 6px; margin: 8px 0 6px; }
+  .kpi { padding: 5px 7px; }
+  .kpi .v { font-size: 14pt; }
+  .kpi .l { font-size: 6.8pt; }
+  table { font-size: 8pt; margin: 4px 0 6px; }
+  th, td { padding: 3px 6px; }
+  .figure { padding: 6px; margin: 6px 0 8px; }
+  .diagram svg { max-height: 60mm; width: 100%; }
+  .page2 { page-break-before: always; }
+  h3::before { display: none; }
+  ul { margin-bottom: 4px; }
+  li { margin: 1px 0; }
+  .two { gap: 12px; }
+</style>
+</head>
+<body class="p-laam">
+
+<header class="brief-head">
+  <div>
+    <div class="kicker">Technical Brief · Document 01</div>
+    <h1>LAAM<span>Self-hosted AI work assistant</span></h1>
+  </div>
+  <div class="meta">Version 1.0 · 2026-09-24<br>Code baseline <code>LAAM @ 7eb0724</code><br>Status: pre-production</div>
+</header>
+
+<p class="lede">LAAM is a self-hosted, multi-user AI assistant for teams. People ask business questions in chat or by voice; LAAM answers them against <b>live data</b> by calling tools on connected systems, and in chat it <b>acts</b> on those systems only after the user confirms each write (scheduled workflows write only through workflow-safe tools, to allow-listed recipients). The same tool layer powers durable, scheduled <b>workflow automations</b> that the AI can draft, test-run and hand back for approval.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">7</div><div class="l">Product surfaces</div></div>
+  <div class="kpi"><div class="v">5</div><div class="l">LLM providers, one router</div></div>
+  <div class="kpi"><div class="v">12</div><div class="l">Built-in connectors (11 integrations + 1 offline demo) · 46 tools</div></div>
+  <div class="kpi"><div class="v">88</div><div class="l">API handlers · 22 tables</div></div>
+  <div class="kpi"><div class="v">3,573</div><div class="l">Automated test cases (3,567 passing)</div></div>
+  <div class="kpi"><div class="v">1,221</div><div class="l">Commits since Jun 2026</div></div>
+</div>
+
+<h3>How it works</h3>
+<div class="figure">
+<pre class="mermaid">%%{init: {"flowchart": {"nodeSpacing": 18, "rankSpacing": 40}, "themeVariables": {"fontSize": "15px"}}}%%
+flowchart LR
+  U["People&lt;br/&gt;chat · voice"] --> AG
+  subgraph APP["LAAM · one self-hosted app"]
+    direction TB
+    AG["Agent engine&lt;br/&gt;tool loop + guards"]
+    WF["Workflow engine&lt;br/&gt;journaled runs"]
+    WG["Write gate&lt;br/&gt;chat: user confirms&lt;br/&gt;workflows: allow-list"]
+    DB[("PostgreSQL 16")]
+    AG --> WG
+    WF --> WG
+  end
+  LLM["LLM providers · cloud or local&lt;br/&gt;search + TTS (self-hosted)"] <--> AG
+  WG --> C["Connectors&lt;br/&gt;12 built-in + any MCP server"]
+</pre>
+<div class="cap"><b>Figure 1.</b> LAAM runs on customer-controlled infrastructure. In chat, every write waits for the user's confirmation; unattended workflows may write only through workflow-safe tools to allow-listed recipients.</div>
+</div>
+
+<div class="two">
+<div>
+<h3>What is technically differentiated</h3>
+<ul>
+  <li><b>Code-enforced reliability, not prompt hope.</b> Each failure mode measured in testing (invented records, "success" without a write, retyped tables with errors, empty-result false negatives) has a structural guard in code.</li>
+  <li><b>Human-confirmed actions.</b> Any tool not declared and trusted as read-only is treated as a write. In chat, the user approves a code-built preview; the confirmed call uses the sealed arguments and its nonce is checked against the audit log.</li>
+  <li><b>Trace-grounded workflow authoring.</b> The AI must first observe real tool calls; a validator rejects plans that reference anything unobserved; the graph is dry-run (writes mocked, reads real) before it is offered.</li>
+  <li><b>Durable automation.</b> Every workflow step is journaled; runs resume after a crash; an atomic per-step claim stops a resumed run from re-executing a write.</li>
+</ul>
+</div>
+<div style="padding-top:26px">
+<ul>
+  <li><b>Provider- and connector-agnostic.</b> Five LLM providers (including fully local models) behind one adapter; a generic integration layer lets any Model Context Protocol server plug in at runtime without code (a few model-facing prompt strings still reference one knowledge-graph server's tools; cleanup tracked).</li>
+  <li><b>Hands-free voice.</b> Streaming self-hosted neural TTS (Vietnamese and English), voice-activity barge-in, tables and charts lifted to a display panel.</li>
+  <li><b>Measured, not asserted.</b> An offline evaluation harness scores tool choice, arguments, grounding, restraint and write intent across repeated runs against real models.</li>
+  <li><b>Also an MCP server.</b> External AI agents can read LAAM's monitoring data through personal access tokens.</li>
+</ul>
+</div>
+</div>
+
+<section class="page2">
+<h3>Where it stands today</h3>
+<table>
+<thead><tr><th style="width:34%">Capability</th><th style="width:12%">Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Chat with tool calling, write confirmation, grounding guards</td><td><span class="pill ok">LIVE</span></td><td>Daily internal use against real connectors; run-until-done tool loop with 25-round backstop</td></tr>
+<tr><td>Workflow engine (durable runs, dry-run)</td><td><span class="pill ok">LIVE</span></td><td>Crash-resume from journal; parallel DAG mode and cron scheduler built</td></tr>
+<tr><td>AI workflow authoring (one-shot and multi-turn)</td><td><span class="pill warn">BUILT</span></td><td>Probe → plan → validator → compile → verify run</td></tr>
+<tr><td>Voice command centre</td><td><span class="pill ok">LIVE</span></td><td>Self-hosted TTS; browser speech recognition (self-hosted STT planned)</td></tr>
+<tr><td>MCP client · 12 built-in connectors</td><td><span class="pill ok">LIVE</span> / <span class="pill warn">BUILT</span></td><td>MCP servers in use; OAuth connectors activate when the operator registers apps</td></tr>
+<tr><td>Access control, encrypted credentials</td><td><span class="pill ok">LIVE</span></td><td>4 roles; AES-256-GCM per-user credential encryption</td></tr>
+<tr><td>Production deployment</td><td><span class="pill off">PLANNED</span></td><td>Pre-production: self-hosted Docker Compose for development, internal use and demonstrations</td></tr>
+</tbody>
+</table>
+
+<h3>Measured quality (offline evaluation, 2026-09-03)</h3>
+<table>
+<thead><tr><th>Tool choice</th><th>Arguments</th><th>Grounding</th><th>Restraint</th><th>Termination</th><th>Write intent</th><th>Rich output</th></tr></thead>
+<tbody><tr><td>86%</td><td>97%</td><td>67%</td><td>100%</td><td>90%</td><td>100%</td><td>100%</td></tr></tbody>
+</table>
+<p class="small">Grader pass rates, not end-to-end accuracy: 17 synthetic scenarios × 5 runs on an open-weight model with stubbed tool responses. In a second suite, an early low-sample run suggested stable tool selection as tools grew from 4 to 60; a later 60-tool run averaged 67% — scaling is still being measured.</p>
+
+<div class="two">
+<div>
+<h3>Technology</h3>
+<table>
+<tbody>
+<tr><td><b>Application</b></td><td>Next.js 16, React 19, TypeScript (strict), Node 24</td></tr>
+<tr><td><b>Data</b></td><td>PostgreSQL 16 (trigram search), Drizzle ORM, 19 migrations</td></tr>
+<tr><td><b>AI</b></td><td>Local models via Ollama; OpenAI-compatible cloud providers; Anthropic</td></tr>
+<tr><td><b>Integration</b></td><td>Model Context Protocol (client and server), OAuth connectors</td></tr>
+<tr><td><b>Voice</b></td><td>Self-hosted neural TTS, in-browser voice-activity detection</td></tr>
+<tr><td><b>Quality</b></td><td>Vitest (363 files), offline eval harness, no-code-execution guard test</td></tr>
+</tbody>
+</table>
+</div>
+<div>
+<h3>Security and data posture</h3>
+<ul>
+  <li><b>Self-hosted:</b> data stays on customer infrastructure; a fully local model configuration keeps prompts on-premises.</li>
+  <li><b>Credentials:</b> AES-256-GCM, per-user derived keys; secrets never reach the browser.</li>
+  <li><b>Outbound safety:</b> user-added MCP server URLs are checked at connect time against private and metadata ranges after DNS resolution; the web reader uses a hostname blocklist; recipient allow-lists for automated messages.</li>
+  <li><b>No code execution:</b> the agent can act only through declared tools, enforced by a guard test that fails in the test suite (there is no CI yet).</li>
+</ul>
+</div>
+</div>
+
+<h3>Next steps to production</h3>
+<table>
+<thead><tr><th style="width:26%">Phase</th><th>Scope</th></tr></thead>
+<tbody>
+<tr><td><b>1 · Production hardening</b></td><td>CI quality gates, API-wide rate limiting and CSP, access-token scope enforcement, one DNS-pinned guard for all outbound fetches, atomic nonce claim for confirmed MCP writes, pinned images, structured logging</td></tr>
+<tr><td><b>2 · Enterprise readiness</b></td><td>SSO (OIDC/SAML), bring-your-own model keys with KMS, self-hosted speech-to-text, email/chat notifications</td></tr>
+<tr><td><b>3 · Scale-out</b></td><td>Shared event bus and limiter store, in-product scheduler, multiple stateless app instances</td></tr>
+</tbody>
+</table>
+<p class="small">Detail: 02 System Architecture · 03 Infrastructure, Security &amp; Operations · 04 Maturity, Roadmap &amp; IP.</p>
+</section>
+
+<script src="../../tooling/node_modules/mermaid/dist/mermaid.min.js"></script>
+<script src="../../tooling/mermaid-init.js"></script>
+</body>
+</html>
