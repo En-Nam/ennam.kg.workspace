@@ -1,0 +1,7 @@
+{
+  "name": "tech-docs-tooling",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs" },
+  "dependencies": { "mermaid": "^11", "puppeteer-core": "^23" }
+}

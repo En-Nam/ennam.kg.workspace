@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>LAAM — Tổng quan kỹ thuật</title>
+<link rel="stylesheet" href="../../tooling/doc.css">
+<style>
+  html { font-size: 9pt; }
+  .brief-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid var(--navy); padding-bottom: 8px; margin-bottom: 10px; }
+  .brief-head .kicker { font-size: 8pt; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  .brief-head h1 { font-size: 26pt; margin: 2px 0 0; color: var(--navy); font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+  .brief-head h1 span { font-size: 13pt; color: var(--ink-soft); font-weight: 500; letter-spacing: 0; margin-left: 8px; }
+  .brief-head .meta { text-align: right; font-size: 7.5pt; color: var(--muted); line-height: 1.5; }
+  h3 { font-size: 11pt; margin: 10px 0 4px; border-left: 3px solid var(--accent); padding-left: 6px; }
+  .kpis { grid-template-columns: .8fr 1fr 1.9fr 1fr 1.1fr .9fr; gap: 6px; margin: 8px 0 6px; }
+  .kpi { padding: 5px 7px; }
+  .kpi .v { font-size: 14pt; }
+  .kpi .l { font-size: 6.8pt; }
+  table { font-size: 8pt; margin: 4px 0 6px; }
+  th, td { padding: 3px 6px; }
+  .figure { padding: 6px; margin: 6px 0 8px; }
+  .diagram svg { max-height: 60mm; width: 100%; }
+  .page2 { page-break-before: always; }
+  h3::before { display: none; }
+  ul { margin-bottom: 4px; }
+  li { margin: 1px 0; }
+  .two { gap: 12px; }
+  .tech td:first-child { white-space: nowrap; }
+</style>
+</head>
+<body class="p-laam">
+
+<header class="brief-head">
+  <div>
+    <div class="kicker">Tổng quan kỹ thuật · Tài liệu 01</div>
+    <h1>LAAM<span>Trợ lý AI tự host cho công việc</span></h1>
+  </div>
+  <div class="meta">Phiên bản 1.0 · 2026-09-24<br>Phiên bản mã nguồn <code>LAAM @ 7eb0724</code><br>Trạng thái: giai đoạn tiền production</div>
+</header>
+
+<p class="lede">LAAM là trợ lý AI đa người dùng, tự host (self-hosted) cho các nhóm làm việc. Người dùng đặt câu hỏi nghiệp vụ qua chat hoặc giọng nói; LAAM trả lời dựa trên <b>dữ liệu thực</b> bằng cách gọi tool trên các hệ thống đã kết nối, và trong chat chỉ <b>thực hiện thao tác</b> trên các hệ thống đó sau khi người dùng xác nhận từng lệnh ghi (workflow theo lịch chỉ ghi qua tool workflow-safe, tới người nhận trong whitelist). Cùng tầng tool này vận hành các <b>workflow tự động</b> bền vững, chạy theo lịch, do AI soạn, chạy thử và trình lại để phê duyệt.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="v">7</div><div class="l">Bề mặt sản phẩm</div></div>
+  <div class="kpi"><div class="v">5</div><div class="l">Nhà cung cấp LLM, một router</div></div>
+  <div class="kpi"><div class="v">12</div><div class="l">Connector có sẵn (11 tích hợp + 1 demo offline) · 46 tool</div></div>
+  <div class="kpi"><div class="v">88</div><div class="l">API handler · 22 bảng</div></div>
+  <div class="kpi"><div class="v">3,573</div><div class="l">Test case tự động (3,567 đạt)</div></div>
+  <div class="kpi"><div class="v">1,221</div><div class="l">Commit từ 2026-06</div></div>
+</div>
+
+<h3>Cách hoạt động</h3>
+<div class="figure">
+<pre class="mermaid">%%{init: {"flowchart": {"nodeSpacing": 18, "rankSpacing": 40}, "themeVariables": {"fontSize": "15px"}}}%%
+flowchart LR
+  U["Người dùng&lt;br/&gt;chat · giọng nói"] --> AG
+  subgraph APP["LAAM · một ứng dụng tự host"]
+    direction TB
+    AG["Agent engine&lt;br/&gt;vòng lặp tool + guard"]
+    WF["Workflow engine&lt;br/&gt;lượt chạy có journal"]
+    WG["Cổng ghi&lt;br/&gt;chat: người dùng xác nhận&lt;br/&gt;workflow: whitelist"]
+    DB[("PostgreSQL 16")]
+    AG --> WG
+    WF --> WG
+  end
+  LLM["Nhà cung cấp LLM · cloud hoặc cục bộ&lt;br/&gt;tìm kiếm + TTS (tự host)"] &lt;--&gt; AG
+  WG --> C["Connector&lt;br/&gt;12 tích hợp sẵn&lt;br/&gt;+ mọi MCP server"]
+</pre>
+<div class="cap"><b>Hình 1.</b> LAAM chạy trên hạ tầng do khách hàng kiểm soát. Trong chat, mọi lệnh ghi đều chờ người dùng xác nhận; workflow chạy không giám sát chỉ được ghi qua tool workflow-safe, tới người nhận trong whitelist.</div>
+</div>
+
+<div class="two">
+<div>
+<h3>Điểm khác biệt về kỹ thuật</h3>
+<ul>
+  <li><b>Độ tin cậy bảo đảm bằng code, không trông vào prompt.</b> Mỗi lỗi đo được khi kiểm thử (bịa bản ghi, báo "thành công" dù chưa ghi, chép lại bảng sai, âm tính giả khi kết quả rỗng) đều có guard cấu trúc trong code.</li>
+  <li><b>Thao tác do con người xác nhận.</b> Tool không được khai báo và tin cậy là chỉ đọc đều coi là ghi. Trong chat, người dùng duyệt bản xem trước do code tạo; lời gọi đã xác nhận dùng tham số niêm phong, nonce được đối chiếu với nhật ký audit.</li>
+  <li><b>Soạn workflow dựa trên trace thực.</b> AI phải quan sát lời gọi tool thực trước; validator loại kế hoạch tham chiếu thứ chưa quan sát; graph được dry-run (ghi giả lập, đọc thực) trước khi đề xuất.</li>
+  <li><b>Tự động hóa bền vững.</b> Mọi bước workflow được ghi journal; lượt chạy tiếp tục sau sự cố; nhận quyền nguyên tử theo từng bước ngăn lượt chạy tiếp tục thực thi lại lệnh ghi.</li>
+</ul>
+</div>
+<div style="padding-top:26px">
+<ul>
+  <li><b>Độc lập với nhà cung cấp và connector.</b> Năm nhà cung cấp LLM (kể cả mô hình chạy hoàn toàn cục bộ) sau một adapter; tầng tích hợp tổng quát cho phép mọi Model Context Protocol server cắm vào lúc runtime, không cần code (một vài chuỗi prompt cho mô hình vẫn nhắc tới tool của một knowledge graph server; việc dọn dẹp đang được theo dõi).</li>
+  <li><b>Giọng nói không cần chạm tay.</b> TTS neural tự host dạng streaming (tiếng Việt và tiếng Anh), ngắt lời bằng phát hiện giọng nói, bảng và biểu đồ đưa lên panel hiển thị.</li>
+  <li><b>Đo lường thực tế, không phải tự khẳng định.</b> Bộ đánh giá offline chấm điểm việc chọn tool, tham số, tính bám dữ liệu, sự kiềm chế và ý định ghi qua nhiều lượt chạy với mô hình thực.</li>
+  <li><b>Đồng thời là MCP server.</b> AI agent bên ngoài có thể đọc dữ liệu giám sát của LAAM qua personal access token.</li>
+</ul>
+</div>
+</div>
+
+<section class="page2">
+<h3>Hiện trạng</h3>
+<table>
+<thead><tr><th style="width:34%">Năng lực</th><th style="width:12%">Trạng thái</th><th>Bằng chứng</th></tr></thead>
+<tbody>
+<tr><td>Chat có gọi tool, xác nhận ghi, guard bám dữ liệu</td><td><span class="pill ok">LIVE</span></td><td>Dùng nội bộ hằng ngày với connector thực; vòng lặp tool chạy đến khi xong, chặn cứng ở 25 vòng</td></tr>
+<tr><td>Workflow engine (lượt chạy bền vững, dry-run)</td><td><span class="pill ok">LIVE</span></td><td>Tiếp tục sau sự cố từ journal; đã xây chế độ DAG song song và bộ lập lịch cron</td></tr>
+<tr><td>AI soạn workflow (một lượt và nhiều lượt)</td><td><span class="pill warn">BUILT</span></td><td>Probe → kế hoạch → validator → biên dịch → chạy kiểm chứng</td></tr>
+<tr><td>Trung tâm điều khiển bằng giọng nói</td><td><span class="pill ok">LIVE</span></td><td>TTS tự host; nhận dạng giọng nói (STT) trên trình duyệt, dự kiến STT tự host</td></tr>
+<tr><td>MCP client · 12 connector tích hợp sẵn</td><td><span class="pill ok">LIVE</span> / <span class="pill warn">BUILT</span></td><td>MCP server đang được dùng; connector OAuth kích hoạt khi quản trị viên đăng ký ứng dụng</td></tr>
+<tr><td>Kiểm soát truy cập, mã hóa thông tin xác thực</td><td><span class="pill ok">LIVE</span></td><td>4 vai trò; mã hóa thông tin xác thực theo từng người dùng bằng AES-256-GCM</td></tr>
+<tr><td>Triển khai production</td><td><span class="pill off">PLANNED</span></td><td>Giai đoạn tiền production: Docker Compose tự host cho phát triển, dùng nội bộ và trình diễn</td></tr>
+</tbody>
+</table>
+
+<h3>Chất lượng đo được (đánh giá offline, 2026-09-03)</h3>
+<table>
+<thead><tr><th>Chọn tool</th><th>Tham số</th><th>Bám dữ liệu</th><th>Kiềm chế</th><th>Kết thúc</th><th>Ý định ghi</th><th>Đầu ra phong phú</th></tr></thead>
+<tbody><tr><td>86%</td><td>97%</td><td>67%</td><td>100%</td><td>90%</td><td>100%</td><td>100%</td></tr></tbody>
+</table>
+<p class="small">Tỷ lệ đạt của grader, không phải độ chính xác end-to-end: 17 kịch bản tổng hợp × 5 lượt chạy trên một mô hình open-weight với phản hồi tool giả lập. Ở bộ test thứ hai, một lượt chạy sớm ít mẫu cho thấy chọn tool ổn định khi số tool tăng từ 4 lên 60; lượt chạy sau với 60 tool đạt trung bình 67% — khả năng mở rộng vẫn đang được đo.</p>
+
+<div class="two">
+<div>
+<h3>Công nghệ</h3>
+<table class="tech">
+<tbody>
+<tr><td><b>Ứng dụng</b></td><td>Next.js 16, React 19, TypeScript (strict), Node&nbsp;24</td></tr>
+<tr><td><b>Dữ liệu</b></td><td>PostgreSQL 16 (tìm kiếm trigram), Drizzle ORM, 19 migration</td></tr>
+<tr><td><b>AI</b></td><td>Mô hình cục bộ qua Ollama; nhà cung cấp cloud tương thích OpenAI; Anthropic</td></tr>
+<tr><td><b>Tích hợp</b></td><td>Model Context Protocol (client và server), connector OAuth</td></tr>
+<tr><td><b>Giọng nói</b></td><td>TTS neural tự host, phát hiện giọng nói ngay trên trình duyệt</td></tr>
+<tr><td><b>Chất lượng</b></td><td>Vitest (363 file), bộ đánh giá offline, test chặn thực thi code</td></tr>
+</tbody>
+</table>
+</div>
+<div>
+<h3>Bảo mật và dữ liệu</h3>
+<ul>
+  <li><b>Tự host:</b> dữ liệu nằm trên hạ tầng của khách hàng; cấu hình mô hình hoàn toàn cục bộ giữ prompt tại chỗ.</li>
+  <li><b>Thông tin xác thực:</b> AES-256-GCM, khóa dẫn xuất theo từng người dùng; secret không bao giờ tới trình duyệt.</li>
+  <li><b>An toàn kết nối ra ngoài:</b> URL MCP server do người dùng thêm được kiểm tra khi kết nối (sau phân giải DNS) với dải địa chỉ nội bộ và metadata; trình đọc web dùng blocklist hostname; whitelist người nhận cho tin nhắn tự động.</li>
+  <li><b>Không thực thi code:</b> agent chỉ thao tác được qua các tool đã khai báo, bảo đảm bằng một guard test sẽ fail trong bộ test (chưa có CI).</li>
+</ul>
+</div>
+</div>
+
+<h3>Các bước tiếp theo để lên production</h3>
+<table>
+<thead><tr><th style="width:26%">Giai đoạn</th><th>Phạm vi</th></tr></thead>
+<tbody>
+<tr><td><b>1 · Gia cố production</b></td><td>Quality gate trong CI, giới hạn tốc độ (rate limiting) và CSP trên toàn API, thực thi phạm vi access token, một guard ghim DNS cho mọi truy vấn ra ngoài, nhận nonce nguyên tử cho lệnh ghi MCP đã xác nhận, image cố định phiên bản, logging có cấu trúc</td></tr>
+<tr><td><b>2 · Sẵn sàng cho doanh nghiệp</b></td><td>SSO (OIDC/SAML), khách hàng tự mang key mô hình (BYOK) với KMS, STT tự host, thông báo qua email/chat</td></tr>
+<tr><td><b>3 · Mở rộng quy mô</b></td><td>Event bus và kho limiter dùng chung, bộ lập lịch tích hợp, nhiều instance ứng dụng stateless</td></tr>
+</tbody>
+</table>
+<p class="small">Chi tiết: 02 Kiến trúc hệ thống · 03 Hạ tầng, Bảo mật &amp; Vận hành · 04 Mức độ hoàn thiện, Lộ trình &amp; Sở hữu trí tuệ.</p>
+</section>
+
+<script src="../../tooling/node_modules/mermaid/dist/mermaid.min.js"></script>
+<script src="../../tooling/mermaid-init.js"></script>
+</body>
+</html>
