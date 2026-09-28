@@ -6,15 +6,15 @@
 # Usage:
 #   scripts/release-local.sh build                 # build + tag locally only
 #   scripts/release-local.sh push                  # build + tag + push to $REGISTRY
-#   REGISTRY=localhost:5000 VERSION=v1.0.1 scripts/release-local.sh push
+#   REGISTRY=localhost:5000 VERSION=v2.5.1 scripts/release-local.sh push
 #
 # Env:
-#   VERSION   semver tag (default v1.0.0)
+#   VERSION   semver tag (default v2.5.0)
 #   REGISTRY  registry host:port for `push` (default localhost:5000)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-v1.0.0}"
+VERSION="${VERSION:-v2.5.0}"
 REGISTRY="${REGISTRY:-localhost:5000}"
 ACTION="${1:-build}"
 SHA="$(git -C ennam.kg.go rev-parse --short HEAD)"
