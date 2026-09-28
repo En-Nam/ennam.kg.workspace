@@ -12,24 +12,27 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."                       # DAAB root
 SERVICE="${1:-all}"
-VERSION="${VERSION:-v1.0.0}"
+VERSION="${VERSION:-v2.5.0}"
 # Project/stack name comes from `name: daab` inside docker-compose.release.yml.
 COMPOSE=(docker compose -f docker-compose.release.yml)
 SHA="$(git -C ennam.kg.go rev-parse --short HEAD 2>/dev/null || echo local)"
 
-build() {  # name context dockerfile target
-  local name="$1" ctx="$2" dockerfile="$3" target="$4"
+build() {  # name context dockerfile target [extra docker-build args...]
+  local name="$1" ctx="$2" dockerfile="$3" target="$4"; shift 4
   echo ">> build daab-$name ($SHA)"
-  docker build -f "$ctx/$dockerfile" ${target:+--target "$target"} \
+  docker build -f "$ctx/$dockerfile" ${target:+--target "$target"} "$@" \
     -t "daab-$name:$VERSION" -t "daab-$name:latest" -t "daab-$name:$SHA" "$ctx"
 }
 
+# kg-server reports this through `kg-server version` and GET /api/v1/version (ldflags).
+SERVER_ARGS=(--build-arg "VERSION=$VERSION" --build-arg "COMMIT=$SHA")
+
 case "$SERVICE" in
-  server)    build server    ennam.kg.go     deploy/docker/Dockerfile production ;;
+  server)    build server    ennam.kg.go     deploy/docker/Dockerfile production "${SERVER_ARGS[@]}" ;;
   python)    build python    ennam.kg.python Dockerfile               "" ;;
   dashboard) build dashboard  ennam.kg.next   Dockerfile               "" ;;
   all)
-    build server    ennam.kg.go     deploy/docker/Dockerfile production
+    build server    ennam.kg.go     deploy/docker/Dockerfile production "${SERVER_ARGS[@]}"
     build python    ennam.kg.python Dockerfile               ""
     build dashboard ennam.kg.next   Dockerfile               "" ;;
   *) echo "usage: deploy-local.sh [server|python|dashboard|all]" >&2; exit 1 ;;
