@@ -120,7 +120,11 @@ Takes an `ObjectStorage` instead of `storageRoot`.
 ### 4.7 IAM and bucket (owner action)
 
 Role/user for kg-server needs `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on
-`arn:aws:s3:::devshared-ap-southeast-1-public-storage/media/daab/*`. The bucket name contains
+`arn:aws:s3:::devshared-ap-southeast-1-public-storage/media/daab/*`, plus `s3:ListBucket` on
+`arn:aws:s3:::devshared-ap-southeast-1-public-storage` with the condition `s3:prefix` = `media/daab/*`.
+`s3:ListBucket` is required for a missing object to come back as `NoSuchKey` (→ 404); without it S3
+answers `AccessDenied` (403), which the server correctly treats as a real permission error (500),
+so downloads of the 267 legacy rows would log errors instead of returning 404. The bucket name contains
 "public": confirm Block Public Access (or a deny policy) covers the `media/daab/` prefix so uploaded
 documents cannot be read without going through DAAB.
 
