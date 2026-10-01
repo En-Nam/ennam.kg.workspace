@@ -107,6 +107,13 @@ services:
       # Python indexer URL (for SSE proxy /api/v1/ai-query/stream → agentic loop)
       KG_PYTHON_URL: http://indexer:8081
       KG_UPLOAD_DIR: /app/data/uploads
+      # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
+      USE_S3: ${USE_S3:-0}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
+      AWS_MAIN_FOLDER: ${AWS_MAIN_FOLDER:-media/daab}
+      AWS_S3_REGION_NAME: ${AWS_S3_REGION_NAME:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     volumes:
       - ./ennam.kg.go:/app
       - ennam_uploads:/app/data/uploads
