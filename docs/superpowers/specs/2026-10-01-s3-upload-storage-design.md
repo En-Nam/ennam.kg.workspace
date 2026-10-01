@@ -51,7 +51,7 @@ leave local-disk storage as the default for dev.
 
 ```go
 type ObjectStorage interface {
-    Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error
+    Put(ctx context.Context, key string, r io.Reader, contentType string) error
     Open(ctx context.Context, key string) (io.ReadCloser, error) // ErrNotFound when absent
     Delete(ctx context.Context, key string) error               // absent key is not an error
 }
@@ -66,7 +66,7 @@ type ObjectStorage interface {
 
 ### 4.2 Selection and configuration (`main.go`)
 
-`USE_S3` of `1` or `true` selects `S3Storage`, anything else `LocalStorage`. With S3 on, a missing
+`USE_S3` of `1`/`true` (case-insensitive) selects `S3Storage`; `""`/`0`/`false` select `LocalStorage`; any other value is a startup error (a typo must not silently keep uploads on disk). With S3 on, a missing
 `AWS_STORAGE_BUCKET_NAME` or `AWS_S3_REGION_NAME` is a fatal startup error (fail loud, never fall
 back to disk silently).
 
@@ -96,10 +96,7 @@ Takes an `ObjectStorage` instead of `storageRoot`.
 
 ### 4.4 Download handler
 
-`Download` calls `GetUpload` then `Open(StoredPath)`, sets `Content-Type` (stored mime type) and
-`Content-Disposition`, and streams. `ErrNotFound` → 404. Other errors → 500 with a generic body
-(S3 detail goes to the log, never to the client). Range requests (previously via `http.ServeFile`)
-are not supported; no current client relies on them.
+`Download` calls `GetUpload` then `Open(StoredPath)`, sets `Content-Type` (stored mime type, else `application/octet-stream`) and streams; it does not set `Content-Disposition`, matching the previous `http.ServeFile` behaviour. `ErrNotFound` → 404. Other errors → 500 with a generic body (S3 detail goes to the log, never to the client). Range requests (previously via `http.ServeFile`) are not supported; no current client relies on them.
 
 ### 4.5 Python worker
 
