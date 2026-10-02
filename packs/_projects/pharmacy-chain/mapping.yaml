@@ -1,0 +1,186 @@
+# Mapping of the Pharmacy Chain demo database (pharmacy_demo, read live) to the
+# retail + pharmacy canonical model. Imported with:
+#   kg-packs import-mapping --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 \
+#     --file packs/_projects/pharmacy-chain/mapping.yaml --approve --sync-schema
+# Columns verified against pharmacy_demo on 2026-10-02 (21 tables), except the
+# columns Plan A adds — employees.hourly_wage and prescriptions.acquisition_cost —
+# and the RECEIPT movement type (import fails loudly until Plan A has run).
+# Not mapped here: target (mode=file — Plan C appends the block for dataset store_targets).
+project_id: 4ad7a5fa-a036-4f6a-8229-39a20af23e38
+defaults:
+  mode: live
+  data_source_id: 3c7af733-b069-4654-b98e-beb5afde588c   # "Pharmacy POS DB"
+entities:
+  location:
+    from: stores
+    fields:
+      location_id: store_id
+      name:        store_name
+      region:      state
+      timezone:    "'America/Chicago'"   # stores has no timezone column; timestamps are local (spec I12)
+      opened_at:   opening_date
+      status:      LOWER(status)
+  product:
+    from: products
+    fields:
+      product_id:   product_id
+      sku:          sku
+      name:         product_name
+      category:     category
+      subcategory:  subcategory
+      unit_cost:    unit_cost
+      list_price:   retail_price
+      vendor_id:    vendor_id
+      is_regulated: prescription_required
+  employee:
+    from: employees
+    fields:
+      employee_id: employee_id
+      location_id: store_id
+      role:        role
+  labor_rate:            # one rate per employee, effective from hire date (Plan A: employees.hourly_wage)
+    from: employees
+    fields:
+      employee_id:    employee_id
+      effective_from: hire_date
+      hourly_rate:    hourly_wage
+  sale:
+    from: transactions
+    fields:
+      sale_id:         transaction_id
+      location_id:     store_id
+      employee_id:     employee_id
+      customer_id:     customer_id
+      sold_at:         transaction_datetime
+      gross_amount:    subtotal
+      discount_amount: discount_amount
+      tax_amount:      tax_amount
+      net_amount:      subtotal - discount_amount
+      status:          status
+    enum_map:
+      status: { Completed: completed, Voided: voided, Cancelled: cancelled }
+  sale_line:
+    from: transaction_items
+    fields:
+      sale_line_id:    transaction_item_id
+      sale_id:         transaction_id
+      product_id:      product_id
+      quantity:        quantity
+      unit_price:      unit_price
+      unit_cost:       unit_cost
+      discount_amount: discount_amount
+      override_flag:   override_applied
+  refund:
+    from: refunds
+    fields:
+      refund_id:        refund_id
+      location_id:      store_id
+      employee_id:      employee_id
+      approver_id:      approving_manager_id
+      original_sale_id: original_transaction_id
+      refunded_at:      refund_datetime
+      amount:           refund_amount
+      has_receipt:      original_receipt_present
+      method:           refund_method
+  void:
+    from: voids
+    fields:
+      void_id:     void_id
+      location_id: store_id
+      employee_id: employee_id
+      voided_at:   void_datetime
+      amount:      void_amount
+      post_tender: "stage <> 'Before Payment'"
+  cash_drawer:
+    from: cash_drawers
+    fields:
+      drawer_id:     drawer_session_id
+      location_id:   store_id
+      employee_id:   employee_id
+      closed_at:     closed_at
+      expected_cash: expected_cash
+      counted_cash:  counted_cash
+      no_sale_count: no_sale_open_count
+  shift:
+    from: employee_shifts
+    fields:
+      shift_id:           shift_id
+      location_id:        store_id
+      employee_id:        employee_id
+      start_at:           actual_clock_in
+      end_at:             actual_clock_out
+      regular_hours:      regular_hours
+      overtime_hours:     overtime_hours
+  inventory_movement:
+    from: inventory_movements
+    fields:
+      movement_id:   movement_id
+      location_id:   store_id
+      product_id:    product_id
+      moved_at:      movement_datetime
+      movement_type: movement_type
+      quantity:      quantity_change
+    enum_map:
+      movement_type: { SALE: sale, REFUND_RETURN: return, RECEIPT: receipt }
+  inventory_snapshot:
+    from: inventory_snapshots
+    fields:
+      snapshot_id:   snapshot_id
+      location_id:   store_id
+      product_id:    product_id
+      snapshot_date: snapshot_date
+      book_qty:      system_quantity
+      counted_qty:   counted_quantity
+      expired_qty:   expired_quantity
+  receipt_print:
+    from: receipts
+    fields:
+      receipt_id:  receipt_id
+      sale_id:     transaction_id
+      location_id: store_id
+      employee_id: printed_by_employee_id
+      printed_at:  printed_datetime
+      print_type:  print_type
+    enum_map:
+      print_type: { Original: original, Reprint: reprint, "Gift Receipt": gift }
+  price_override:
+    from: discount_overrides
+    fields:
+      override_id:     override_id
+      sale_id:         transaction_id
+      location_id:     store_id
+      employee_id:     employee_id
+      approver_id:     approving_manager_id
+      product_id:      product_id
+      overridden_at:   override_datetime
+      original_amount: original_amount
+      adjusted_amount: adjusted_amount
+      discount_amount: discount_amount
+  prescription:
+    from: prescriptions
+    fields:
+      prescription_id: prescription_id
+      location_id:     store_id
+      product_id:      product_id
+      filled_at:       filled_datetime
+      quantity:        quantity
+      status:          status
+      cash_price:      cash_price
+      patient_paid:    customer_payment
+      payer_paid:      insurance_payment
+      acquisition_cost: acquisition_cost   # column added by Plan A (per-fill cost)
+    enum_map:
+      status: { Received: received, Ready: ready, "Picked Up": picked_up, "Not Collected": not_collected, Reversed: reversed, Cancelled: cancelled }
+  claim:
+    from: insurance_claims
+    fields:
+      claim_id:          claim_id
+      prescription_id:   prescription_id
+      location_id:       store_id
+      payer:             payer_name
+      submitted_at:      submitted_datetime
+      billed_amount:     claim_amount
+      reimbursed_amount: approved_amount
+      patient_amount:    customer_amount
+      is_rejected:       "claim_status = 'Rejected'"
+      rejection_code:    rejection_code
