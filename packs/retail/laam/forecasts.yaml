@@ -1,0 +1,12 @@
+# Additive metrics only (spec §7.6). Margin is derived from these, never forecast as a rate.
+forecasts:
+  - metric: retail.net_sales
+    dims: [location_id]
+    horizons_days: [7, 30]
+    season_length: 7
+    max_data_lag_days: 1       # daily sales-type series: tolerate one day of ingest lag
+  - metric: retail.cogs
+    dims: [location_id]
+    horizons_days: [7, 30]
+    season_length: 7
+    max_data_lag_days: 1       # daily sales-type series: tolerate one day of ingest lag

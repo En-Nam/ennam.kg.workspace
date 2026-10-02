@@ -1,0 +1,33 @@
+# Priority weights: request Part 3 §18. Severity by impact: §19. Store Health weights/bands: §15.
+# Values marked "engine parameter" are not in the request — initial values, confirm with the customer.
+priority_weights: { financial: 30, urgency: 20, confidence: 15, target_variance: 10, locations: 10, repeated: 10, strategic: 5 }
+urgency: { critical: 1, high: 0.75, medium: 0.5, warning: 0.5, low: 0.25 }          # engine parameter
+severity_by_impact:
+  sales_metric: retail.net_sales
+  tiers:
+    - { level: critical, min_amount: 10000, min_pct_weekly_sales: 1 }      # greater of $10,000 or 1% of weekly sales
+    - { level: high,     min_amount: 5000,  min_pct_weekly_sales: 0.5 }    # greater of $5,000 or 0.5%
+    - { level: medium,   min_amount: 1000,  min_pct_weekly_sales: 0.1 }    # greater of $1,000 or 0.1%
+  otherwise: low                                                           # informational / early trend
+normalization: { target_variance_pct: 20, repeated_occurrences: 4 }       # engine parameter
+strategic_rules: []
+resurfacing: { impact_change_pct: 20, sample_growth_pct: 25 }             # engine parameter ("materially")
+confidence: { deviation_z_midpoint: 2, relative_z_scale: 10, freshness_current: 1, freshness_delayed: 0.7, min_interval_factor: 0.2 }  # spec §7.3a; z/scale engine parameters
+health_score:
+  components:
+    sales_margin:    { weight: 30, rules: ["RET-SALES-*", "RET-MARGIN-*"] }
+    inventory:       { weight: 25, rules: ["RET-INV-*"] }
+    loss_prevention: { weight: 20, rules: ["RET-REF-*", "RET-DISC-*", "RET-VOID-*", "RET-CASH-*", "RET-X-*"] }
+    labor:           { weight: 15, rules: ["RET-LABOR-*"] }
+  data_quality_weight: 10
+  severity_penalty: { critical: 60, high: 40, medium: 20, warning: 20, low: 5 }    # engine parameter
+  status_bands:
+    - { min: 85, label: healthy }
+    - { min: 70, label: monitor }
+    - { min: 50, label: needs_attention }
+    - { min: 0,  label: high_priority }
+  # A large sales number must not hide serious cash / inventory / loss-prevention problems:
+  # a critical finding in these components caps the status at "monitor" whatever the score.
+  status_caps:
+    - { component: inventory,       min_severity: critical, max_status: monitor }
+    - { component: loss_prevention, min_severity: critical, max_status: monitor }

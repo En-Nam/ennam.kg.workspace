@@ -1,0 +1,19 @@
+scenarios:
+  - key: retail.sales_change
+    label: Sales change
+    dims: [location_id]
+    horizon_days: 30
+    base:
+      net_sales: { forecast_of: retail.net_sales }
+      cogs:      { forecast_of: retail.cogs }
+    variables:
+      sales_change_pct: { default: 0, min: -30, max: 30 }
+    outputs:
+      revenue: "net_sales * (1 + sales_change_pct / 100)"
+      gross_profit: "(net_sales - cogs) * (1 + sales_change_pct / 100)"
+    primary_output: gross_profit
+    presets:
+      expected:  { trend: damped }
+      best:      { trend: damped, set: { sales_change_pct: 10 } }    # RET-SCN-004 default demand increase 10%
+      risk:      { trend: damped, set: { sales_change_pct: -5 } }    # RET-SCN-003 sales decline 5%
+      no_action: { trend: persist_driver }

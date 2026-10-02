@@ -106,6 +106,7 @@ services:
       KG_REDIS_URL: redis://redis:6379/0
       # Python indexer URL (for SSE proxy /api/v1/ai-query/stream → agentic loop)
       KG_PYTHON_URL: http://indexer:8081
+      KG_INTERNAL_TOKEN: ${KG_INTERNAL_TOKEN:-ennam_kg_internal_dev_token}
       KG_UPLOAD_DIR: /app/data/uploads
       # Industry packs (read-only mount, see volumes)
       PACKS_DIR: /packs
@@ -159,6 +160,7 @@ services:
       # Shared with Go API — Python decrypts X-DB-DSN header for direct DB access.
       # Python Settings expects "ENCRYPTION_KEY" (no prefix), Go expects "KG_ENCRYPTION_KEY".
       ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:-}
+      KG_INTERNAL_TOKEN: ${KG_INTERNAL_TOKEN:-ennam_kg_internal_dev_token}
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8081
       HF_HOME: /tmp/huggingface
       TRANSFORMERS_CACHE: /tmp/huggingface
