@@ -5,7 +5,8 @@
 # Columns verified against pharmacy_demo on 2026-10-02 (21 tables), except the
 # columns Plan A adds — employees.hourly_wage and prescriptions.acquisition_cost —
 # and the RECEIPT movement type (import fails loudly until Plan A has run).
-# Not mapped here: target (mode=file — Plan C appends the block for dataset store_targets).
+# Not mapped yet: labor_rate (wage rate — add when Plan A ships a wage column).
+# target is mode=file: rows come from the "Dữ liệu bảng" upload of dataset store_targets (Plan C).
 project_id: 4ad7a5fa-a036-4f6a-8229-39a20af23e38
 defaults:
   mode: live
@@ -184,3 +185,11 @@ entities:
       patient_amount:    customer_amount
       is_rejected:       "claim_status = 'Rejected'"
       rejection_code:    rejection_code
+  target:
+    mode: file
+    file_dataset: store_targets
+    fields:
+      location_id: store_id
+      metric_key:  metric_key
+      period:      period
+      value:       target_value
