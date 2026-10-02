@@ -8,6 +8,7 @@ scenarios:
       cogs:      { forecast_of: retail.cogs }
     variables:
       sales_change_pct: { default: 0, min: -30, max: 30 }
+    # gross_profit scales with (1 + sales_change_pct/100) like revenue, so margin % is unchanged by construction.
     outputs:
       revenue: "net_sales * (1 + sales_change_pct / 100)"
       gross_profit: "(net_sales - cogs) * (1 + sales_change_pct / 100)"

@@ -15,9 +15,11 @@ resurfacing: { impact_change_pct: 20, sample_growth_pct: 25 }             # engi
 confidence: { deviation_z_midpoint: 2, relative_z_scale: 10, freshness_current: 1, freshness_delayed: 0.7, min_interval_factor: 0.2 }  # spec §7.3a; z/scale engine parameters
 health_score:
   components:
-    sales_margin:    { weight: 30, rules: ["RET-SALES-*", "RET-MARGIN-*"] }
+    sales_margin:    { weight: 30, rules: ["RET-SALES-*", "RET-MARGIN-*", "RET-VENDOR-*"] }
     inventory:       { weight: 25, rules: ["RET-INV-*"] }
     loss_prevention: { weight: 20, rules: ["RET-REF-*", "RET-DISC-*", "RET-VOID-*", "RET-CASH-*", "RET-X-*"] }
+    # Beta: RET-LABOR-001/006 are inert (threshold_tbd), so this component cannot be penalised and the
+    # Store Health Score treats it as no-data/100 until a labor trigger is configured.
     labor:           { weight: 15, rules: ["RET-LABOR-*"] }
   data_quality_weight: 10
   severity_penalty: { critical: 60, high: 40, medium: 20, warning: 20, low: 5 }    # engine parameter
