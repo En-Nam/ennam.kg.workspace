@@ -107,6 +107,8 @@ services:
       # Python indexer URL (for SSE proxy /api/v1/ai-query/stream → agentic loop)
       KG_PYTHON_URL: http://indexer:8081
       KG_UPLOAD_DIR: /app/data/uploads
+      # Industry packs (read-only mount, see volumes)
+      PACKS_DIR: /packs
       # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
       USE_S3: ${USE_S3:-0}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
@@ -117,6 +119,7 @@ services:
     volumes:
       - ./ennam.kg.go:/app
       - ennam_uploads:/app/data/uploads
+      - ./packs:/packs:ro
     depends_on:
       postgres:
         condition: service_healthy

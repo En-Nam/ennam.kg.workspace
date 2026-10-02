@@ -1,0 +1,4 @@
+key: pharmacy
+version: 0.1.0
+extends: [retail]
+display_name: Pharmacy
