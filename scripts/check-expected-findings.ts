@@ -1,7 +1,11 @@
 // Compares LAAM findings with demo_mockdata/expected_findings.csv (ground truth of the pharmacy demo).
 // Usage: node scripts/check-expected-findings.ts [--project <business_project id>] [--findings-json <file>]
 //        [--expected <csv>]   DB: read-only SELECT via LAAM/node_modules/pg; DATABASE_URL from env or LAAM/.env (port 5500).
-// Prints "PASS n/n" (exit 0) or the misses / unexpected critical findings (exit 1).
+// Prints "PASS n/n" (exit 0) or the misses / unexpected critical findings (exit 1). Exit 2: the selected project has no rows.
+// --project defaults to bp-pharmacy-chain-demo so the synthetic project (bp-demo-synthetic) never leaks in.
+// Intentional leniency (do not tighten): an expected employee only has to match when the finding carries any EMP-* dim
+// (store-level rules are accepted); a critical finding is "expected" if its rule family + store match any expected row;
+// findings with status dismissed/resolved still count (the checker verifies detection, not triage).
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -44,7 +48,8 @@ export function loadExpected(csvText: string): ExpectedFinding[] {
   return parseCsv(csvText).map((r) => {
     const ruleIds = (r.rule_ids ?? '').split('|').map((s) => s.trim()).filter(Boolean);
     if (!ruleIds.length) throw new Error(`expected finding ${r.finding_id} has no rule_ids`);
-    return { findingId: r.finding_id, storeId: r.store_id.trim(), employeeId: r.employee_id.trim(), ruleIds };
+    if (r.store_id === undefined) throw new Error(`expected finding ${r.finding_id} has no store_id column`);
+    return { findingId: r.finding_id, storeId: r.store_id.trim(), employeeId: (r.employee_id ?? '').trim(), ruleIds };
   });
 }
 
@@ -106,6 +111,35 @@ export function findingColumns(cols: string[]): { ruleCol: string; projCol: stri
 
 const LAAM_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'LAAM');
 
+export const DEFAULT_PROJECT = 'bp-pharmacy-chain-demo';
+const LAAM_DEV_PORT = '5500';
+
+export function resolveProject(cliValue: string | null): string {
+  return cliValue ?? DEFAULT_PROJECT;
+}
+
+class ExitError extends Error {
+  exitCode: number;
+  constructor(message: string, exitCode: number) { super(message); this.exitCode = exitCode; }
+}
+
+export function assertProjectHasRows(project: string, projectRows: number, totalRows: number): void {
+  if (totalRows > 0 && projectRows === 0) {
+    throw new ExitError(`project "${project}" has no finding rows although the table has ${totalRows} (wrong --project?)`, 2);
+  }
+}
+
+// Only LAAM's dev DB (port 5500) is acceptable; an omitted port means 5432 and is refused too.
+export function assertLaamDevUrl(url: string): void {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw new Error('invalid DATABASE_URL (not parseable)'); }
+  for (const key of ['port', 'host', 'hostaddr']) {
+    if (parsed.searchParams.has(key)) throw new Error(`refusing DATABASE_URL with a "${key}" query override; LAAM's dev DB is on ${LAAM_DEV_PORT}`);
+  }
+  const port = parsed.port || '5432';
+  if (port !== LAAM_DEV_PORT) throw new Error(`refusing DATABASE_URL on :${port}; LAAM's dev DB is on ${LAAM_DEV_PORT}`);
+}
+
 // Credentials come from the environment or LAAM/.env; the URL is never printed.
 export function resolveDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   let url = env.DATABASE_URL;
@@ -114,11 +148,11 @@ export function resolveDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string
     url = m?.[1].trim().replace(/^["']|["']$/g, '');
   }
   if (!url) throw new Error('DATABASE_URL not set (env or LAAM/.env)');
-  if (new URL(url).port === '5432') throw new Error('refusing DATABASE_URL on :5432 (not the LAAM dev DB; expected :5500)');
+  assertLaamDevUrl(url);
   return url;
 }
 
-export async function readFindingsFromDb(project: string | null): Promise<ActualFinding[]> {
+export async function readFindingsFromDb(project: string): Promise<ActualFinding[]> {
   const { Client } = createRequire(path.join(LAAM_DIR, 'package.json'))('pg');
   const client = new Client({ connectionString: resolveDatabaseUrl() });
   await client.connect();
@@ -126,14 +160,11 @@ export async function readFindingsFromDb(project: string | null): Promise<Actual
     await client.query('SET default_transaction_read_only = on');
     const colRes = await client.query("select column_name from information_schema.columns where table_schema='public' and table_name='finding'");
     const { ruleCol, projCol } = findingColumns(colRes.rows.map((r: { column_name: string }) => r.column_name));
-    const params: string[] = [];
-    let where = '';
-    if (project) {
-      if (!projCol) throw new Error('finding table has no project column');
-      params.push(project);
-      where = ` where "${projCol}" = $1`;
-    }
-    const res = await client.query(`select "${ruleCol}" as "ruleId", "dims", "severity" from finding${where}`, params);
+    if (!projCol) throw new Error('finding table has no project column');
+    const where = ` where "${projCol}" = $1`;
+    const res = await client.query(`select "${ruleCol}" as "ruleId", "dims", "severity" from finding${where}`, [project]);
+    const total = Number((await client.query('select count(*) as n from finding')).rows[0].n);
+    assertProjectHasRows(project, res.rows.length, total);
     return res.rows.map((r: { ruleId: string; dims: Record<string, unknown> | null; severity: string | null }) => ({
       ruleId: r.ruleId, dims: r.dims ?? {}, severity: r.severity ?? '',
     }));
@@ -152,7 +183,7 @@ async function main(): Promise<void> {
   const expectedPath = arg('--expected') ?? path.join(root, 'demo_mockdata', 'expected_findings.csv');
   const expected = loadExpected(readFileSync(expectedPath, 'utf8'));
   const jsonPath = arg('--findings-json');
-  const actual = jsonPath ? (JSON.parse(readFileSync(jsonPath, 'utf8')) as ActualFinding[]) : await readFindingsFromDb(arg('--project'));
+  const actual = jsonPath ? (JSON.parse(readFileSync(jsonPath, 'utf8')) as ActualFinding[]) : await readFindingsFromDb(resolveProject(arg('--project')));
   const report = formatReport(checkFindings(expected, actual), expected.length, actual.length);
   console.log(report.text);
   process.exit(report.ok ? 0 : 1);
@@ -163,6 +194,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     await main();
   } catch (err) {
     console.error(`FAIL: ${(err as Error).message}`);
-    process.exit(1);
+    process.exit((err as { exitCode?: number }).exitCode ?? 1);
   }
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { checkFindings, findingColumns, formatReport, loadExpected, parseCsv } from './check-expected-findings.ts';
+import { assertProjectHasRows, checkFindings, DEFAULT_PROJECT, findingColumns, formatReport, loadExpected, parseCsv, resolveDatabaseUrl, resolveProject } from './check-expected-findings.ts';
 import type { ActualFinding } from './check-expected-findings.ts';
 
 const csv = readFileSync(new URL('../demo_mockdata/expected_findings.csv', import.meta.url), 'utf8');
@@ -68,4 +68,48 @@ test('finding columns are detected in snake_case and camelCase, missing table is
   assert.deepEqual(findingColumns(['id', 'ruleId', 'dims', 'severity', 'projectId']), { ruleCol: 'ruleId', projCol: 'projectId' });
   assert.throws(() => findingColumns([]), /not found/);
   assert.throws(() => findingColumns(['id', 'dims']), /lacks/);
+});
+
+test('FND-003 "Multiple" accepts the rule at any store', () => {
+  const actual = allFound.map((a) => (a.ruleId === 'RET-REF-004' ? { ...a, dims: { location_id: 'PH-003' } } : a));
+  assert.deepEqual(checkFindings(expected, actual).missing, []);
+});
+
+test('FND-004 approver mismatch is a miss, a store-level finding without employees is accepted', () => {
+  const wrong = allFound.map((a) => (a.ruleId === 'RET-DISC-003' ? { ...a, dims: { location_id: 'PH-002', approver_id: 'EMP-0099' } } : a));
+  assert.deepEqual(checkFindings(expected, wrong).missing.map((e) => e.findingId), ['FND-004']);
+  const storeLevel = allFound.map((a) => (a.ruleId === 'RET-DISC-003' ? { ...a, dims: { location_id: 'PH-002' } } : a));
+  assert.deepEqual(checkFindings(expected, storeLevel).missing, []);
+});
+
+test('a critical finding for an expected rule at the wrong store is unexpected', () => {
+  const actual = [...allFound, { ruleId: 'PH-MARGIN-001', dims: { location_id: 'PH-001' }, severity: 'critical' }];
+  assert.equal(checkFindings(expected, actual).unexpectedCritical.length, 1);
+});
+
+test('CSV: CRLF line endings, escaped quotes, and a missing store_id column', () => {
+  assert.deepEqual(parseCsv('a,b\r\n1,"say ""hi"""\r\n'), [{ a: '1', b: 'say "hi"' }]);
+  assert.throws(() => loadExpected('finding_id,employee_id,rule_ids\nFND-1,,R-1\n'), /store_id/);
+});
+
+test('project defaults to the real demo project, explicit value wins', () => {
+  assert.equal(DEFAULT_PROJECT, 'bp-pharmacy-chain-demo');
+  assert.equal(resolveProject(null), 'bp-pharmacy-chain-demo');
+  assert.equal(resolveProject('bp-other'), 'bp-other');
+});
+
+test('a project with no rows in a non-empty table is exit code 2', () => {
+  assert.throws(() => assertProjectHasRows('bp-x', 0, 12), (e: Error & { exitCode?: number }) => e.exitCode === 2 && /bp-x/.test(e.message));
+  assert.doesNotThrow(() => assertProjectHasRows('bp-x', 3, 12));
+  assert.doesNotThrow(() => assertProjectHasRows('bp-x', 0, 0)); // empty table is reported by formatReport instead
+});
+
+test('DATABASE_URL guard: only effective port 5500 passes', () => {
+  const ok = 'postgresql://u:p@localhost:5500/laam';
+  assert.equal(resolveDatabaseUrl({ DATABASE_URL: ok }), ok);
+  for (const bad of ['postgresql://u:p@localhost:5432/laam', 'postgres://u:p@localhost/laam', 'postgresql://u:p@localhost:5500/laam?port=5432',
+    'postgresql://u:p@localhost:5500/laam?host=other', 'postgresql://u:p@localhost:5500/laam?hostaddr=10.0.0.1', 'postgresql://u:p@localhost:5433/laam']) {
+    assert.throws(() => resolveDatabaseUrl({ DATABASE_URL: bad }), /5500/, bad);
+  }
+  assert.throws(() => resolveDatabaseUrl({ DATABASE_URL: 'not a url' }), /invalid DATABASE_URL/);
 });
