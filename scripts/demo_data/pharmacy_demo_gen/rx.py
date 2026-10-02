@@ -64,16 +64,13 @@ def _add_fill(ctx: Ctx, store: str, day, pid: str) -> None:
 
 
 def add_acquisition_cost(ctx: Ctx, original_ids: set[str]) -> None:
-    """New column. Generated fills: quantity x unit cost effective at fill date + store.
-    Original fills: their quantity is unrelated to their price, so cost = paid amount x RX_COST_TO_REVENUE,
-    scaled by the same dated store cost factor (keeps the margin plant visible and low-noise)."""
+    """New column, one rule for every fill: cost = (insurance + customer payment) x RX_COST_TO_REVENUE x the
+    dated store cost factor (1.0 except the PH-003 plant). Original fills have quantity unrelated to price and
+    rejected fills have no reimbursement, so quantity x unit cost would skew store margins; tying cost to the
+    paid amount keeps every store's margin ~20% and makes the plant the only visible movement."""
     for row in ctx.t["prescriptions"].rows:
         fill_day = parse_dt(row["filled_datetime"] or row["received_datetime"]).date()
         unit_cost = ctx.unit_cost(row["product_id"], row["store_id"], fill_day)
-        if row["prescription_id"] in original_ids:
-            factor = unit_cost / (ctx.unit_cost_2026[row["product_id"]] * price_factor(fill_day))
-            paid = float(row["insurance_payment"]) + float(row["customer_payment"])
-            cost = paid * C.RX_COST_TO_REVENUE * factor
-        else:
-            cost = int(row["quantity"]) * unit_cost
-        row["acquisition_cost"] = f"{cost:.2f}"
+        factor = unit_cost / (ctx.unit_cost_2026[row["product_id"]] * price_factor(fill_day))
+        paid = float(row["insurance_payment"]) + float(row["customer_payment"])
+        row["acquisition_cost"] = f"{paid * C.RX_COST_TO_REVENUE * factor:.2f}"
