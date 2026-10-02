@@ -7,7 +7,7 @@ from conftest import BASE_DIR
 from pharmacy_demo_gen import config as C
 from pharmacy_demo_gen.catalog import build_vendors, prepare_catalog
 from pharmacy_demo_gen.ctx import Ctx
-from pharmacy_demo_gen.inventory import simulate_inventory
+from pharmacy_demo_gen.inventory import _weekly_count, simulate_inventory
 from pharmacy_demo_gen.tables import load_base, parse_dt
 
 
@@ -54,7 +54,7 @@ def test_history_count_adjustments_mirror_snapshot_variances(staged):
     variances = [s for s in c.t["inventory_snapshots"].rows
                  if s["snapshot_id"].startswith("SNP-1") and s["variance_quantity"] != "0"]
     adjustments = [a for a in c.t["inventory_adjustments"].rows
-                   if a["adjustment_id"].startswith("ADJ-1") and a["adjustment_type"] != "Expiration"]
+                   if a["adjustment_id"].startswith("ADJ-1") and a["adjustment_type"] != "Stock correction"]
     assert len(adjustments) == len(variances) > 0
 
 
@@ -76,7 +76,7 @@ def test_snapshot_arithmetic_chains_through_movements_and_adjustments(staged):
         day = parse_dt(m["movement_datetime"]).date()
         net[(m["store_id"], m["product_id"])].append((day, int(m["quantity_change"])))
     for a in c.t["inventory_adjustments"].rows:
-        if a["adjustment_id"].startswith("ADJ-1") and a["adjustment_type"] != "Expiration":
+        if a["adjustment_id"].startswith("ADJ-1") and a["adjustment_type"] != "Stock correction":
             continue  # weekly count corrections: already represented by counted_quantity - system_quantity
         day = parse_dt(a["adjustment_datetime"]).date()
         net[(a["store_id"], a["product_id"])].append((day, int(a["adjustment_quantity"])))
@@ -122,3 +122,39 @@ def test_same_seed_produces_identical_frames(staged):
     assert orders.rows == o2.rows and lines.rows == l2.rows
     for name in ("inventory_snapshots", "inventory_adjustments", "inventory_movements"):
         assert c.t[name].rows == c2.t[name].rows
+
+
+def _generated_adjustments(c):
+    return [a for a in c.t["inventory_adjustments"].rows if a["adjustment_id"].startswith("ADJ-1")]
+
+
+def test_no_generated_shrinkage_or_expiration_in_july(staged):
+    c, _, _, _ = staged
+    late = [a for a in _generated_adjustments(c)
+            if parse_dt(a["adjustment_datetime"]).date() >= C.COUNT_VARIANCE_END]
+    assert all(a["adjustment_type"] == "Stock correction" for a in late)
+    assert not [a for a in _generated_adjustments(c) if a["adjustment_type"] == "Expiration"]
+
+
+def test_floor_rows_are_stock_corrections_that_bring_book_to_zero(staged):
+    c, _, _, _ = staged
+    floors = [a for a in _generated_adjustments(c) if a["adjustment_type"] not in ("Shrinkage", "Cycle Count")]
+    assert floors
+    assert all(a["adjustment_type"] == "Stock correction" and a["reason"] == "Opening-stock correction"
+               and a["quantity_after"] == "0" and int(a["adjustment_quantity"]) < 0
+               and str(a["flagged"]) == "False" for a in floors)
+
+
+def test_count_variance_that_would_go_negative_is_forced_to_zero():
+    class Rng:
+        def random(self):
+            return 0.0  # always draws a variance
+
+        def choice(self, _):
+            return 1  # +1 would make system_quantity = 0 - 1
+
+    stub = type("Stub", (), {"rng": Rng()})()
+    snapshots, adjustments = [], []
+    before = _weekly_count(stub, ("PH-001", "PRD-00001"), date(2026, 6, 5), 0, snapshots, adjustments)
+    assert before == 0 and not adjustments
+    assert snapshots == [(date(2026, 6, 5), "PH-001", "PRD-00001", 0, 0)]
