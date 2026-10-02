@@ -1,0 +1,7 @@
+terms:
+  claim_rejection_rate: { en: "Claim rejection rate", vi: "Tỉ lệ claim bị từ chối" }
+  rx_margin:            { en: "Prescription margin", vi: "Biên lợi nhuận đơn thuốc" }
+  rx_revenue:           { en: "Prescription revenue", vi: "Doanh thu đơn thuốc" }
+  reimbursement:        { en: "Reimbursement", vi: "Tiền bên chi trả thanh toán" }
+  acquisition_cost:     { en: "Acquisition cost", vi: "Giá vốn mua thuốc" }
+  payer:                { en: "Payer", vi: "Đơn vị chi trả" }

@@ -1,0 +1,18 @@
+scenarios:
+  - key: pharmacy.acq_cost_change
+    label: Acquisition cost change
+    dims: [location_id]
+    base:                         # each variable = the horizon forecast total of an additive metric
+      rx_revenue: { forecast_of: pharmacy.rx_revenue }
+      rx_cost:    { forecast_of: pharmacy.rx_cost }
+    variables:
+      cost_change_pct:          { default: 0, min: -30, max: 30 }
+      reimbursement_change_pct: { default: 0, min: -30, max: 30 }
+    outputs:
+      margin: "rx_revenue * (1 + reimbursement_change_pct/100) - rx_cost * (1 + cost_change_pct/100)"
+    primary_output: margin
+    presets:
+      expected:  { trend: damped }
+      best:      { trend: damped, set: { reimbursement_change_pct: 3 } }
+      risk:      { trend: damped, set: { cost_change_pct: 5 } }
+      no_action: { trend: persist_driver }
