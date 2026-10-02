@@ -1,5 +1,5 @@
 personas:
-  executive:        { max_findings: 5, sections: [greeting, data_status, needs_attention, predictions, scenarios, actions] }
+  executive:        { chain_wide: true, max_findings: 5, sections: [greeting, data_status, needs_attention, predictions, scenarios, actions] }
   regional_manager: { max_findings: 5, sections: [greeting, data_status, needs_attention, predictions, scenarios, actions] }
   store_manager:    { max_findings: 5, sections: [greeting, data_status, needs_attention, actions] }
-  analyst:          { max_findings: 5, sections: [greeting, data_status, needs_attention, predictions, scenarios, actions] }
+  analyst:          { chain_wide: true, max_findings: 5, sections: [greeting, data_status, needs_attention, predictions, scenarios, actions] }
