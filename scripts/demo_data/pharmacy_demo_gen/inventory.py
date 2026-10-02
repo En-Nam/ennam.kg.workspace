@@ -47,6 +47,9 @@ def simulate_inventory(ctx: Ctx, vendors: Table) -> tuple[Table, Table]:
                 if key in anchors and day.weekday() == 4 and day < C.HISTORY_END:
                     stock = _weekly_count(ctx, key, day, stock, snapshots, adjustments)
                 stock -= deltas[key].get(day, 0)
+                if stock < 0:  # unexplained inflow (return/+count): book an earlier write-off so on-hand never < 0
+                    adjustments.append((day, store, pid, -stock, stock, "Expiration"))
+                    stock = 0
                 if stock > 4 * rp:
                     qty = stock - ctx.rng.randint(max(1, rp // 4), rp)
                     receipts.append((day, store, ctx.products[pid]["vendor_id"], pid, qty))
@@ -62,9 +65,12 @@ def _weekly_count(ctx: Ctx, key, day, stock, snapshots, adjustments) -> int:
     variance = 0
     if day < C.COUNT_VARIANCE_END and ctx.rng.random() < C.SNAPSHOT_VARIANCE_SHARE:
         variance = ctx.rng.choice([-2, -1, -1, 1])
+        if stock - variance < 0:  # never count a negative book quantity
+            variance = 0
     snapshots.append((day, key[0], key[1], stock - variance, stock))
     if variance:
-        adjustments.append((day, key[0], key[1], stock - variance, variance))
+        kind = "Shrinkage" if variance < 0 else "Cycle Count"
+        adjustments.append((day, key[0], key[1], stock - variance, variance, kind))
     return stock - variance
 
 
@@ -78,8 +84,7 @@ def _emit_snapshots(ctx: Ctx, snapshots) -> None:
 
 
 def _emit_adjustments(ctx: Ctx, adjustments) -> None:
-    for day, store, pid, before, variance in sorted(adjustments):
-        kind = "Shrinkage" if variance < 0 else "Cycle Count"
+    for day, store, pid, before, variance, kind in sorted(adjustments):
         counters = ctx.staff(store, ("Inventory Associate",), day) or ctx.staff(store, ("Store Manager",), day)
         ctx.t["inventory_adjustments"].add({
             "adjustment_id": ctx.ids["adj"].next(), "store_id": store, "product_id": pid,

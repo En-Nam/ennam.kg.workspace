@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date
 
 import pytest
@@ -52,5 +53,72 @@ def test_history_count_adjustments_mirror_snapshot_variances(staged):
     c, _, _, _ = staged
     variances = [s for s in c.t["inventory_snapshots"].rows
                  if s["snapshot_id"].startswith("SNP-1") and s["variance_quantity"] != "0"]
-    adjustments = [a for a in c.t["inventory_adjustments"].rows if a["adjustment_id"].startswith("ADJ-1")]
+    adjustments = [a for a in c.t["inventory_adjustments"].rows
+                   if a["adjustment_id"].startswith("ADJ-1") and a["adjustment_type"] != "Expiration"]
     assert len(adjustments) == len(variances) > 0
+
+
+def test_no_snapshot_has_negative_on_hand(staged):
+    c, _, _, _ = staged
+    bad = [s["snapshot_id"] for s in c.t["inventory_snapshots"].rows
+           if int(s["system_quantity"]) < 0 or int(s["counted_quantity"]) < 0]
+    assert not bad, bad[:5]
+
+
+def test_snapshot_arithmetic_chains_through_movements_and_adjustments(staged):
+    c, _, _, _ = staged
+    snaps = defaultdict(list)
+    for s in c.t["inventory_snapshots"].rows:
+        if s["snapshot_id"].startswith("SNP-1"):
+            snaps[(s["store_id"], s["product_id"])].append(s)
+    net = defaultdict(list)  # (store, product) -> [(date, qty)]
+    for m in c.t["inventory_movements"].rows:
+        day = parse_dt(m["movement_datetime"]).date()
+        net[(m["store_id"], m["product_id"])].append((day, int(m["quantity_change"])))
+    for a in c.t["inventory_adjustments"].rows:
+        if a["adjustment_id"].startswith("ADJ-1") and a["adjustment_type"] != "Expiration":
+            continue  # weekly count corrections: already represented by counted_quantity - system_quantity
+        day = parse_dt(a["adjustment_datetime"]).date()
+        net[(a["store_id"], a["product_id"])].append((day, int(a["adjustment_quantity"])))
+    checked = 0
+    for key, rows in snaps.items():
+        rows = sorted(rows, key=lambda r: r["snapshot_date"])
+        for prev, cur in zip(rows, rows[1:]):
+            lo, hi = date.fromisoformat(prev["snapshot_date"]), date.fromisoformat(cur["snapshot_date"])
+            between = sum(q for d, q in net[key] if lo < d <= hi)
+            assert int(cur["system_quantity"]) == int(prev["counted_quantity"]) + between, (key, lo, hi)
+            checked += 1
+    assert checked == 51 * 1500
+
+
+def test_expected_date_is_order_date_plus_vendor_lead_time(staged):
+    _, vendors, orders, _ = staged
+    lead = {v["vendor_id"]: int(v["lead_time_days"]) for v in vendors.rows}
+    for o in orders.rows:
+        gap = date.fromisoformat(o["expected_date"]) - date.fromisoformat(o["order_date"])
+        assert gap.days == lead[o["vendor_id"]]
+
+
+def test_po_line_quantity_matches_receipt_movement(staged):
+    c, _, _, lines = staged
+    receipts = {(m["reference_id"], m["product_id"]): int(m["quantity_change"])
+                for m in c.t["inventory_movements"].rows if m["movement_type"] == "RECEIPT"}
+    assert len(receipts) == len(lines.rows)
+    assert all(receipts[(ln["po_id"], ln["product_id"])] == int(ln["quantity"]) for ln in lines.rows)
+
+
+def test_receipts_do_not_postdate_as_of(staged):
+    c, _, orders, _ = staged
+    assert all(parse_dt(o["received_datetime"]).date() <= C.HISTORY_END for o in orders.rows)
+    assert all(parse_dt(m["movement_datetime"]).date() <= C.HISTORY_END
+               for m in c.t["inventory_movements"].rows if m["movement_type"] == "RECEIPT")
+
+
+def test_same_seed_produces_identical_frames(staged):
+    c, vendors, orders, lines = staged
+    c2 = Ctx(load_base(BASE_DIR))
+    prepare_catalog(c2)
+    o2, l2 = simulate_inventory(c2, build_vendors(c2))
+    assert orders.rows == o2.rows and lines.rows == l2.rows
+    for name in ("inventory_snapshots", "inventory_adjustments", "inventory_movements"):
+        assert c.t[name].rows == c2.t[name].rows
