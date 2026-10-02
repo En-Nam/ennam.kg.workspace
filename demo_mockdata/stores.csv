@@ -1,0 +1,6 @@
+store_id,store_name,city,state,manager_name,opening_date,pharmacy_enabled,front_store_enabled,status
+PH-001,UnityCare Downtown,Dallas,TX,Amanda Lee,2018-02-15,True,True,Active
+PH-002,UnityCare Northside,Dallas,TX,Robert King,2019-03-15,True,True,Active
+PH-003,UnityCare West Plano,Plano,TX,Jennifer Tran,2020-04-15,True,True,Active
+PH-004,UnityCare Frisco,Frisco,TX,Marcus Hill,2021-05-15,True,True,Active
+PH-005,UnityCare Irving,Irving,TX,Melissa Carter,2022-06-15,True,True,Active

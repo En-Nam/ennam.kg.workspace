@@ -1,0 +1,36 @@
+vendor_id,vendor_name,lead_time_days,order_weekday,payment_terms,status
+VND-001,Lone Star Medical Supply,7,3,Net 30,Active
+VND-002,Gulf Coast Medical Supply,8,1,Net 30,Active
+VND-003,Prairie Medical Supply,9,1,Net 30,Active
+VND-004,Trinity Medical Supply,6,4,Net 30,Active
+VND-005,Red River Medical Supply,6,4,Net 30,Active
+VND-006,Brazos Medical Supply,6,4,Net 30,Active
+VND-007,Pecos Medical Supply,4,2,Net 30,Active
+VND-008,Panhandle Medical Supply,8,1,Net 30,Active
+VND-009,Hill Country Medical Supply,7,1,Net 30,Active
+VND-010,Big Bend Medical Supply,9,0,Net 30,Active
+VND-011,Lone Star Wholesale,9,1,Net 30,Active
+VND-012,Gulf Coast Wholesale,9,0,Net 30,Active
+VND-013,Prairie Wholesale,6,0,Net 30,Active
+VND-014,Trinity Wholesale,8,2,Net 30,Active
+VND-015,Red River Wholesale,9,2,Net 30,Active
+VND-016,Brazos Wholesale,9,4,Net 30,Active
+VND-017,Pecos Wholesale,4,4,Net 30,Active
+VND-018,Panhandle Wholesale,4,1,Net 30,Active
+VND-019,Hill Country Wholesale,9,0,Net 30,Active
+VND-020,Big Bend Wholesale,7,3,Net 30,Active
+VND-021,Lone Star Distributors,6,2,Net 30,Active
+VND-022,Gulf Coast Distributors,2,2,Net 30,Active
+VND-023,Prairie Distributors,2,4,Net 30,Active
+VND-024,Trinity Distributors,8,2,Net 30,Active
+VND-025,Red River Distributors,5,0,Net 30,Active
+VND-026,Brazos Distributors,7,3,Net 30,Active
+VND-027,Pecos Distributors,4,0,Net 30,Active
+VND-028,Panhandle Distributors,7,2,Net 30,Active
+VND-029,Hill Country Distributors,6,4,Net 30,Active
+VND-030,Big Bend Distributors,2,0,Net 30,Active
+VND-031,Lone Star Health Partners,2,1,Net 30,Active
+VND-032,Gulf Coast Health Partners,8,0,Net 30,Active
+VND-033,Prairie Health Partners,3,2,Net 30,Active
+VND-034,Trinity Health Partners,7,2,Net 30,Active
+VND-035,Red River Health Partners,8,3,Net 30,Active
