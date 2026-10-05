@@ -298,6 +298,11 @@ services:
     environment:
       KG_MCP_AUTH_PASSTHROUGH: "true"
       KG_SERVER_URL: http://kg-server:8080   # internal docker network — no host port needed
+      # Per-identity MCP rate limit (bridge default is 120 calls/60s). A full LAAM
+      # metrics analysis run (rules + cause breakdowns + forecasts) needs several
+      # hundred calls/minute, so the dev/demo stack raises it to 600.
+      KG_BRIDGE_RATE_LIMIT_CALLS: ${KG_BRIDGE_RATE_LIMIT_CALLS:-600}
+      KG_BRIDGE_RATE_LIMIT_WINDOW_SECONDS: ${KG_BRIDGE_RATE_LIMIT_WINDOW_SECONDS:-60}
     ports:
       - "${KG_BRIDGE_PORT:-8765}:8765"
     depends_on:
