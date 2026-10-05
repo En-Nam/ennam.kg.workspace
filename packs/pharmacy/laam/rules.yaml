@@ -20,7 +20,7 @@ rules:
     wording: "Claim rejection rate is above the chain average"
 
   - rule_id: PH-MARGIN-001
-    version: 1
+    version: 2
     name: Prescription margin deterioration
     metric: pharmacy.rx_margin_pct          # a RATE: dollar totals swing +-10-18% at stores without any change
     dims: [location_id]
@@ -31,6 +31,10 @@ rules:
     condition: "value <= compare_value - 2"
     threshold_status: provisional
     threshold_note: "Demo default — not in request; pending customer confirmation"
+    # Severity by margin points, not dollars: at pharmacy scale a 2-point Rx margin loss is a few hundred
+    # dollars (the request's $1,000+ tiers never fire) yet erodes ~10% of the margin. Provisional, same note.
+    severity:
+      high: "value <= compare_value - 2"
     impact: "denominator * (compare_value - value) / 100"
     impact_unit: currency
     breakdown: [product_id]
