@@ -125,17 +125,22 @@ rules:
     wording: "Possible inventory loss requiring review"
 
   - rule_id: RET-INV-003
-    version: 1
+    version: 2
     name: Stockout risk
-    metric: retail.days_of_cover
-    dims: [location_id, product_id]
+    # One finding per location, not per SKU: a store with a dozen products at risk is one reorder
+    # review for the store manager, and per-SKU findings (version 1) flooded Home.
+    metric: retail.stockout_sku_count
+    dims: [location_id]
     window_days: 1
     compare: none
-    # Warning tier ("stockout expected within vendor lead time") needs lead-time data — not included.
-    condition: "value <= 7"
+    # The request gives no store-level count; the per-SKU trigger (cover <= 7 days) is kept inside the
+    # metric. "Warning" (stockout expected within vendor lead time) needs lead-time data — not included.
+    condition: "value >= 3"
+    threshold_status: provisional
+    threshold_note: "Demo default — not in request; pending customer confirmation"
     severity:
-      critical: "value <= 0"       # already out of stock
-      high: "value <= 7"           # stockout expected within seven days
+      high: "value >= 10"
+      medium: "value >= 3"
     recommended_action: reorder_review
     default_owner_role: store_manager
     cooldown_days: 7
