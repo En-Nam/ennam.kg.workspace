@@ -311,12 +311,44 @@ services:
     networks:
       - ennam-kg
 
+  # Pack registry (kg-pack-registry): stores versioned industry-pack tarballs that CI
+  # publishes and serves the catalog/downloads to DAAB and LAAM. Same image as
+  # kg-server with an entrypoint override. Tokens come only from the environment
+  # (KG_PACKS_READ_TOKEN / KG_PACKS_PUBLISH_TOKEN); the service refuses to start
+  # (and restarts until set) while either is empty.
+  kg-pack-registry:
+    build:
+      context: ./ennam.kg.go
+      dockerfile: deploy/docker/Dockerfile
+      target: production
+    container_name: daab-packs
+    restart: unless-stopped
+    entrypoint: ["/app/kg-pack-registry"]
+    environment:
+      KG_PACKS_STORAGE_DIR: /data/packs
+      KG_PACKS_READ_TOKEN: ${KG_PACKS_READ_TOKEN:-}
+      KG_PACKS_PUBLISH_TOKEN: ${KG_PACKS_PUBLISH_TOKEN:-}
+    ports:
+      - "${KG_PACKS_PORT:-8090}:8090"
+    volumes:
+      - packs_registry:/data/packs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8090/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ennam-kg
+
 volumes:
   postgres_data:
     driver: local
   ennam_uploads:
     driver: local
   hf_cache:
+    driver: local
+  packs_registry:
     driver: local
 
 networks:

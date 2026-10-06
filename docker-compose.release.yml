@@ -240,10 +240,39 @@ services:
       kg-server: { condition: service_healthy }
     networks: [ennam-kg]
 
+  # ===========================================================================
+  # Pack registry (kg-pack-registry) — production image
+  # ===========================================================================
+  # Reuses the daab-server image (its production stage ships /app/kg-pack-registry)
+  # via an entrypoint override. Stores versioned pack tarballs published by CI and
+  # serves them to DAAB and LAAM. Tokens come only from the environment; the service
+  # refuses to start while KG_PACKS_READ_TOKEN or KG_PACKS_PUBLISH_TOKEN is empty.
+  kg-pack-registry:
+    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.5.0}
+    restart: unless-stopped
+    entrypoint: ["/app/kg-pack-registry"]
+    environment:
+      KG_PACKS_STORAGE_DIR: /data/packs
+      KG_PACKS_READ_TOKEN: ${KG_PACKS_READ_TOKEN:-}
+      KG_PACKS_PUBLISH_TOKEN: ${KG_PACKS_PUBLISH_TOKEN:-}
+    ports:
+      - "${KG_PACKS_PORT:-8090}:8090"
+    volumes:
+      - packs_registry:/data/packs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8090/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [ennam-kg]
+
 volumes:
   postgres_data:
     driver: local
   ennam_uploads:
+    driver: local
+  packs_registry:
     driver: local
 
 networks:
