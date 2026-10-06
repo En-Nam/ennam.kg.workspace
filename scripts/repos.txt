@@ -3,3 +3,8 @@ ennam.kg.go            git@github.com:En-Nam/ennam.kg.go.git            main
 ennam.kg.python        git@github.com:En-Nam/ennam.kg.python.git        main
 ennam.kg.next          git@github.com:En-Nam/ennam.kg.next.git          main
 ennam.kg.requirements  git@github.com:En-Nam/ennam.kg.requirements.git  main
+# Industry packs (ennam.kg.packs). Kept commented until packs/ is removed from this
+# repo (bootstrap fails on a path that exists but is not a git repo) and the remote is
+# pushed. The github-dragoon host is a per-machine ~/.ssh/config alias; manual clone:
+#   git clone git@github-dragoon:En-Nam/ennam.kg.packs.git packs
+# packs                  git@github-dragoon:En-Nam/ennam.kg.packs.git     main

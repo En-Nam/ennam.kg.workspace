@@ -108,8 +108,13 @@ services:
       KG_PYTHON_URL: http://indexer:8081
       KG_INTERNAL_TOKEN: ${KG_INTERNAL_TOKEN:-ennam_kg_internal_dev_token}
       KG_UPLOAD_DIR: /app/data/uploads
-      # Industry packs (read-only mount, see volumes)
+      # Industry packs (writable mount, see volumes): the Template Library installs,
+      # updates and rolls back versions in place. PACKS_SOURCE is the pack registry
+      # base URL (e.g. http://kg-pack-registry:8090 in this stack) and PACKS_TOKEN its
+      # read token; both come only from the environment (empty = installs disabled).
       PACKS_DIR: /packs
+      PACKS_SOURCE: ${PACKS_SOURCE:-}
+      PACKS_TOKEN: ${PACKS_TOKEN:-}
       # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
       USE_S3: ${USE_S3:-0}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
@@ -120,7 +125,9 @@ services:
     volumes:
       - ./ennam.kg.go:/app
       - ennam_uploads:/app/data/uploads
-      - ./packs:/packs:ro
+      # Host dir must exist and be writable by the container user. Use an absolute
+      # PACKS_HOST_DIR: a relative one resolves against this file's directory.
+      - ${PACKS_HOST_DIR:-./packs}:/packs
     depends_on:
       postgres:
         condition: service_healthy

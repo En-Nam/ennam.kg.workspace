@@ -95,6 +95,12 @@ node --env-file=LAAM/.env scripts/check-expected-findings.ts     # kỳ vọng: 
 - Có sẵn từ trước: tiêu đề `/settings` và thông báo 403 hiển thị tiếng Việt khi giao diện đang là tiếng Anh.
 - Test E2E `e2e/intel-admin.spec.ts` chỉ đọc; cần `E2E_ADMIN_EMAIL/PASSWORD`, `E2E_EXEC_EMAIL/PASSWORD` (chưa chạy với tài khoản thật).
 
+## 6c. Cài đặt và cập nhật phiên bản template ngành
+
+Từ 2026-10-06, pack có repo riêng (`ennam.kg.packs`) và được phát hành qua dịch vụ `kg-pack-registry`. Quản trị viên máy chủ cài, cập nhật và quay lại phiên bản ở **DAAB → ADMIN → Template Library**, ở **LAAM → Cài đặt → Mẫu theo ngành**, hoặc bằng `kg-packs fetch / versions / rollback`. Khi trang Template Library và endpoint nạp lại của DAAB đã có trong bản đang chạy, thêm hoặc đổi pack **không cần khởi động lại `daab-server`** nữa (thay cho ghi chú ở mục 5 và 6b). Bật/tắt pack theo dự án vẫn như mục 6b.
+
+Hướng dẫn đầy đủ (phát hành, cài, quay lại, lệch phiên bản DAAB/LAAM, biến môi trường, yêu cầu hạ tầng cho DevOps): `docs/superpowers/runbooks/2026-10-06-pack-distribution-and-deploy.md`.
+
 ## 7. Giới hạn cần nói thật khi demo
 
 - Con số margin PH-003 là số thật của dữ liệu mẫu (~$260 / 14 ngày; kịch bản rủi ro −$960 trong 30 ngày), **không phải $18.000 / 82%** như ví dụ trong yêu cầu. Ví dụ đó là minh họa ở quy mô lớn hơn.

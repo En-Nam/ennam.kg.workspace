@@ -1,5 +1,7 @@
 # Industry packs
 
+> **Đang chuyển:** nội dung pack (`retail/`, `pharmacy/`) chuyển sang repo riêng `ennam.kg.packs` và được phát hành qua `kg-pack-registry`. Thư mục này chỉ còn đến khi gỡ khỏi workspace (bước bàn giao cuối); mọi thay đổi pack mới hãy làm trong `ennam.kg.packs`. `_projects/` (mapping theo khách) không chuyển theo. Xem `docs/superpowers/runbooks/2026-10-06-pack-distribution-and-deploy.md`.
+
 ## 2.1 Vị trí pack và cấu hình
 - Pack ở **`packs/` tại gốc workspace** (repo workspace). Mount read-only: DAAB `kg-server` → `/packs`, LAAM `app` → `/packs`. Env `PACKS_DIR` (mặc định `/packs`; dev local: đường dẫn tuyệt đối). OD-1 (repo riêng) có thể chuyển sau — chỉ đổi mount.
 - Mapping demo seed từ file `packs/_projects/pharmacy-chain/mapping.yaml` qua lệnh import (Plan B); runtime đọc từ DB DAAB (`project_mapping`).
