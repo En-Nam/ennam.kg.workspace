@@ -1,0 +1,680 @@
+
+=== 1. versions of binaries
+kg-pack-registry dev (commit: unknown)
+usage: kg-packs <import-mapping|install|run-metrics|set-as-of> --project <uuid> [flags]
+       kg-packs fetch    --pack <key> --version <v> [--source URL] [--token-env NAME] [--packs-dir D]
+       kg-packs versions [--packs-dir D]
+
+=== 2a. build packs (twice, determinism check)
+built /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/dist/retail-0.2.0.tar.gz
+sha256 dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe
+built /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/dist2/retail-0.2.0.tar.gz
+sha256 dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe
+built /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/dist/pharmacy-0.2.0.tar.gz
+sha256 e7d600a9d9722a582669e7576c2aea708c292daeac583a0a038d9bbb47819b8a
+built /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/dist2/pharmacy-0.2.0.tar.gz
+sha256 e7d600a9d9722a582669e7576c2aea708c292daeac583a0a038d9bbb47819b8a
+total 64
+-rw-r--r--@ 1 danhtrinh  wheel     88 Oct  7 01:19 pharmacy-0.2.0.sha256
+-rw-------@ 1 danhtrinh  wheel   4360 Oct  7 01:19 pharmacy-0.2.0.tar.gz
+-rw-r--r--@ 1 danhtrinh  wheel     86 Oct  7 01:19 retail-0.2.0.sha256
+-rw-------@ 1 danhtrinh  wheel  14374 Oct  7 01:19 retail-0.2.0.tar.gz
+pharmacy-0.2.0.tar.gz sha=e7d600a9d9722a582669e7576c2aea708c292daeac583a0a038d9bbb47819b8a rebuild_identical=yes
+  .sha256 file: e7d600a9d9722a582669e7576c2aea708c292daeac583a0a038d9bbb47819b8a  pharmacy-0.2.0.tar.gz
+retail-0.2.0.tar.gz sha=dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe rebuild_identical=yes
+  .sha256 file: dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe  retail-0.2.0.tar.gz
+retail/
+retail/daab/
+retail/daab/canonical.yaml
+retail/daab/evidence/
+retail/daab/evidence/avg_ticket.sql
+registry pid=76052 port=58643
+
+=== healthz/readyz (no auth)
+{"status":"ok"}
+ 200
+{"status":"ready"}
+ 200
+
+=== empty catalog
+{"packs":[]}
+ 200
+
+=== 2b. publish retail 0.2.0 (expect 201)
+code=201
+{"key":"retail","result":"created","sha256":"dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe","size":14374,"version":"0.2.0"}
+
+
+=== publish pharmacy 0.2.0 (expect 201)
+code=201
+{"key":"pharmacy","result":"created","sha256":"e7d600a9d9722a582669e7576c2aea708c292daeac583a0a038d9bbb47819b8a","size":4360,"version":"0.2.0"}
+
+
+=== catalog
+{
+    "packs": [
+        {
+            "key": "pharmacy",
+            "display_name": "Pharmacy",
+            "extends": [
+                "retail"
+            ],
+            "latest": "0.2.0",
+            "versions": [
+                {
+                    "version": "0.2.0",
+                    "sha256": "e7d600a9d9722a582669e7576c2aea708c292daeac583a0a038d9bbb47819b8a",
+                    "size": 4360,
+                    "published_at": "2026-10-06T18:19:35.453163Z",
+                    "changelog": "0.2.0: RET-INV-003 v2 (stockout_sku_count), PH-MARGIN-001 v2 + Vietnamese: C\u1eadp nh\u1eadt"
+                }
+            ]
+        },
+        {
+            "key": "retail",
+            "display_name": "Retail",
+            "extends": [],
+            "latest": "0.2.0",
+            "versions": [
+                {
+                    "version": "0.2.0",
+                    "sha256": "dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe",
+                    "size": 14374,
+                    "published_at": "2026-10-06T18:19:35.40606Z",
+                    "changelog": "0.2.0: RET-INV-003 v2 (stockout_sku_count), PH-MARGIN-001 v2 + Vietnamese: C\u1eadp nh\u1eadt"
+                }
+            ]
+        }
+    ]
+}
+
+=== re-publish identical retail 0.2.0 (expect 200)
+code=200
+{"key":"retail","result":"identical","sha256":"dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe","size":14374,"version":"0.2.0"}
+
+
+=== modified content same version (expect 409)
+code=409
+{"error":{"code":"version_exists","message":"this version is already published with different content; publish a new version"}}
+
+download sha after 409 (must equal original dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe):
+dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe
+X-Pack-Sha256: dc92f9f824813ebf0153061c702f76a5483f4d9a7909c9f6b30ff11e678aeafe
+
+=== publish with read token (expect 403)
+code=403
+{"error":{"code":"forbidden","message":"this token cannot publish packs"}}
+
+
+=== publish with no token (expect 401)
+code=401
+{"error":{"code":"unauthorized","message":"missing or invalid bearer token"}}
+
+
+=== catalog with no token (expect 401)
+{"error":{"code":"unauthorized","message":"missing or invalid bearer token"}}
+ 401
+
+=== 3. fetch into empty PACKS_DIR
+retail: (none) -> 0.2.0
+exit=0
+pharmacy: (none) -> 0.2.0
+exit=0
+pharmacy: active 0.2.0
+retail: active 0.2.0
+exit=0
+--- layout:
+.
+./_staging
+./_versions
+./_versions/pharmacy
+./_versions/pharmacy/0.2.0.sha256
+./_versions/retail
+./_versions/retail/0.2.0.sha256
+./pharmacy
+./pharmacy/daab
+./pharmacy/daab/canonical.yaml
+./pharmacy/daab/evidence
+./pharmacy/daab/metrics
+./pharmacy/laam
+./pharmacy/laam/forecasts.yaml
+./pharmacy/laam/glossary.yaml
+./pharmacy/laam/rules.yaml
+./pharmacy/laam/scenarios.yaml
+./pharmacy/laam/scoring.yaml
+./pharmacy/pack.yaml
+./retail
+./retail/daab
+./retail/daab/canonical.yaml
+./retail/daab/evidence
+./retail/daab/metrics
+./retail/laam
+./retail/laam/forecasts.yaml
+./retail/laam/glossary.yaml
+./retail/laam/roles.yaml
+./retail/laam/rules.yaml
+./retail/laam/scenarios.yaml
+./retail/laam/scoring.yaml
+./retail/pack.yaml
+--- _staging contents:
+total 0
+drwxr-xr-x@ 2 danhtrinh  wheel   64 Oct  7 01:19 .
+drwxr-xr-x@ 6 danhtrinh  wheel  192 Oct  7 01:19 ..
+--- active retail == source tree?
+retail identical to repo source
+pharmacy identical to repo source
+
+=== fetch without token (expect plain 401 message naming PACKS_TOKEN, no value)
+kg-packs fetch: registry rejected the request: set the token in the PACKS_TOKEN environment variable
+exit=1
+
+=== 4. build and publish retail 0.3.0 (one threshold changed, scratch copy)
+ retail/laam/rules.yaml | 4 ++--
+ retail/pack.yaml       | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+-    condition: "value <= 0.95 * compare_value"
++    condition: "value <= 0.93 * compare_value"
+-      warning: "value <= 0.95 * compare_value"    # decline of 5% or more
++      warning: "value <= 0.93 * compare_value"    # decline of 5% or more
+-version: 0.2.0
++version: 0.3.0
+built /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/dist3/retail-0.3.0.tar.gz
+sha256 04c62f3d1e73cdc02f0a49c39135b0a74cdd52c944b41d04e8face0694d344e1
+code=201
+{"key":"retail","result":"created","sha256":"04c62f3d1e73cdc02f0a49c39135b0a74cdd52c944b41d04e8face0694d344e1","size":14376,"version":"0.3.0"}
+
+pharmacy latest 0.2.0 ['0.2.0']
+retail latest 0.3.0 ['0.2.0', '0.3.0']
+
+=== fetch retail 0.3.0
+retail: 0.2.0 -> 0.3.0
+exit=0
+pharmacy: active 0.2.0
+retail: active 0.3.0; stored 0.2.0
+--- _versions/retail:
+total 16
+drwxr-xr-x@ 5 danhtrinh  wheel  160 Oct  7 01:19 .
+drwxr-xr-x@ 4 danhtrinh  wheel  128 Oct  7 01:19 ..
+drwxr-xr-x@ 5 danhtrinh  wheel  160 Oct  7 01:19 0.2.0
+-rw-------@ 1 danhtrinh  wheel   65 Oct  7 01:19 0.2.0.sha256
+-rw-------@ 1 danhtrinh  wheel   65 Oct  7 01:19 0.3.0.sha256
+--- kept 0.2.0 equals snapshot?
+kept 0.2.0 identical to snapshot
+--- active differs from 0.2.0:
+diff -r /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsA/_versions/retail/0.2.0/laam/rules.yaml /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsA/retail/laam/rules.yaml
+19c19
+<     condition: "value <= 0.95 * compare_value"
+---
+>     condition: "value <= 0.93 * compare_value"
+23c23
+<       warning: "value <= 0.95 * compare_value"    # decline of 5% or more
+---
+>       warning: "value <= 0.93 * compare_value"    # decline of 5% or more
+diff -r /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsA/_versions/retail/0.2.0/pack.yaml /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsA/retail/pack.yaml
+2c2
+< version: 0.2.0
+
+=== rollback to 0.2.0
+retail: 0.3.0 -> 0.2.0
+exit=0
+ACTIVE == 0.2.0 snapshot byte-for-byte
+pharmacy: active 0.2.0
+retail: active 0.2.0; stored 0.3.0
+
+=== re-fetch 0.2.0 (no-op expected)
+retail: already at 0.2.0
+exit=0
+
+=== fetch 0.3.0 again (kept copy, .stale- set-aside path)
+retail: 0.2.0 -> 0.3.0
+exit=0
+pharmacy: active 0.2.0
+retail: active 0.3.0; stored 0.2.0
+total 16
+drwxr-xr-x@ 5 danhtrinh  wheel  160 Oct  7 01:19 .
+drwxr-xr-x@ 4 danhtrinh  wheel  128 Oct  7 01:19 ..
+drwxr-xr-x@ 5 danhtrinh  wheel  160 Oct  7 01:19 0.2.0
+-rw-------@ 1 danhtrinh  wheel   65 Oct  7 01:19 0.2.0.sha256
+-rw-------@ 1 danhtrinh  wheel   65 Oct  7 01:19 0.3.0.sha256
+
+=== downgrade via fetch 0.2.0 (must refuse)
+kg-packs fetch: version is lower than the active version; use rollback: retail active is 0.3.0, requested 0.2.0
+exit=1
+2:version: 0.3.0
+
+=== rollback to 0.2.0 again, leaving PACKS_DIR at retail 0.2.0 + pharmacy 0.2.0 for the test suites
+retail: 0.3.0 -> 0.2.0
+exit=0
+ACTIVE == 0.2.0 snapshot
+--- final layout
+.
+./_staging
+./_versions
+./_versions/pharmacy
+./_versions/pharmacy/0.2.0.sha256
+./_versions/retail
+./_versions/retail/0.2.0.sha256
+./_versions/retail/0.3.0
+./_versions/retail/0.3.0.sha256
+./pharmacy
+./pharmacy/daab
+./pharmacy/daab/canonical.yaml
+./pharmacy/daab/evidence
+./pharmacy/daab/metrics
+./pharmacy/laam
+./pharmacy/laam/forecasts.yaml
+./pharmacy/laam/glossary.yaml
+./pharmacy/laam/rules.yaml
+./pharmacy/laam/scenarios.yaml
+./pharmacy/laam/scoring.yaml
+./pharmacy/pack.yaml
+./retail
+./retail/daab
+./retail/daab/canonical.yaml
+./retail/daab/evidence
+./retail/daab/metrics
+./retail/laam
+./retail/laam/forecasts.yaml
+./retail/laam/glossary.yaml
+./retail/laam/roles.yaml
+./retail/laam/rules.yaml
+./retail/laam/scenarios.yaml
+./retail/laam/scoring.yaml
+./retail/pack.yaml
+total 0
+drwxr-xr-x@ 2 danhtrinh  wheel   64 Oct  7 01:19 .
+drwxr-xr-x@ 6 danhtrinh  wheel  192 Oct  7 01:19 ..
+
+=== LAAM parity: install same versions with installPack into packsL
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: Transform failed with 1 error:
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/laam_install.ts:16:14: ERROR: Top-level await is currently not supported with the "cjs" output format
+    at failureErrorWithLog (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:1748:15)
+    at /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:1017:50
+    at responseCallbacks.<computed> (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:884:9)
+    at handleIncomingPacket (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:939:12)
+    at Socket.readFromStdout (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:862:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v24.18.0
+--- Go mirror into packsG
+retail: (none) -> 0.2.0
+pharmacy: (none) -> 0.2.0
+retail: 0.2.0 -> 0.3.0
+--- diff full trees (excluding _staging/.lockdir)
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/phaseA.sh: line 99: cd: /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsL: No such file or directory
+1,146d0
+< b1860b2366c969506ded184f01c46fa6153cf727645cd436e3d9646da74cd31b  ./_versions/pharmacy/0.2.0.sha256
+< 65c906494a221fcb83cefd8f14994c1b1f94ee665ceca626b34bd9b6711317f8  ./_versions/retail/0.2.0.sha256
+< 2c0512853b99dd43120e40badfd9aa814fbadc3958d1868966c07fa3fb49aa94  ./_versions/retail/0.2.0/daab/canonical.yaml
+< d02284db5895934f1c726bed4d9c38aab81435f0194b216d28f5c164ff01e50d  ./_versions/retail/0.2.0/daab/evidence/avg_ticket.sql
+< a98e61b787bade76a41b1c5c17cf286cf74b53b9d545949c01cf7371648423a2  ./_versions/retail/0.2.0/daab/evidence/avg_unit_cost.sql
+< 924fc5194386df156744d16fdf272190f91d63201bb699429b4dba702db919c8  ./_versions/retail/0.2.0/daab/evidence/cash_shortage_count.sql
+< 5d5e87da5a3dd49c93ae806b06f0c0fbde4d76cf2ee18f89b9e2b91e529f99f2  ./_versions/retail/0.2.0/daab/evidence/cash_variance.sql
+< add76fc37b644e000101a449622e7919d1e59b893e31ae40436d08225ec514ca  ./_versions/retail/0.2.0/daab/evidence/cogs.sql
+< 9e223966196c91db9d44af5e3220f9dc8754e4487c9d88efe629ab0603711e4b  ./_versions/retail/0.2.0/daab/evidence/days_of_cover.sql
+< e7495ceeae0953929bae25a088963c72f81997b548e80b75d15020cea467672b  ./_versions/retail/0.2.0/daab/evidence/discount_rate.sql
+< 55155d053b0f53cdc62019cdcb16b476098280e0071dd0e5be4606c45fea4b08  ./_versions/retail/0.2.0/daab/evidence/duplicate_refund_groups.sql
+< ff554426c4931a243c9a17748987f93c981dcb2579054db2ee98cf856e76facc  ./_versions/retail/0.2.0/daab/evidence/gross_margin_pct.sql
+< c49bdb736af8992c569b73f6b1e6136f0ef0fd513c5addc7a1792e5925de25e0  ./_versions/retail/0.2.0/daab/evidence/inventory_variance_value.sql
+< 2c3d2d44672c39fef842cb3ceb495761e2e523f3b4c7bb7de7a28dab72105c48  ./_versions/retail/0.2.0/daab/evidence/labor_cost.sql
+< 953817762f7783ab65719997718887cb00fb202523165f577d41a11ef6507fec  ./_versions/retail/0.2.0/daab/evidence/labor_cost_pct.sql
+< 715bcc83323108896bd69fc7ac840eabc1e35b9801e3890870d60de4f2e7e4bb  ./_versions/retail/0.2.0/daab/evidence/labor_hours.sql
+< 667c8c1abf127b2c00ec9ee8659943909c990258562cbee6e1f58ee5329e5c14  ./_versions/retail/0.2.0/daab/evidence/manual_override_count.sql
+< 43f210b2f57979d8f5189c157d8144cac5d65787aba372405fbfdc9b6ac2983c  ./_versions/retail/0.2.0/daab/evidence/net_sales.sql
+< 836ce07a44b5804cab3b91967f2f0c8044627d2dca03c1b7d621f18086722379  ./_versions/retail/0.2.0/daab/evidence/no_receipt_refund_pct.sql
+< 33f8ae50fb6a1c8882c2f87967fdc60eecb50d54236a453d78cf3eea227c3207  ./_versions/retail/0.2.0/daab/evidence/no_sale_rate.sql
+< fab2366fa6f5aa41fb82fcc2843ea87e4b1b2b98527f50ed1f1bf99287e16d70  ./_versions/retail/0.2.0/daab/evidence/override_rate.sql
+< 8b3d1e443638764dbad8fba87cc0f98def87765bc17e861a828046328d579e32  ./_versions/retail/0.2.0/daab/evidence/overtime_hours.sql
+< bf9d5ee171aa753e2ab95d7d9d8b481508024fa543124304e7c2a2bd1a5bd86d  ./_versions/retail/0.2.0/daab/evidence/refund_count.sql
+< e27cd69f343b1d7d38385c7fb9d18c8e6861f83f221b0841b2cb369158f7bf9e  ./_versions/retail/0.2.0/daab/evidence/refund_rate.sql
+< f5353c94feda60f8ba1c0d1cb8fd85354d5a3019b57787126306575041c5eddb  ./_versions/retail/0.2.0/daab/evidence/reprint_before_refund_count.sql
+< 8ca82ff862a7550b402c9cb6bb7bc7aa84c7690c3919b4ae33e38042562ee5c8  ./_versions/retail/0.2.0/daab/evidence/stockout_sku_count.sql
+< 1c4348f1a21c28aa1403144912cfe3a102057dfd17697886c611a8f58540a7d6  ./_versions/retail/0.2.0/daab/evidence/target_gross_margin_pct.sql
+< 1267ba40cd569c0108a0e9be4a8080e44ec1e01651f080e2362a30e267147f5d  ./_versions/retail/0.2.0/daab/evidence/target_net_sales.sql
+< 25893e7f92dfd6effbc41cd6adedf7d80f0818b240ac7dd8447a11797cfe1a37  ./_versions/retail/0.2.0/daab/evidence/transactions.sql
+< 09caa30f9dc44c4c829da5b9e5c8a4e04019f7aeb581826c187516301b4e77f6  ./_versions/retail/0.2.0/daab/evidence/void_rate.sql
+< 131f97ff1bf6ce6490847e6378da517cef22799280b05be7b26903902b4d2f1f  ./_versions/retail/0.2.0/daab/metrics/avg_ticket.sql
+< ed2c642d0568067ffd53a1b831f55856e425a9b8e4cae30ac1629ef782faf19a  ./_versions/retail/0.2.0/daab/metrics/avg_unit_cost.sql
+< 78bd42e82ddc39089178cc1e3a21126cc3f5a0c6222b9e17506d0818aacd4d7d  ./_versions/retail/0.2.0/daab/metrics/cash_shortage_count.sql
+< 29b72200149351a1970e451c0ea7ac3679a809cc180e1d2624ebbfd2b75da564  ./_versions/retail/0.2.0/daab/metrics/cash_variance.sql
+< c4af663855b762b359694cf9aef40bac137c00cb4f3f7da7fbcad1910e517042  ./_versions/retail/0.2.0/daab/metrics/cogs.sql
+< cce4c59980cd05a76b2dc7d9afcc61fe6f40d7ac4cb2bd692dff25efb6df8aa5  ./_versions/retail/0.2.0/daab/metrics/days_of_cover.sql
+< afd82cfb24ab9cfd1ad34b3bc53aec50e28756f3a456c5baa6212dafb5a30d36  ./_versions/retail/0.2.0/daab/metrics/discount_rate.sql
+< c3ba177fe09364ebd41254177b999aa5ab7ee9b84bca1ab72a4ace8dea7d4c7d  ./_versions/retail/0.2.0/daab/metrics/duplicate_refund_groups.sql
+< ae11b3ab7fd5a00e57df1546ab7ac1f08ff714ae8addbaa63b33d2df66c2d6a9  ./_versions/retail/0.2.0/daab/metrics/gross_margin_pct.sql
+< 1d7fe4550af77fa0e07dc1bbb6eba7ac453f2b8b1b4cb74ba3354d5733f986b6  ./_versions/retail/0.2.0/daab/metrics/inventory_variance_value.sql
+< cc870db25b4ff2fa41f2b0aaa3c29c7299b83b65a24ead3832095a92daf26260  ./_versions/retail/0.2.0/daab/metrics/labor_cost.sql
+< 4614d81abc5c2455be4339545fd21fbd04902ee36b18922759a63471672f1a58  ./_versions/retail/0.2.0/daab/metrics/labor_cost_pct.sql
+< 0b6e41005fe12595c142d01471cfa51f5118f297ece35a0aabc24d0a2c75c037  ./_versions/retail/0.2.0/daab/metrics/labor_hours.sql
+< e597d9c0a9b81db15eac5145cc79863f007ef67dea56a4beb0ede8087df78b67  ./_versions/retail/0.2.0/daab/metrics/manual_override_count.sql
+< d2a507f138a41b09a307b4f0e90d8489e7cb50a199fb8bde28b9f5a166f343f4  ./_versions/retail/0.2.0/daab/metrics/net_sales.sql
+< 1751544ad9c0648aa212c5a8c9372ef04d390f475a42b56f2c39e2df04016382  ./_versions/retail/0.2.0/daab/metrics/no_receipt_refund_pct.sql
+< 983bc0f5c40c864e3e69f419eee1bc7923b0847a3dddc168a417ac63008b13d3  ./_versions/retail/0.2.0/daab/metrics/no_sale_rate.sql
+< 55c01583f1b8396055ff7d81f690b53af68151e9a77935a653e67943f01dfbeb  ./_versions/retail/0.2.0/daab/metrics/override_rate.sql
+< b28f24c38558a14afd2a4d77f226999b045e4748797edd0ecc1eb7f266003f1e  ./_versions/retail/0.2.0/daab/metrics/overtime_hours.sql
+< 7355ea0b3294064f406b94e596b9cbf7fb1e8eb06dc7845b7c186d0dad0b4665  ./_versions/retail/0.2.0/daab/metrics/refund_count.sql
+< a075ee4012e7097e4a2154f8b3cd9f56b8fff88396a0bcc9ca70601d1393f0f3  ./_versions/retail/0.2.0/daab/metrics/refund_rate.sql
+< 1e34b28f523a12a72250196c4c7bc0f80e558f54eb2e7013a6795ee25bdb1206  ./_versions/retail/0.2.0/daab/metrics/reprint_before_refund_count.sql
+< 3842d930723f06f7574028a7a8cdf802472d23881cabe3f3d1629c8d8d8e4b8e  ./_versions/retail/0.2.0/daab/metrics/stockout_sku_count.sql
+< 4bac496aabbd19dc2b5bbdc9088d583e948dc8c59ab7fa7b05f978b291ad0eca  ./_versions/retail/0.2.0/daab/metrics/target_gross_margin_pct.sql
+< f49cc7658c5b75bb94147b6e22c22551f8c6c44b670874f16beb08710f2b2660  ./_versions/retail/0.2.0/daab/metrics/target_net_sales.sql
+< 6503c9012b58f8a2bc0f6ecd0984b808a76b6f214e41f108e33563051e21f07b  ./_versions/retail/0.2.0/daab/metrics/transactions.sql
+< b8f2a50e856c3023c2be3af3931b8156448e781a084f0bcea454b35bd85ef1c6  ./_versions/retail/0.2.0/daab/metrics/void_rate.sql
+< fb03dafa259e96b7452c78dee1cfaf6ed3bb7e3e9d4fa943438677a38ffdd5dc  ./_versions/retail/0.2.0/laam/forecasts.yaml
+< 6acabc66d2491252f79d91e0027fb2a2c632f34cbcb6b5aa16d9ae2025bffa96  ./_versions/retail/0.2.0/laam/glossary.yaml
+< 02fbaafd84b02ad83ec2ab4338026e5e4f195fcac6881f36fc62a903c1b69f95  ./_versions/retail/0.2.0/laam/roles.yaml
+< e8efa6fd44f722eab992acc74af259193bc686e4058ef99b77f8db742998b849  ./_versions/retail/0.2.0/laam/rules.yaml
+< 2321032ea847be4eaa76724881701025880ccb037a081a0a689c11470c182bb2  ./_versions/retail/0.2.0/laam/scenarios.yaml
+< 9037d99c1d16043a787af1d4635137b0f1d84462c7a6262e8fab626b6b2d1e01  ./_versions/retail/0.2.0/laam/scoring.yaml
+< 02cbf42abf841b28c5b4053a258acc277fc5cc67ef5720e5c149abf483f5a531  ./_versions/retail/0.2.0/pack.yaml
+< a711becd71bec46e271002dd0334efce8fc4b4e4f84af9aa46c8f843482cc946  ./_versions/retail/0.3.0.sha256
+< 0a3df8aadff8e3550cb5ad3bba279e8918aeb2d90114bec1668179a5e8cc9174  ./pharmacy/daab/canonical.yaml
+< 63d39b278d698c332709e89d32b6a9397f4b68e013e5ec9f1a243b4c2fd89f47  ./pharmacy/daab/evidence/claim_rejection_rate.sql
+< 8300e0c9b345475f1e3a5e1f951f7bde3d6dd1615985995046858e7e42ce9c89  ./pharmacy/daab/evidence/reimbursement_gap.sql
+< 1328a62cec9ab2eaea6b4d3715ba8b5397a532da431c3e4f8df187ad407c57e0  ./pharmacy/daab/evidence/rx_cost.sql
+< df31ca440cf476800d7d86754402d6be7c075c99c5573e3bffa6570bc4d4bae6  ./pharmacy/daab/evidence/rx_margin.sql
+< 921196a73983f9b6cde30f6ca1884a6df0fa54166f1464121228586fda36d61b  ./pharmacy/daab/evidence/rx_margin_pct.sql
+< 7e36898c4d88f25a15233f0283e015580a5d0b023d41d7b091918b26a9ecac28  ./pharmacy/daab/evidence/rx_revenue.sql
+< 749aaf258fc7198c9b34cfd38bcc0702f70d60545cb9a697912f3e661859bf08  ./pharmacy/daab/metrics/claim_rejection_rate.sql
+< bce86adec82bb88d53771133ce7adf0ae59aef7f17a3c01a53a50daff7664550  ./pharmacy/daab/metrics/reimbursement_gap.sql
+< 8bad3d5fc7f4b4a70f0ce579c7eea48458371574e8e0f44e2815635e44227073  ./pharmacy/daab/metrics/rx_cost.sql
+< 92f61213c3feead48b01def78fb4261329ab161b76a35f0c417c61d3ac13201a  ./pharmacy/daab/metrics/rx_margin.sql
+< 7c6fce5740df637a15dcd2633e53d84fe65ff79b488beddc83aef8a78b0de047  ./pharmacy/daab/metrics/rx_margin_pct.sql
+< 3757da81a05e6157423cbfae33b58a7ea576f9c743afb864043b989c00b46c78  ./pharmacy/daab/metrics/rx_revenue.sql
+< dd296ead2b89d9db4604d8a3fe036b7da54e9abde8dabe67e5d321ea4515e35b  ./pharmacy/laam/forecasts.yaml
+< dd20bf3b12cee10de426fa6644a414fd2c455b0066fcd94f1703d21e71c16be2  ./pharmacy/laam/glossary.yaml
+< 55daf26ef711b34bcb5f5165f48602a19af57842b397ee1d1018ed0fb6204853  ./pharmacy/laam/rules.yaml
+< 3f3f2ed648c1c15e36ad3c6e4e7b852dd6d290ddbf05a7e49a0b6b67d823a219  ./pharmacy/laam/scenarios.yaml
+< afefe793729ca67e485abc7609a849f06d63648e3394ccb60208999e694855bf  ./pharmacy/laam/scoring.yaml
+< f732ec8e590eb7d5744d4ad85922b3097ae4be71b6777e88a40ba9645fb8297f  ./pharmacy/pack.yaml
+< 2c0512853b99dd43120e40badfd9aa814fbadc3958d1868966c07fa3fb49aa94  ./retail/daab/canonical.yaml
+< d02284db5895934f1c726bed4d9c38aab81435f0194b216d28f5c164ff01e50d  ./retail/daab/evidence/avg_ticket.sql
+< a98e61b787bade76a41b1c5c17cf286cf74b53b9d545949c01cf7371648423a2  ./retail/daab/evidence/avg_unit_cost.sql
+< 924fc5194386df156744d16fdf272190f91d63201bb699429b4dba702db919c8  ./retail/daab/evidence/cash_shortage_count.sql
+< 5d5e87da5a3dd49c93ae806b06f0c0fbde4d76cf2ee18f89b9e2b91e529f99f2  ./retail/daab/evidence/cash_variance.sql
+< add76fc37b644e000101a449622e7919d1e59b893e31ae40436d08225ec514ca  ./retail/daab/evidence/cogs.sql
+< 9e223966196c91db9d44af5e3220f9dc8754e4487c9d88efe629ab0603711e4b  ./retail/daab/evidence/days_of_cover.sql
+< e7495ceeae0953929bae25a088963c72f81997b548e80b75d15020cea467672b  ./retail/daab/evidence/discount_rate.sql
+< 55155d053b0f53cdc62019cdcb16b476098280e0071dd0e5be4606c45fea4b08  ./retail/daab/evidence/duplicate_refund_groups.sql
+< ff554426c4931a243c9a17748987f93c981dcb2579054db2ee98cf856e76facc  ./retail/daab/evidence/gross_margin_pct.sql
+< c49bdb736af8992c569b73f6b1e6136f0ef0fd513c5addc7a1792e5925de25e0  ./retail/daab/evidence/inventory_variance_value.sql
+< 2c3d2d44672c39fef842cb3ceb495761e2e523f3b4c7bb7de7a28dab72105c48  ./retail/daab/evidence/labor_cost.sql
+< 953817762f7783ab65719997718887cb00fb202523165f577d41a11ef6507fec  ./retail/daab/evidence/labor_cost_pct.sql
+< 715bcc83323108896bd69fc7ac840eabc1e35b9801e3890870d60de4f2e7e4bb  ./retail/daab/evidence/labor_hours.sql
+< 667c8c1abf127b2c00ec9ee8659943909c990258562cbee6e1f58ee5329e5c14  ./retail/daab/evidence/manual_override_count.sql
+< 43f210b2f57979d8f5189c157d8144cac5d65787aba372405fbfdc9b6ac2983c  ./retail/daab/evidence/net_sales.sql
+< 836ce07a44b5804cab3b91967f2f0c8044627d2dca03c1b7d621f18086722379  ./retail/daab/evidence/no_receipt_refund_pct.sql
+< 33f8ae50fb6a1c8882c2f87967fdc60eecb50d54236a453d78cf3eea227c3207  ./retail/daab/evidence/no_sale_rate.sql
+< fab2366fa6f5aa41fb82fcc2843ea87e4b1b2b98527f50ed1f1bf99287e16d70  ./retail/daab/evidence/override_rate.sql
+< 8b3d1e443638764dbad8fba87cc0f98def87765bc17e861a828046328d579e32  ./retail/daab/evidence/overtime_hours.sql
+< bf9d5ee171aa753e2ab95d7d9d8b481508024fa543124304e7c2a2bd1a5bd86d  ./retail/daab/evidence/refund_count.sql
+< e27cd69f343b1d7d38385c7fb9d18c8e6861f83f221b0841b2cb369158f7bf9e  ./retail/daab/evidence/refund_rate.sql
+< f5353c94feda60f8ba1c0d1cb8fd85354d5a3019b57787126306575041c5eddb  ./retail/daab/evidence/reprint_before_refund_count.sql
+< 8ca82ff862a7550b402c9cb6bb7bc7aa84c7690c3919b4ae33e38042562ee5c8  ./retail/daab/evidence/stockout_sku_count.sql
+< 1c4348f1a21c28aa1403144912cfe3a102057dfd17697886c611a8f58540a7d6  ./retail/daab/evidence/target_gross_margin_pct.sql
+< 1267ba40cd569c0108a0e9be4a8080e44ec1e01651f080e2362a30e267147f5d  ./retail/daab/evidence/target_net_sales.sql
+< 25893e7f92dfd6effbc41cd6adedf7d80f0818b240ac7dd8447a11797cfe1a37  ./retail/daab/evidence/transactions.sql
+< 09caa30f9dc44c4c829da5b9e5c8a4e04019f7aeb581826c187516301b4e77f6  ./retail/daab/evidence/void_rate.sql
+< 131f97ff1bf6ce6490847e6378da517cef22799280b05be7b26903902b4d2f1f  ./retail/daab/metrics/avg_ticket.sql
+< ed2c642d0568067ffd53a1b831f55856e425a9b8e4cae30ac1629ef782faf19a  ./retail/daab/metrics/avg_unit_cost.sql
+< 78bd42e82ddc39089178cc1e3a21126cc3f5a0c6222b9e17506d0818aacd4d7d  ./retail/daab/metrics/cash_shortage_count.sql
+< 29b72200149351a1970e451c0ea7ac3679a809cc180e1d2624ebbfd2b75da564  ./retail/daab/metrics/cash_variance.sql
+< c4af663855b762b359694cf9aef40bac137c00cb4f3f7da7fbcad1910e517042  ./retail/daab/metrics/cogs.sql
+< cce4c59980cd05a76b2dc7d9afcc61fe6f40d7ac4cb2bd692dff25efb6df8aa5  ./retail/daab/metrics/days_of_cover.sql
+< afd82cfb24ab9cfd1ad34b3bc53aec50e28756f3a456c5baa6212dafb5a30d36  ./retail/daab/metrics/discount_rate.sql
+< c3ba177fe09364ebd41254177b999aa5ab7ee9b84bca1ab72a4ace8dea7d4c7d  ./retail/daab/metrics/duplicate_refund_groups.sql
+< ae11b3ab7fd5a00e57df1546ab7ac1f08ff714ae8addbaa63b33d2df66c2d6a9  ./retail/daab/metrics/gross_margin_pct.sql
+< 1d7fe4550af77fa0e07dc1bbb6eba7ac453f2b8b1b4cb74ba3354d5733f986b6  ./retail/daab/metrics/inventory_variance_value.sql
+< cc870db25b4ff2fa41f2b0aaa3c29c7299b83b65a24ead3832095a92daf26260  ./retail/daab/metrics/labor_cost.sql
+< 4614d81abc5c2455be4339545fd21fbd04902ee36b18922759a63471672f1a58  ./retail/daab/metrics/labor_cost_pct.sql
+< 0b6e41005fe12595c142d01471cfa51f5118f297ece35a0aabc24d0a2c75c037  ./retail/daab/metrics/labor_hours.sql
+< e597d9c0a9b81db15eac5145cc79863f007ef67dea56a4beb0ede8087df78b67  ./retail/daab/metrics/manual_override_count.sql
+< d2a507f138a41b09a307b4f0e90d8489e7cb50a199fb8bde28b9f5a166f343f4  ./retail/daab/metrics/net_sales.sql
+< 1751544ad9c0648aa212c5a8c9372ef04d390f475a42b56f2c39e2df04016382  ./retail/daab/metrics/no_receipt_refund_pct.sql
+< 983bc0f5c40c864e3e69f419eee1bc7923b0847a3dddc168a417ac63008b13d3  ./retail/daab/metrics/no_sale_rate.sql
+< 55c01583f1b8396055ff7d81f690b53af68151e9a77935a653e67943f01dfbeb  ./retail/daab/metrics/override_rate.sql
+< b28f24c38558a14afd2a4d77f226999b045e4748797edd0ecc1eb7f266003f1e  ./retail/daab/metrics/overtime_hours.sql
+< 7355ea0b3294064f406b94e596b9cbf7fb1e8eb06dc7845b7c186d0dad0b4665  ./retail/daab/metrics/refund_count.sql
+< a075ee4012e7097e4a2154f8b3cd9f56b8fff88396a0bcc9ca70601d1393f0f3  ./retail/daab/metrics/refund_rate.sql
+< 1e34b28f523a12a72250196c4c7bc0f80e558f54eb2e7013a6795ee25bdb1206  ./retail/daab/metrics/reprint_before_refund_count.sql
+< 3842d930723f06f7574028a7a8cdf802472d23881cabe3f3d1629c8d8d8e4b8e  ./retail/daab/metrics/stockout_sku_count.sql
+< 4bac496aabbd19dc2b5bbdc9088d583e948dc8c59ab7fa7b05f978b291ad0eca  ./retail/daab/metrics/target_gross_margin_pct.sql
+< f49cc7658c5b75bb94147b6e22c22551f8c6c44b670874f16beb08710f2b2660  ./retail/daab/metrics/target_net_sales.sql
+< 6503c9012b58f8a2bc0f6ecd0984b808a76b6f214e41f108e33563051e21f07b  ./retail/daab/metrics/transactions.sql
+< b8f2a50e856c3023c2be3af3931b8156448e781a084f0bcea454b35bd85ef1c6  ./retail/daab/metrics/void_rate.sql
+< fb03dafa259e96b7452c78dee1cfaf6ed3bb7e3e9d4fa943438677a38ffdd5dc  ./retail/laam/forecasts.yaml
+< 6acabc66d2491252f79d91e0027fb2a2c632f34cbcb6b5aa16d9ae2025bffa96  ./retail/laam/glossary.yaml
+< 02fbaafd84b02ad83ec2ab4338026e5e4f195fcac6881f36fc62a903c1b69f95  ./retail/laam/roles.yaml
+< 1951c4ae8ca256b1fc1fac6c090930d2433a5fe3a912cdb6128cb8ab9025f777  ./retail/laam/rules.yaml
+< 2321032ea847be4eaa76724881701025880ccb037a081a0a689c11470c182bb2  ./retail/laam/scenarios.yaml
+< 9037d99c1d16043a787af1d4635137b0f1d84462c7a6262e8fab626b6b2d1e01  ./retail/laam/scoring.yaml
+< 68f8e240e7a5e1932125c396ad5eec9eb9dcf7649311c7df2c6e38bf02a7c853  ./retail/pack.yaml
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/phaseA.sh: line 101: cd: /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsL: No such file or directory
+1,166d0
+< .
+< ./_staging
+< ./_versions
+< ./_versions/pharmacy
+< ./_versions/pharmacy/0.2.0.sha256
+< ./_versions/retail
+< ./_versions/retail/0.2.0
+< ./_versions/retail/0.2.0.sha256
+< ./_versions/retail/0.2.0/daab
+< ./_versions/retail/0.2.0/daab/canonical.yaml
+< ./_versions/retail/0.2.0/daab/evidence
+< ./_versions/retail/0.2.0/daab/evidence/avg_ticket.sql
+< ./_versions/retail/0.2.0/daab/evidence/avg_unit_cost.sql
+< ./_versions/retail/0.2.0/daab/evidence/cash_shortage_count.sql
+< ./_versions/retail/0.2.0/daab/evidence/cash_variance.sql
+< ./_versions/retail/0.2.0/daab/evidence/cogs.sql
+< ./_versions/retail/0.2.0/daab/evidence/days_of_cover.sql
+< ./_versions/retail/0.2.0/daab/evidence/discount_rate.sql
+< ./_versions/retail/0.2.0/daab/evidence/duplicate_refund_groups.sql
+< ./_versions/retail/0.2.0/daab/evidence/gross_margin_pct.sql
+< ./_versions/retail/0.2.0/daab/evidence/inventory_variance_value.sql
+< ./_versions/retail/0.2.0/daab/evidence/labor_cost_pct.sql
+< ./_versions/retail/0.2.0/daab/evidence/labor_cost.sql
+< ./_versions/retail/0.2.0/daab/evidence/labor_hours.sql
+< ./_versions/retail/0.2.0/daab/evidence/manual_override_count.sql
+< ./_versions/retail/0.2.0/daab/evidence/net_sales.sql
+< ./_versions/retail/0.2.0/daab/evidence/no_receipt_refund_pct.sql
+< ./_versions/retail/0.2.0/daab/evidence/no_sale_rate.sql
+< ./_versions/retail/0.2.0/daab/evidence/override_rate.sql
+< ./_versions/retail/0.2.0/daab/evidence/overtime_hours.sql
+< ./_versions/retail/0.2.0/daab/evidence/refund_count.sql
+< ./_versions/retail/0.2.0/daab/evidence/refund_rate.sql
+< ./_versions/retail/0.2.0/daab/evidence/reprint_before_refund_count.sql
+< ./_versions/retail/0.2.0/daab/evidence/stockout_sku_count.sql
+< ./_versions/retail/0.2.0/daab/evidence/target_gross_margin_pct.sql
+< ./_versions/retail/0.2.0/daab/evidence/target_net_sales.sql
+< ./_versions/retail/0.2.0/daab/evidence/transactions.sql
+< ./_versions/retail/0.2.0/daab/evidence/void_rate.sql
+< ./_versions/retail/0.2.0/daab/metrics
+< ./_versions/retail/0.2.0/daab/metrics/avg_ticket.sql
+< ./_versions/retail/0.2.0/daab/metrics/avg_unit_cost.sql
+< ./_versions/retail/0.2.0/daab/metrics/cash_shortage_count.sql
+< ./_versions/retail/0.2.0/daab/metrics/cash_variance.sql
+< ./_versions/retail/0.2.0/daab/metrics/cogs.sql
+< ./_versions/retail/0.2.0/daab/metrics/days_of_cover.sql
+< ./_versions/retail/0.2.0/daab/metrics/discount_rate.sql
+< ./_versions/retail/0.2.0/daab/metrics/duplicate_refund_groups.sql
+< ./_versions/retail/0.2.0/daab/metrics/gross_margin_pct.sql
+< ./_versions/retail/0.2.0/daab/metrics/inventory_variance_value.sql
+< ./_versions/retail/0.2.0/daab/metrics/labor_cost_pct.sql
+< ./_versions/retail/0.2.0/daab/metrics/labor_cost.sql
+< ./_versions/retail/0.2.0/daab/metrics/labor_hours.sql
+< ./_versions/retail/0.2.0/daab/metrics/manual_override_count.sql
+< ./_versions/retail/0.2.0/daab/metrics/net_sales.sql
+< ./_versions/retail/0.2.0/daab/metrics/no_receipt_refund_pct.sql
+< ./_versions/retail/0.2.0/daab/metrics/no_sale_rate.sql
+< ./_versions/retail/0.2.0/daab/metrics/override_rate.sql
+< ./_versions/retail/0.2.0/daab/metrics/overtime_hours.sql
+< ./_versions/retail/0.2.0/daab/metrics/refund_count.sql
+< ./_versions/retail/0.2.0/daab/metrics/refund_rate.sql
+< ./_versions/retail/0.2.0/daab/metrics/reprint_before_refund_count.sql
+< ./_versions/retail/0.2.0/daab/metrics/stockout_sku_count.sql
+< ./_versions/retail/0.2.0/daab/metrics/target_gross_margin_pct.sql
+< ./_versions/retail/0.2.0/daab/metrics/target_net_sales.sql
+< ./_versions/retail/0.2.0/daab/metrics/transactions.sql
+< ./_versions/retail/0.2.0/daab/metrics/void_rate.sql
+< ./_versions/retail/0.2.0/laam
+< ./_versions/retail/0.2.0/laam/forecasts.yaml
+< ./_versions/retail/0.2.0/laam/glossary.yaml
+< ./_versions/retail/0.2.0/laam/roles.yaml
+< ./_versions/retail/0.2.0/laam/rules.yaml
+< ./_versions/retail/0.2.0/laam/scenarios.yaml
+< ./_versions/retail/0.2.0/laam/scoring.yaml
+< ./_versions/retail/0.2.0/pack.yaml
+< ./_versions/retail/0.3.0.sha256
+< ./pharmacy
+< ./pharmacy/daab
+< ./pharmacy/daab/canonical.yaml
+< ./pharmacy/daab/evidence
+< ./pharmacy/daab/evidence/claim_rejection_rate.sql
+< ./pharmacy/daab/evidence/reimbursement_gap.sql
+< ./pharmacy/daab/evidence/rx_cost.sql
+< ./pharmacy/daab/evidence/rx_margin_pct.sql
+< ./pharmacy/daab/evidence/rx_margin.sql
+< ./pharmacy/daab/evidence/rx_revenue.sql
+< ./pharmacy/daab/metrics
+< ./pharmacy/daab/metrics/claim_rejection_rate.sql
+< ./pharmacy/daab/metrics/reimbursement_gap.sql
+< ./pharmacy/daab/metrics/rx_cost.sql
+< ./pharmacy/daab/metrics/rx_margin_pct.sql
+< ./pharmacy/daab/metrics/rx_margin.sql
+< ./pharmacy/daab/metrics/rx_revenue.sql
+< ./pharmacy/laam
+< ./pharmacy/laam/forecasts.yaml
+< ./pharmacy/laam/glossary.yaml
+< ./pharmacy/laam/rules.yaml
+< ./pharmacy/laam/scenarios.yaml
+< ./pharmacy/laam/scoring.yaml
+< ./pharmacy/pack.yaml
+< ./retail
+< ./retail/daab
+< ./retail/daab/canonical.yaml
+< ./retail/daab/evidence
+< ./retail/daab/evidence/avg_ticket.sql
+< ./retail/daab/evidence/avg_unit_cost.sql
+< ./retail/daab/evidence/cash_shortage_count.sql
+< ./retail/daab/evidence/cash_variance.sql
+< ./retail/daab/evidence/cogs.sql
+< ./retail/daab/evidence/days_of_cover.sql
+< ./retail/daab/evidence/discount_rate.sql
+< ./retail/daab/evidence/duplicate_refund_groups.sql
+< ./retail/daab/evidence/gross_margin_pct.sql
+< ./retail/daab/evidence/inventory_variance_value.sql
+< ./retail/daab/evidence/labor_cost_pct.sql
+< ./retail/daab/evidence/labor_cost.sql
+< ./retail/daab/evidence/labor_hours.sql
+< ./retail/daab/evidence/manual_override_count.sql
+< ./retail/daab/evidence/net_sales.sql
+< ./retail/daab/evidence/no_receipt_refund_pct.sql
+< ./retail/daab/evidence/no_sale_rate.sql
+< ./retail/daab/evidence/override_rate.sql
+< ./retail/daab/evidence/overtime_hours.sql
+< ./retail/daab/evidence/refund_count.sql
+< ./retail/daab/evidence/refund_rate.sql
+< ./retail/daab/evidence/reprint_before_refund_count.sql
+< ./retail/daab/evidence/stockout_sku_count.sql
+< ./retail/daab/evidence/target_gross_margin_pct.sql
+< ./retail/daab/evidence/target_net_sales.sql
+< ./retail/daab/evidence/transactions.sql
+< ./retail/daab/evidence/void_rate.sql
+< ./retail/daab/metrics
+< ./retail/daab/metrics/avg_ticket.sql
+< ./retail/daab/metrics/avg_unit_cost.sql
+< ./retail/daab/metrics/cash_shortage_count.sql
+< ./retail/daab/metrics/cash_variance.sql
+< ./retail/daab/metrics/cogs.sql
+< ./retail/daab/metrics/days_of_cover.sql
+< ./retail/daab/metrics/discount_rate.sql
+< ./retail/daab/metrics/duplicate_refund_groups.sql
+< ./retail/daab/metrics/gross_margin_pct.sql
+< ./retail/daab/metrics/inventory_variance_value.sql
+< ./retail/daab/metrics/labor_cost_pct.sql
+< ./retail/daab/metrics/labor_cost.sql
+< ./retail/daab/metrics/labor_hours.sql
+< ./retail/daab/metrics/manual_override_count.sql
+< ./retail/daab/metrics/net_sales.sql
+< ./retail/daab/metrics/no_receipt_refund_pct.sql
+< ./retail/daab/metrics/no_sale_rate.sql
+< ./retail/daab/metrics/override_rate.sql
+< ./retail/daab/metrics/overtime_hours.sql
+< ./retail/daab/metrics/refund_count.sql
+< ./retail/daab/metrics/refund_rate.sql
+< ./retail/daab/metrics/reprint_before_refund_count.sql
+< ./retail/daab/metrics/stockout_sku_count.sql
+< ./retail/daab/metrics/target_gross_margin_pct.sql
+< ./retail/daab/metrics/target_net_sales.sql
+< ./retail/daab/metrics/transactions.sql
+< ./retail/daab/metrics/void_rate.sql
+< ./retail/laam
+< ./retail/laam/forecasts.yaml
+< ./retail/laam/glossary.yaml
+< ./retail/laam/roles.yaml
+< ./retail/laam/rules.yaml
+< ./retail/laam/scenarios.yaml
+< ./retail/laam/scoring.yaml
+< ./retail/pack.yaml
+cmp: /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsL/_versions/retail/0.2.0.sha256: No such file or directory
+cmp: /private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/packsL/_versions/retail/0.3.0.sha256: No such file or directory
+
+=== mixed sequence in one dir (packsM): Go fetch 0.2.0 -> LAAM upgrade 0.3.0 -> Go rollback 0.2.0 -> LAAM install 0.3.0 again
+retail: (none) -> 0.2.0
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: Transform failed with 1 error:
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/laam_install.ts:16:14: ERROR: Top-level await is currently not supported with the "cjs" output format
+    at failureErrorWithLog (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:1748:15)
+    at /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:1017:50
+    at responseCallbacks.<computed> (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:884:9)
+    at handleIncomingPacket (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:939:12)
+    at Socket.readFromStdout (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:862:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v24.18.0
+retail: already at 0.2.0
+mixed: ACTIVE == 0.2.0 snapshot
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: Transform failed with 1 error:
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/laam_install.ts:16:14: ERROR: Top-level await is currently not supported with the "cjs" output format
+    at failureErrorWithLog (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:1748:15)
+    at /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:1017:50
+    at responseCallbacks.<computed> (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:884:9)
+    at handleIncomingPacket (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:939:12)
+    at Socket.readFromStdout (/Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM/node_modules/esbuild/lib/main.js:862:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v24.18.0
+retail: active 0.2.0
+
+=== token leak check
+leak check done

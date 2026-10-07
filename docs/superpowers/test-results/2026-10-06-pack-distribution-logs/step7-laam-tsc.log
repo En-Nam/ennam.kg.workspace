@@ -1,0 +1,4 @@
+src/lib/workflow/executors.test.ts(260,46): error TS2322: Type 'Mock<(messages: unknown[]) => Promise<unknown[]>>' is not assignable to type '(messages: ChatMessage[], tools: ConnectorTool[], deps: { callOllama: (m: ChatMessage[], t: ConnectorTool[]) => Promise<OllamaChatResponse>; dispatch: (n: string, a: unknown) => Promise<...>; }, opts?: { ...; } | undefined) => Promise<...>'.
+  Type 'Promise<unknown[]>' is not assignable to type 'Promise<ChatMessage[]>'.
+    Type 'unknown[]' is not assignable to type 'ChatMessage[]'.
+      Type 'unknown' is not assignable to type 'ChatMessage'.

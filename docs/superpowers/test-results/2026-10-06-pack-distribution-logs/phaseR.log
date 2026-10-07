@@ -1,0 +1,36 @@
+store KiB before: 52	/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/registry-store
+control-valid          0.4.1   HTTP 201  {"key":"retail","result":"created","sha256":"751202542d63efa09db8711335295a94836afb597372bbfe05cfa41771b39df3","size":14373,"version":"0.4.1"}
+traversal-dotdot       0.4.2   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry name \"retail/../../../../../../canary/ESCAPED-trav\": not a relative path"}}
+traversal-leading      0.4.3   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry name \"../canary/ESCAPED-trav2\": not a relative path"}}
+absolute-path          0.4.4   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry name \"/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/canary/ESCAPE
+symlink                0.4.5   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry \"retail/daab/link\" has unsupported type '2'"}}
+hardlink-abs           0.4.6   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry \"retail/daab/hl\" has unsupported type '1'"}}
+hardlink-internal      0.4.7   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry \"retail/daab/hl2\" has unsupported type '1'"}}
+device-file            0.4.8   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry \"retail/daab/dev\" has unsupported type '3'"}}
+extra-top-dir          0.4.9   HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: entry \"other/x\" is outside retail/"}}
+case-collision         0.4.10  HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: \"retail/daab/canonical.yaml\" and \"retail/daab/Canonical.yaml\" differ only by case"}}
+gzip-bomb              0.4.11  HTTP 413  {"error":{"code":"too_large","message":"pack exceeds the size or file-count limit"}}
+oversized-pack-yaml    0.4.12  HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: pack.yaml entry declares 2097204 bytes (max 1048576)"}}
+too-many-files         0.4.13  HTTP 413  {"error":{"code":"too_large","message":"pack exceeds the size or file-count limit"}}
+wrong-version-in-yaml  0.4.14  HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: pack.yaml version \"9.9.9\", want \"0.4.14\""}}
+wrong-key-in-yaml      0.4.15  HTTP 400  {"error":{"code":"invalid_pack","message":"invalid pack: pack.yaml key \"pharmacy\", want \"retail\""}}
+oversized-compressed   0.4.16  HTTP 413  {"error":{"code":"too_large","message":"pack exceeds the 20 MiB upload limit"}}
+wrong-sha-catalog      0.4.17  HTTP 400  {"error":{"code":"checksum_mismatch","message":"X-Pack-SHA256 does not match the uploaded body"}}
+wrong-sha-header       0.4.18  HTTP 400  {"error":{"code":"checksum_mismatch","message":"X-Pack-SHA256 does not match the uploaded body"}}
+--- version 0.4.x stored in catalog:
+pharmacy ['0.2.0']
+retail ['0.2.0', '0.3.0', '0.4.1']
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/registry-store:
+pharmacy
+retail
+
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/registry-store/pharmacy:
+0.2.0
+
+/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/registry-store/retail:
+0.2.0
+0.3.0
+0.4.1
+--- escapes:
+canary-original
+leak check done

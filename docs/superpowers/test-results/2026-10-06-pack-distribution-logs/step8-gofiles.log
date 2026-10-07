@@ -1,0 +1,12 @@
+== git ls-files cmd/kg-server
+cmd/kg-server/intel_wiring.go
+cmd/kg-server/intel_wiring_test.go
+cmd/kg-server/main.go
+== on-disk non-test .go files in cmd/kg-server not tracked:
+== check-ignore
+(none ignored)
+2:bin/
+44:/kg-server
+33a9c7b fix(intel): pack endpoint timeouts, narrower reload fallback and single registry snapshot
+CLEAN CLONE go build ./cmd/... OK
+vet ok

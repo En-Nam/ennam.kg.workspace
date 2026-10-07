@@ -1,0 +1,70 @@
+
+ RUN  v4.1.8 /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+stderr | src/components/constellation/ConstellationClient.test.tsx > ConstellationClient > renders nodes from the real endpoints (agent, tool group, idle connector)
+THREE.WebGLRenderer: Error creating WebGL context.
+
+stderr | src/components/constellation/ConstellationClient.test.tsx > ConstellationClient > clicking an agent node persists customAgentId to localStorage
+THREE.WebGLRenderer: Error creating WebGL context.
+
+stderr | src/components/constellation/ConstellationClient.test.tsx > ConstellationClient > voice toggle control is hidden when Web Speech API is unavailable (jsdom default)
+THREE.WebGLRenderer: Error creating WebGL context.
+
+ ❯ src/components/constellation/ConstellationClient.test.tsx (3 tests | 3 failed) 97ms
+     × renders nodes from the real endpoints (agent, tool group, idle connector) 91ms
+     × clicking an agent node persists customAgentId to localStorage 3ms
+     × voice toggle control is hidden when Web Speech API is unavailable (jsdom default) 2ms
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/constellation/ConstellationClient.test.tsx > ConstellationClient > renders nodes from the real endpoints (agent, tool group, idle connector)
+ FAIL  src/components/constellation/ConstellationClient.test.tsx > ConstellationClient > clicking an agent node persists customAgentId to localStorage
+ FAIL  src/components/constellation/ConstellationClient.test.tsx > ConstellationClient > voice toggle control is hidden when Web Speech API is unavailable (jsdom default)
+Error: Error creating WebGL context.
+ ❯ new WebGLRenderer node_modules/three/build/three.module.js:16341:13
+ ❯ src/components/constellation/ParticleFieldBackground.tsx:32:22
+     30|     camera.position.set(0, 0, 6.2);
+     31|
+     32|     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha:…
+       |                      ^
+     33|     renderer.setClearColor(0x000000, 0);
+     34|     mount.appendChild(renderer.domElement);
+ ❯ Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:25989:20
+ ❯ runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+ ❯ commitHookEffectListMount node_modules/react-dom/cjs/react-dom-client.development.js:13249:29
+ ❯ commitHookPassiveMountEffects node_modules/react-dom/cjs/react-dom-client.development.js:13336:11
+ ❯ commitPassiveMountOnFiber node_modules/react-dom/cjs/react-dom-client.development.js:15484:13
+ ❯ recursivelyTraversePassiveMountEffects node_modules/react-dom/cjs/react-dom-client.development.js:15439:11
+ ❯ commitPassiveMountOnFiber node_modules/react-dom/cjs/react-dom-client.development.js:15718:11
+ ❯ recursivelyTraversePassiveMountEffects node_modules/react-dom/cjs/react-dom-client.development.js:15439:11
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed | 295 passed | 1 skipped (297)
+      Tests  3 failed | 3292 passed | 4 skipped (3299)
+   Start at  01:26:01
+   Duration  42.77s (transform 31.21s, setup 19.18s, import 110.69s, tests 88.28s, environment 208.33s)
+

@@ -1,0 +1,77 @@
+=== base dir: Go installs retail+pharmacy 0.2.0 from the fake registry (positive control for the fake)
+retail: (none) -> 0.2.0
+pharmacy: (none) -> 0.2.0
+base retail == 0.2.0 snapshot
+control-valid          go    active=0.4.1   DIR-CHANGED staging=[] :: retail: 0.2.0 -> 0.4.1 exit=0 
+control-valid          laam  active=0.4.1   DIR-CHANGED staging=[] :: LAAM retail@0.4.1: ok from=0.2.0 to=0.4.1 changed=true (83 ms) exit=0 
+traversal-dotdot       go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry name "retail/../../../../../../canary/ESCAPED-trav": not a relative path exit=1 
+traversal-dotdot       laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.2: ERROR code=bad_pack msg=archive has a path outside the template (38 ms) exit=1 
+traversal-leading      go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry name "../canary/ESCAPED-trav2": not a relative path exit=1 
+traversal-leading      laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.3: ERROR code=bad_pack msg=archive has a path outside the template (34 ms) exit=1 
+absolute-path          go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry name "/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/canary/ESCAPED-abs": not a relative path exit=1 
+absolute-path          laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.4: ERROR code=bad_pack msg=archive has an absolute path (38 ms) exit=1 
+symlink                go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry "retail/daab/link" has unsupported type '2' exit=1 
+symlink                laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.5: ERROR code=bad_pack msg=archive contains a link (34 ms) exit=1 
+hardlink-abs           go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry "retail/daab/hl" has unsupported type '1' exit=1 
+hardlink-abs           laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.6: ERROR code=bad_pack msg=archive contains a link (34 ms) exit=1 
+hardlink-internal      go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry "retail/daab/hl2" has unsupported type '1' exit=1 
+hardlink-internal      laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.7: ERROR code=bad_pack msg=archive contains a link (34 ms) exit=1 
+device-file            go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry "retail/daab/dev" has unsupported type '3' exit=1 
+device-file            laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.8: ERROR code=bad_pack msg=archive contains a special file (34 ms) exit=1 
+extra-top-dir          go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: entry "other/x" is outside retail/ exit=1 
+extra-top-dir          laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.9: ERROR code=bad_pack msg=archive must contain exactly one top-level directory named after the template (42 ms) exit=1 
+case-collision         go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: "retail/daab/canonical.yaml" and "retail/daab/Canonical.yaml" differ only by case exit=1 
+case-collision         laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.10: ERROR code=bad_pack msg=archive has two names that differ only by letter case (33 ms) exit=1 
+gzip-bomb              go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: pack too large: extracted size exceeds 104857600 bytes exit=1 
+gzip-bomb              laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.11: ERROR code=bad_pack msg=archive is too large when unpacked (55 ms) exit=1 
+oversized-pack-yaml    go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: pack.yaml entry declares 2097204 bytes (max 1048576) exit=1 
+oversized-pack-yaml    laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.12: ERROR code=bad_pack msg=pack.yaml is too large (33 ms) exit=1 
+too-many-files         go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: pack too large: more than 2000 entries exit=1 
+too-many-files         laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.13: ERROR code=bad_pack msg=archive has too many files (65 ms) exit=1 
+wrong-version-in-yaml  go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: tarball declares retail@9.9.9, want retail@0.4.14 exit=1 
+wrong-version-in-yaml  laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.14: ERROR code=bad_pack msg=pack.yaml does not match the requested template version (40 ms) exit=1 
+wrong-key-in-yaml      go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: invalid pack: pack.yaml key "pharmacy", want "retail" exit=1 
+wrong-key-in-yaml      laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.15: ERROR code=bad_pack msg=pack.yaml does not match the requested template version (33 ms) exit=1 
+oversized-compressed   go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: download retail@0.4.16: pack too large: stream exceeds limit exit=1 
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 60242)
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 766, in __init__
+    self.handle()
+    ~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 496, in handle
+    self.handle_one_request()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 484, in handle_one_request
+    method()
+    ~~~~~~^^
+  File "/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/fake_registry.py", line 41, in do_GET
+    return self.send(200, b, "application/gzip", [("X-Pack-SHA256", hs)])
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/claude-501/-Users-danhtrinh-Projects-Exnodes-EnnamKG-ennam-kg-workspace/b3aa9c12-69fd-45e5-88c2-b8cbae3dbf0a/scratchpad/e2e/scripts/fake_registry.py", line 30, in send
+    self.end_headers(); self.wfile.write(body)
+                        ~~~~~~~~~~~~~~~~^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 845, in write
+    self._sock.sendall(b)
+    ~~~~~~~~~~~~~~~~~~^^^
+BrokenPipeError: [Errno 32] Broken pipe
+----------------------------------------
+oversized-compressed   laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.16: ERROR code=bad_pack msg=the download is too large (34 ms) exit=1 
+wrong-sha-catalog      go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: checksum mismatch: retail@0.4.17 download header does not match the catalog exit=1 
+wrong-sha-catalog      laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.17: ERROR code=bad_pack msg=the download does not match its published checksum (33 ms) exit=1 
+wrong-sha-header       go    active=0.2.0   dir-unchanged staging=[] :: kg-packs fetch: checksum mismatch: retail@0.4.18 download header does not match the catalog exit=1 
+wrong-sha-header       laam  active=0.2.0   dir-unchanged staging=[] :: LAAM retail@0.4.18: ERROR code=bad_pack msg=the download does not match its published checksum (32 ms) exit=1 
+=== escape check: files named ESCAPED-* anywhere under e2e, scratchpad parent, /tmp
+files newer than attack start outside e2e/ in scratchpad:
+canary hardlink-target: canary-original
+total 8
+drwxr-xr-x@  3 danhtrinh  wheel   96 Oct  7 01:22 .
+drwxr-xr-x@ 19 danhtrinh  wheel  608 Oct  7 01:23 ..
+-rw-r--r--@  1 danhtrinh  wheel   16 Oct  7 01:22 hardlink-target
+no token in logs

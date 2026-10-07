@@ -1,0 +1,31 @@
+ok  	github.com/ennam/ennam-kg/internal/handler	69.747s
+ok  	github.com/ennam/ennam-kg/internal/intel	2.965s
+ok  	github.com/ennam/ennam-kg/internal/intel/admin	3.629s
+ok  	github.com/ennam/ennam-kg/internal/intel/engine	16.103s
+ok  	github.com/ennam/ennam-kg/internal/intel/filedata	51.522s
+ok  	github.com/ennam/ennam-kg/internal/intel/intelstore	3.745s
+ok  	github.com/ennam/ennam-kg/internal/intel/livesource	6.020s
+ok  	github.com/ennam/ennam-kg/internal/intel/packtest	13.808s
+ok  	github.com/ennam/ennam-kg/internal/intel/sqlexec	5.820s
+ok  	github.com/ennam/ennam-kg/internal/packdist	21.857s
+ok  	github.com/ennam/ennam-kg/internal/packregistry	9.218s
+?   	github.com/ennam/ennam-kg/cmd/kg-bridge	[no test files]
+?   	github.com/ennam/ennam-kg/cmd/kg-migrate	[no test files]
+ok  	github.com/ennam/ennam-kg/cmd/kg-pack-registry	7.424s
+ok  	github.com/ennam/ennam-kg/cmd/kg-packs	9.754s
+ok  	github.com/ennam/ennam-kg/cmd/kg-server	10.225s
+
+PASS: 1490  FAIL: 0  SKIP: 12
+--- SKIP: TestCompareHandler_Compare_Success (0.00s)
+--- SKIP: TestCompareHandler_Compare_InsufficientResults (0.00s)
+--- SKIP: TestExportHandler_ExportCSV_Success (0.00s)
+--- SKIP: TestExportHandler_ExportCSV_MaxRows (0.00s)
+--- SKIP: TestExportHandler_ExportCSV_NoResults (0.00s)
+--- SKIP: TestFavoriteHandler_CreateFavorite (0.00s)
+--- SKIP: TestFavoriteHandler_ListFavorites (0.00s)
+--- SKIP: TestFavoriteHandler_GetFavorite (0.00s)
+--- SKIP: TestFavoriteHandler_UpdateFavorite (0.00s)
+--- SKIP: TestFavoriteHandler_DeleteFavorite (0.00s)
+--- SKIP: TestFavoriteHandler_RerunFavorite (0.00s)
+--- SKIP: TestHelperProcess (0.00s)
+exit=0

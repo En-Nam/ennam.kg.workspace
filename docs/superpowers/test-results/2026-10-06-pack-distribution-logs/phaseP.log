@@ -1,0 +1,26 @@
+
+=== LAAM parity: install same versions with installPack into packsL
+LAAM retail@0.2.0: ok from=null to=0.2.0 changed=true (68 ms)
+LAAM pharmacy@0.2.0: ok from=null to=0.2.0 changed=true (36 ms)
+LAAM retail@0.3.0: ok from=0.2.0 to=0.3.0 changed=true (67 ms)
+--- Go mirror into packsG
+retail: (none) -> 0.2.0
+pharmacy: (none) -> 0.2.0
+retail: 0.2.0 -> 0.3.0
+--- diff full trees (excluding _staging/.lockdir)
+Go and LAAM trees IDENTICAL (     146 files)
+Go and LAAM entry lists identical
+record 0.2.0.sha256 byte-identical: 0000100   \n                                                            
+record 0.3.0.sha256 byte-identical: 0000100   \n                                                            
+
+=== mixed sequence in one dir (packsM): Go fetch 0.2.0 -> LAAM upgrade 0.3.0 -> Go rollback 0.2.0 -> LAAM install 0.3.0 again
+retail: (none) -> 0.2.0
+LAAM retail@0.3.0: ok from=0.2.0 to=0.3.0 changed=true (81 ms)
+retail: 0.3.0 -> 0.2.0
+mixed: ACTIVE == 0.2.0 snapshot
+LAAM retail@0.3.0: ok from=0.2.0 to=0.3.0 changed=true (65 ms)
+LAAM retail@0.2.0: ERROR code=downgrade msg=that is an older version than the one in use (6 ms)
+retail: active 0.3.0; stored 0.2.0
+
+=== token leak check
+leak check done

@@ -1,0 +1,48 @@
+
+=== 6c. simulated crash between the two renames; both runtimes recover from identical copies
+missing-parked                         go: pharmacy: active 0.2.0 retail: active 0.3.0; stored 0.2.0  | laam: LAAM lock noop: ok (24 ms)  | trees SAME | go active=0.3.0 journal=gone | laam active=0.3.0 journal=gone
+missing-parked-emptycreatedAt          go: kg-packs versions: installer: corrupt swap journal swap.json: parsing time "" as "2006-01-02T15:04:05Z07:00": cannot parse "" as "2006"  | laam: LAAM lock noop: ok (26 ms)  | trees DIFFERENT | go active= journal=kept | laam active=0.3.0 journal=gone
+3d2
+< ./_staging/swap.json
+8,74d6
+< ./_versions/retail/.prev-0.3.0
+< ./_versions/retail/.prev-0.3.0/daab
+< ./_versions/retail/.prev-0.3.0/daab/canonical.yaml
+missing-parked-nocreatedAt             go: pharmacy: active 0.2.0 retail: active 0.3.0; stored 0.2.0  | laam: LAAM lock noop: ok (23 ms)  | trees SAME | go active=0.3.0 journal=gone | laam active=0.3.0 journal=gone
+present-parked                         go: pharmacy: active 0.2.0 retail: active 0.2.0; stored 0.3.0  | laam: LAAM lock noop: ok (23 ms)  | trees SAME | go active=0.2.0 journal=gone | laam active=0.2.0 journal=gone
+present-parked-emptycreatedAt          go: kg-packs versions: installer: corrupt swap journal swap.json: parsing time "" as "2006-01-02T15:04:05Z07:00": cannot parse "" as "2006"  | laam: LAAM lock noop: ok (25 ms)  | trees DIFFERENT | go active=0.2.0 journal=kept | laam active=0.2.0 journal=gone
+3d2
+< ./_staging/swap.json
+8,74d6
+< ./_versions/retail/.prev-0.3.0
+< ./_versions/retail/.prev-0.3.0/daab
+< ./_versions/retail/.prev-0.3.0/daab/canonical.yaml
+present-parked-nocreatedAt             go: pharmacy: active 0.2.0 retail: active 0.2.0; stored 0.3.0  | laam: LAAM lock noop: ok (24 ms)  | trees SAME | go active=0.2.0 journal=gone | laam active=0.2.0 journal=gone
+missing-parked-stale                   go: pharmacy: active 0.2.0 retail: active 0.3.0; stored 0.2.0  | laam: LAAM lock noop: ok (24 ms)  | trees SAME | go active=0.3.0 journal=gone | laam active=0.3.0 journal=gone
+  _versions/retail after (go):
+0.2.0 0.2.0.sha256 0.3.0.sha256 
+missing-parked-stale-emptycreatedAt    go: kg-packs versions: installer: corrupt swap journal swap.json: parsing time "" as "2006-01-02T15:04:05Z07:00": cannot parse "" as "2006"  | laam: LAAM lock noop: ok (25 ms)  | trees DIFFERENT | go active= journal=kept | laam active=0.3.0 journal=gone
+3d2
+< ./_staging/swap.json
+8,141c7
+< ./_versions/retail/.prev-0.3.0
+< ./_versions/retail/.prev-0.3.0/daab
+< ./_versions/retail/.prev-0.3.0/daab/canonical.yaml
+missing-parked-stale-nocreatedAt       go: pharmacy: active 0.2.0 retail: active 0.3.0; stored 0.2.0  | laam: LAAM lock noop: ok (25 ms)  | trees SAME | go active=0.3.0 journal=gone | laam active=0.3.0 journal=gone
+
+=== 6d. corrupt / hostile swap.json (both must refuse and keep the file; nothing moved)
+not-json           go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: corrupt swap journal swap.json: invalid character 'o' looking for beginning of object key string exit=1  || rollback: kg-packs rollback: installer: corrupt swap journal swap.json: invalid character 'o' looking for beginning of object key string exit=1 
+not-json           laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (not valid JSON); fix or remove it by hand (10 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (not valid JSON); fix or remove it by hand exit=1 
+parked-escape      go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1  || rollback: kg-packs rollback: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1 
+parked-escape      laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand (11 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand exit=1 
+parked-abs         go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1  || rollback: kg-packs rollback: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1 
+parked-abs         laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand (10 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand exit=1 
+key-traversal      go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1  || rollback: kg-packs rollback: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1 
+key-traversal      laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (invalid key); fix or remove it by hand (11 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (invalid key); fix or remove it by hand exit=1 
+parked-not-prev    go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1  || rollback: kg-packs rollback: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1 
+parked-not-prev    laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand (13 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand exit=1 
+stale-escape       go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1  || rollback: kg-packs rollback: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1 
+stale-escape       laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected stale path); fix or remove it by hand (11 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected stale path); fix or remove it by hand exit=1 
+current-mismatch   go    journal=kept-intact tree=unchanged :: kg-packs versions: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1  || rollback: kg-packs rollback: installer: refusing invalid swap journal swap.json (fix or remove it by hand) exit=1 
+current-mismatch   laam  journal=kept-intact tree=unchanged :: LAAM lock noop: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand (11 ms) exit=1  || rollback: LAAM rollback retail@0.2.0: ERROR code=needs_repair msg=refusing the swap journal swap.json (unexpected parked path); fix or remove it by hand exit=1 
+canary: hardlink-target 

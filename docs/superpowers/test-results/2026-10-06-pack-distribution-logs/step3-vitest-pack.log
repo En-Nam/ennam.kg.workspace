@@ -1,0 +1,36 @@
+
+ RUN  v4.1.8 /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace/LAAM
+
+stderr | src/lib/intel/pack/dist/lock.test.ts > shared lock > two waiters on the same dead lock never hold it at the same time
+[intel] template lock was taken over while held; not releasing someone else's lock
+
+ ❯ src/lib/intel/pack/dist/lock.test.ts (25 tests | 1 failed) 2789ms
+     × two waiters on the same dead lock never hold it at the same time 254ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/intel/pack/dist/lock.test.ts > shared lock > two waiters on the same dead lock never hold it at the same time
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ src/lib/intel/pack/dist/lock.test.ts:94:23
+     92|     const runs = await Promise.all([1, 2, 3].map(() => withSharedLock(…
+     93|     expect(runs).toEqual(["ok", "ok", "ok"]);
+     94|     expect(maxInside).toBe(1);
+       |                       ^
+     95|     expect((await readdir(path.join(dir, "_staging"))).filter((n) => n…
+     96|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 6 passed (7)
+      Tests  1 failed | 167 passed (168)
+   Start at  01:20:23
+   Duration  3.14s (transform 444ms, setup 525ms, import 915ms, tests 6.07s, environment 1.59s)
+

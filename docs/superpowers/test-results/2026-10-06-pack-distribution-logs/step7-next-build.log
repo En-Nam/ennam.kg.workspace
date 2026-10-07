@@ -1,0 +1,69 @@
+
+> ennam.kg.next@2.5.0 build
+> next build
+
+▲ Next.js 16.2.1 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 6.1s
+  Running TypeScript ...
+  Finished TypeScript in 4.4s ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/39) ...
+  Generating static pages using 11 workers (9/39) 
+  Generating static pages using 11 workers (19/39) 
+  Generating static pages using 11 workers (29/39) 
+✓ Generating static pages using 11 workers (39/39) in 171ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ○ /_not-found
+├ ƒ /activity
+├ ƒ /admin/settings
+├ ƒ /admin/settings/ai-providers
+├ ƒ /admin/settings/claude-oauth
+├ ƒ /admin/sync
+├ ƒ /admin/templates
+├ ƒ /admin/usage
+├ ƒ /admin/users
+├ ƒ /agents
+├ ƒ /api/kg/[...path]
+├ ƒ /api/kg/auth/claude/authorize
+├ ƒ /api/kg/auth/claude/callback
+├ ƒ /api/kg/auth/claude/disconnect
+├ ƒ /api/kg/auth/claude/import-token
+├ ƒ /api/kg/auth/claude/refresh
+├ ƒ /api/kg/auth/claude/status
+├ ƒ /api/kg/auth/logout
+├ ƒ /api/kg/projects/[id]/ingest/upload
+├ ƒ /benchmarks
+├ ○ /change-password
+├ ƒ /chat
+├ ƒ /chat-demo
+├ ƒ /chat/[threadId]
+├ ƒ /code-map
+├ ƒ /data-sources
+├ ƒ /data-sources/[id]
+├ ƒ /decisions
+├ ƒ /favorites
+├ ƒ /graph
+├ ƒ /graph-test
+├ ƒ /impact
+├ ƒ /login
+├ ƒ /metrics
+├ ƒ /projects
+├ ƒ /projects/[id]
+├ ƒ /projects/[id]/members
+├ ƒ /projects/[id]/packs
+├ ƒ /projects/[id]/sources
+├ ƒ /query
+├ ƒ /schema-graph
+├ ƒ /settings
+├ ƒ /settings/api-keys
+└ ƒ /settings/users
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

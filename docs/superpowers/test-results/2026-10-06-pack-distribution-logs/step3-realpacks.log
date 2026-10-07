@@ -1,0 +1,8 @@
+=== RUN   TestRealPacksLoad
+=== RUN   TestRealPacksLoad/retail
+=== RUN   TestRealPacksLoad/pharmacy
+--- PASS: TestRealPacksLoad (0.00s)
+    --- PASS: TestRealPacksLoad/retail (0.00s)
+    --- PASS: TestRealPacksLoad/pharmacy (0.00s)
+PASS
+ok  	github.com/ennam/ennam-kg/internal/intel	0.556s

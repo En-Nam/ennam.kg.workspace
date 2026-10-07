@@ -1,0 +1,19 @@
+=== 6a. Go holds the lock (kg-packs fetch, download delayed 8 s); LAAM tries
+owner.json while Go holds: {"pid":28181,"host":"MacBook-Pro-cua-Danh.local","runtime":"go","startedAt":"2026-10-06T18:24:48.709638Z"}
+LAAM pharmacy@0.2.0: ERROR code=busy msg=another installer is changing templates right now (2025 ms)
+LAAM lock noop: ERROR code=busy msg=another installer is changing templates right now (2046 ms)
+LAAM with 30 s timeout (should wait for Go, then proceed):
+LAAM lock noop: ok (1823 ms)
+go: retail: 0.2.0 -> 0.4.1 (exit 0)
+
+=== 6b. LAAM holds the lock; Go tries
+LAAM holds lock (pid 33207)
+owner.json while LAAM holds: {"pid":33207,"host":"MacBook-Pro-cua-Danh.local","runtime":"node","startedAt":"2026-10-06T18:24:57.201Z"}
+kg-packs fetch: another template install is in progress; try again in a minute
+exit=1 after 2s
+kg-packs rollback: another template install is in progress; try again in a minute
+rollback exit=1 after 2s
+LAAM lock hold: ok (8017 ms)
+retail: 0.4.1 -> 0.2.0
+rollback with 30s wait exit=0 after 2s
+
