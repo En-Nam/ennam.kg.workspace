@@ -101,6 +101,16 @@ Từ 2026-10-06, pack có repo riêng (`ennam.kg.packs`) và được phát hàn
 
 Hướng dẫn đầy đủ (phát hành, cài, quay lại, lệch phiên bản DAAB/LAAM, biến môi trường, yêu cầu hạ tầng cho DevOps): `docs/superpowers/runbooks/2026-10-06-pack-distribution-and-deploy.md`.
 
+## 6d. Ánh xạ dữ liệu trên giao diện (tab Data mapping)
+
+Từ 2026-10-07, Admin dự án có thể thiết lập ánh xạ dữ liệu ngay trên dashboard DAAB, ở tab **Data mapping** của dự án, thay cho `kg-packs import-mapping` và việc sửa tay file. Quy trình: tải file mẫu, điền, tải lên, đọc danh sách vấn đề, áp dụng, rồi các con số được tính lại. Thứ tự luôn là: bật pack, rồi ánh xạ, rồi tính lại.
+
+Pack 0.3.0 (có mô tả cho từng trường) chỉ nạp được bởi DAAB build từ commit `853ad99` trở về sau, nên phải build lại DAAB trước khi cài pack này.
+
+Chưa có lịch sử hay quay lại ánh xạ, vì vậy hãy tải ánh xạ hiện tại về trước khi áp dụng file mới.
+
+Hướng dẫn đầy đủ, gồm bảng mã lỗi và các giới hạn: `docs/superpowers/runbooks/2026-10-07-data-mapping.md`.
+
 ## 7. Giới hạn cần nói thật khi demo
 
 - Con số margin PH-003 là số thật của dữ liệu mẫu (~$260 / 14 ngày; kịch bản rủi ro −$960 trong 30 ngày), **không phải $18.000 / 82%** như ví dụ trong yêu cầu. Ví dụ đó là minh họa ở quy mô lớn hơn.
