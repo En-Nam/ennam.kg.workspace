@@ -1,7 +1,7 @@
 # Ennam Knowledge Graph Platform — RELEASE bundle (v2.5.0)
 #
 # Runs the pinned, pre-built PRODUCTION images (no source build; the only bind-mount
-# is the industry packs dir, PACKS_HOST_DIR, default ./packs):
+# is the industry packs dir, PACKS_HOST_DIR, default ./ennam.kg.packs):
 #   daab-server:v2.5.0      (Go API)
 #   daab-python:v2.5.0      (indexer + worker, same image / different command)
 #   daab-dashboard:v2.5.0   (Next.js dashboard)
@@ -116,7 +116,7 @@ services:
       - ennam_uploads:/app/data/uploads
       # Host dir must exist and be writable by uid 1000 (ennam). Use an absolute
       # PACKS_HOST_DIR on servers.
-      - ${PACKS_HOST_DIR:-./packs}:/packs
+      - ${PACKS_HOST_DIR:-./ennam.kg.packs}:/packs
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

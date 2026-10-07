@@ -127,7 +127,7 @@ services:
       - ennam_uploads:/app/data/uploads
       # Host dir must exist and be writable by the container user. Use an absolute
       # PACKS_HOST_DIR: a relative one resolves against this file's directory.
-      - ${PACKS_HOST_DIR:-./packs}:/packs
+      - ${PACKS_HOST_DIR:-./ennam.kg.packs}:/packs
     depends_on:
       postgres:
         condition: service_healthy
