@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Rebuild the pharmacy_demo database from demo_mockdata/*.csv.
+# Rebuild the pharmacy_demo database from demo_mockdata/*.csv (or $DEMO_DATA_DIR/*.csv).
 #   DAAB_PG_CONTAINER=<container> scripts/demo_data/load_pharmacy_demo.sh <verified pg_dump -Fc backup of pharmacy_demo>
 # Env: DAAB_PG_CONTAINER (REQUIRED, no default), PHARMACY_DB (default pharmacy_demo),
+#      DEMO_DATA_DIR (default <workspace>/demo_mockdata; e.g. demo_mockdata_shifted from shift_dates.py),
 #      CONFIRM_LIVE_RELOAD=yes (REQUIRED additionally when the container is daab-postgres).
 # Refuses to drop anything unless: target container is running, backup exists and contains
 # pharmacy_demo table data, and ALL inputs (base.sql, extension.sql, 25 CSVs) exist.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DATA="$ROOT/demo_mockdata"
+DATA="$(cd "${DEMO_DATA_DIR:-$ROOT/demo_mockdata}" && pwd)"
 SCHEMA="$ROOT/scripts/demo_data/schema"
 LIVE_CONTAINER="daab-postgres"
 CONTAINER="${DAAB_PG_CONTAINER:-}"
