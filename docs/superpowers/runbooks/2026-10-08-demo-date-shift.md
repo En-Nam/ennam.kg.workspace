@@ -29,6 +29,9 @@ DB thật `pharmacy_demo` **chưa** bị đụng tới.
    - Khi đó `check-expected-findings` sẽ **FAIL** (thiếu FND-008, thừa critical RET-SALES-001 ở PH-005).
    - Các luật dùng cửa sổ trượt (PH-CLAIM-001, PH-MARGIN-001, RET-MARGIN-002, RET-INV-010, RET-REF-*, RET-CASH-*, RET-VENDOR-001, RET-X-REPRINT-001, RET-DISC-003…) **không bị ảnh hưởng**.
 2. **Cảnh báo "dữ liệu cũ" quay lại sau 7 ngày.** LAAM chỉ báo khi `ngày chạy − as_of > 7`. Với as-of 2026-10-02, các lần chạy **từ 2026-10-10** sẽ lại báo "8 ngày". Muốn Home "sạch" trong buổi demo thì phải chạy phân tích trước ngày 10/10, hoặc dời thêm 7·k ngày gần ngày demo hơn.
+   - Lưu ý: job hằng ngày (cron `0 6 * * *` giờ Chicago) **tự chạy** vào 10/10 và làm cảnh báo hiện lại. Không ai cần bấm gì cả.
+   - Cách xử lý rẻ nhất: chạy lại `shift_dates.py` từ **`demo_mockdata/` gốc** với `--days 70`, `77`, … sao cho as-of mới nằm trong vòng 7 ngày trước buổi demo. Không dời chồng lên bản đã dời; công cụ cũng từ chối việc này. Sau đó lặp lại các bước 2–9.
+   - Hoặc tạm tắt job hằng ngày cho tới buổi demo.
 3. Các phương án (người điều phối chọn):
    - **(a) +63 như kế hoạch**, chấp nhận mất FND-008. Khi đó phải sửa kỳ vọng (bỏ hoặc tạm loại FND-008) và chấp nhận critical PH-005; hoặc tạo lại targets cho đúng tháng mới (vẫn chỉ có 2 ngày dữ liệu, rất nhiễu).
    - **(b) +56 ngày** (`--days 56`, as-of **2026-09-25**). Giữ được FND-008 mà không cần sửa `targets.xlsx`:
