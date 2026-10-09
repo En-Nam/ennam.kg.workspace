@@ -12,7 +12,7 @@ LAAM Home đang báo "Dữ liệu cũ hơn bản phân tích này 68 ngày", vì
 - Luật chỉ tiêu (RET-SALES-001, RET-MARGIN-001) được tính lại bằng SQL mô phỏng đúng công thức của LAAM. Kết quả ở mục 1.
 
 > Chạy lệnh từ thư mục gốc workspace: `cd /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace`.
-> Chỉ dùng container `daab-postgres` (cổng 5433). Không đụng cổng 5432. DB LAAM (5500) chỉ dùng ở bước 8–10.
+> Chỉ dùng container `daab-postgres` (cổng 5433). Không đụng cổng 5432. Phía LAAM chỉ đi qua `docker exec laam-v2-app node` (mục 4, phần 3).
 
 ## 0. Vì sao là +70, và giới hạn thời gian
 
@@ -89,17 +89,17 @@ Gốc (as-of 2026-07-31): PH-004 0.5666 critical, các cửa hàng khác 1.0199�
 
 ```bash
 scripts/demo_data/refresh_demo.sh 2026-10-09
-# → demo_mockdata_shifted_70/ (25 CSV + targets.xlsx + SHIFT_MANIFEST.json) + in ra các lệnh cutover
 ```
 
-- Lệnh từ chối nếu ngày 2026-10-09 vẫn là "ngày mai" ở Chicago. Nếu cần, có thể chạy tay:
+Lệnh này tạo `demo_mockdata_shifted_70/`, gồm 25 CSV, `targets.xlsx` và `SHIFT_MANIFEST.json`, rồi in ra các bước cutover theo đúng thứ tự.
+
+- Lệnh từ chối nếu ở Chicago vẫn chưa sang ngày 2026-10-09.
+- Nếu cần, có thể chạy tay:
 
   ```bash
-  cd scripts/demo_data
-  uv run pytest -q   # kỳ vọng: 112 passed
+  cd scripts/demo_data && uv run pytest -q          # kỳ vọng: 127 passed
   uv run python shift_dates.py --days 70 --output ../../demo_mockdata_shifted_70
-  uv run python retarget_demo.py --data ../../demo_mockdata_shifted_70
-  cd ../..
+  uv run python retarget_demo.py --data ../../demo_mockdata_shifted_70 && cd ../..
   ```
 
 - `demo_mockdata/` gốc giữ nguyên. Thư mục `demo_mockdata_shifted_70/` không được commit.
@@ -107,24 +107,54 @@ scripts/demo_data/refresh_demo.sh 2026-10-09
 ## 3. Sao lưu (bắt buộc)
 
 ```bash
-TS=$(date +%Y%m%dT%H%M%S); mkdir -p ~/backups/demo-shift
+TS=$(date +%Y%m%dT%H%M%S); B=.superpowers/backups; mkdir -p $B     # thư mục này đã được git-ignore
 U=$(docker exec daab-postgres printenv POSTGRES_USER)
-docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > ~/backups/demo-shift/pharmacy_demo_$TS.dump
+docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > $B/pharmacy_demo_precutover_$TS.dump
 docker exec daab-postgres pg_dump -U "$U" -Fc -t metric_value -t project_intel_settings -t file_dataset -t file_dataset_row ennam_kg \
-  > ~/backups/demo-shift/ennam_kg_intel_$TS.dump
-docker exec -i daab-postgres pg_restore --list < ~/backups/demo-shift/pharmacy_demo_$TS.dump | grep -c "TABLE DATA public"   # 25
-LU=$(docker exec laam-postgres printenv POSTGRES_USER)
-docker exec laam-postgres psql -U "$LU" -d laam -c \
-  "select id, \"metricsProvider\", \"daabProjectId\", \"asOfOverride\" from business_project order by id" \
-  | tee ~/backups/demo-shift/laam_business_project_$TS.txt
+  > $B/ennam_kg_intel_precutover_$TS.dump
+docker exec -i daab-postgres pg_restore --list < $B/pharmacy_demo_precutover_$TS.dump | grep -c "TABLE DATA public"   # 25
 ```
 
-## 4. Nạp dữ liệu mới vào `pharmacy_demo`
+Cutover 2026-10-09 đã dùng các bản sao lưu `pharmacy_demo_precutover_20261009T103542.dump` và `ennam_kg_intel_precutover_20261009T103542.dump`, nằm trong `.superpowers/backups/`.
+
+## 4. Cutover: thứ tự đã chạy thành công (2026-10-09)
+
+Ba phần đều nằm trong `scripts/demo_data/cutover.sh`. Script này được tổng quát hoá từ các script `cutover_part1/2/3.sh` mà người điều phối đã chạy. Các script gốc chỉ nằm trong scratchpad của phiên và **không** có trong repo. Script mới không chạy gì nếu thiếu tham số.
+
+Yêu cầu chung:
+- Chạy từ thư mục gốc workspace.
+- `DAAB_API_KEY` phải có trong môi trường. Script không in khoá này.
+- Cổng kg-server lấy từ `KG_SERVER_PORT` trong `.env` (chỉ đọc đúng khoá đó), mặc định 8082.
+
+| Phần | Khi nào chạy | Lệnh | Các bước bên trong |
+|---|---|---|---|
+| 1 | Bất cứ lúc nào | `CONFIRM_LIVE_RELOAD=yes scripts/demo_data/cutover.sh part1 demo_mockdata_shifted_70 $B/pharmacy_demo_precutover_$TS.dump` | (1) nạp `pharmacy_demo`<br>(2) `verify_plants.sql -v shift_days=70`<br>(3) kiểm tra ngày cuối = 2026-10-09<br>(4) `resync_daab_schema.sh`<br>(5) tải `store_targets` lần 1 (replace, kỳ vọng 150 dòng) |
+| 2 | Từ **00:00 giờ Chicago ngày 2026-10-09** (12:00 giờ VN); script tự chặn nếu sớm | `scripts/demo_data/cutover.sh part2 demo_mockdata_shifted_70` | (6) `kg-packs set-as-of --date 2026-10-09`<br>(7) `kg-packs run-metrics --from 2025-08-01 --to 2026-10-10`, tính các metric **không** phải file<br>(8) **tải `store_targets` LẦN 2** (replace)<br>(9) chờ tới khi mọi `data_status` có chữ `target` là `current` và `period_to` của `metric:*target*` ≥ 2026-10-01 |
+| 3 | Sau phần 2 | `scripts/demo_data/cutover.sh part3 demo_mockdata_shifted_70` | (10) LAAM `business_project.asOfOverride='2026-10-09'` cho `bp-pharmacy-chain-demo`, và đặt `analysis_job.nextRunAt` về quá khứ<br>(11) chờ một lần chạy `succeeded` mới<br>(12) `check-expected-findings --findings-json` **chỉ trên lần chạy đó** |
+
+**Vì sao phải tải chỉ tiêu hai lần:**
+- `kg-packs run-metrics` chạy bằng `docker exec daab-server go run ./cmd/kg-packs …` **không có bộ đọc nguồn cho mode=file**. Với entity `target` (dataset `store_targets`), nó báo lỗi `no source resolver for mode "file"`.
+- Vì vậy `retail.target_net_sales`, `retail.target_gross_margin_pct` và `entity:target` vẫn ở trạng thái `delayed`, kỳ cũ là tháng 7.
+- Chỉ lần tính metric **bên trong server**, được kích hoạt khi tải dataset lên, mới có bộ đọc file. Lần tải đó phải diễn ra **sau** `set-as-of`, thì metric chỉ tiêu mới được tính cho tháng của as-of mới.
+
+**Triệu chứng nếu quên lần tải thứ 2:**
+- LAAM Home hiện 3 cảnh báo "… đang về trễ hơn thường lệ" (entity `target` và 2 metric chỉ tiêu).
+- RET-SALES-001 không bắn cho PH-004, nên thiếu FND-008 và check-expected-findings chỉ đạt 8/9.
+- Cách sửa: tải `store_targets` lại, chờ các metric chỉ tiêu `current`, rồi chạy lại phân tích LAAM.
+
+**LAAM.** Phần 3 không dùng `psql` vào DB của LAAM. Nó chạy `docker exec -i -w /app laam-v2-app node …` với `DATABASE_URL` có sẵn trong container của app; script không bao giờ đọc hay in giá trị này. Có thể thay bước (10) bằng giao diện: trang quản trị dự án → ngày dữ liệu → **Chạy ngay**.
+
+**Các câu kiểm tra** (đều chỉ đọc):
 
 ```bash
-DEMO_DATA_DIR=demo_mockdata_shifted_70 DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes \
-  scripts/demo_data/load_pharmacy_demo.sh ~/backups/demo-shift/pharmacy_demo_$TS.dump      # 25 dòng "ok"
+P=4ad7a5fa-a036-4f6a-8229-39a20af23e38
+# sau phần 1
 docker exec -i daab-postgres psql -U "$U" -d pharmacy_demo -X -v shift_days=70 -f - < scripts/demo_data/verify_plants.sql
+docker exec daab-postgres psql -U "$U" -d ennam_kg -At -c "select row_count from file_dataset where project_id='$P' and name='store_targets'"   # 150
+# sau phần 2
+docker exec daab-postgres psql -U "$U" -d ennam_kg -At -c "select count(*) from data_status where project_id='$P' and status <> 'current'"      # 0
+docker exec daab-postgres psql -U "$U" -d ennam_kg -At -c "select subject, status, period_to from data_status where project_id='$P' and subject like '%target%' order by 1"
+#   kỳ vọng: current, metric:retail.target_* period_to = 2026-10-31
 ```
 
 Kết quả `verify_plants.sql` phải như sau:
@@ -137,47 +167,21 @@ Kết quả `verify_plants.sql` phải như sau:
 | `sarah_refunds_jul` | 60 |
 | `movement_types` | RECEIPT 2571 / REFUND_RETURN 688 / SALE 93435 |
 
-⚠️ Phải có `DEMO_DATA_DIR`. Thiếu biến này thì script nạp lại cửa sổ **cũ**.
+Cutover 2026-10-09 đạt kết quả:
+- 48/48 dòng `data_status` ở trạng thái `current`.
+- Metric chỉ tiêu có `period_to` = 2026-10-31.
+- check-expected-findings **PASS 9/9** trên lần chạy mới nhất.
 
-## 5. Đồng bộ schema DAAB
+⚠️ **Kiểm tra phát hiện chỉ trên lần chạy mới nhất** (phần 3 tự làm việc này):
+- Phát hiện được gộp theo `luật + dims`, không theo ngày (`LAAM/src/lib/intel/engine/dedupe.ts`). Các dòng tạo từ thời as-of 07-31 vẫn còn, nên đọc cả bảng `finding` sẽ PASS kể cả khi dữ liệu mới không phát hiện gì.
+- Mỗi lần ghi đều đặt `lastRunId` (`store/repo.ts`). Phần 3 xuất `{ruleId, dims, severity}` của các dòng `"lastRunId" = <lần chạy mới nhất>` rồi chạy `node scripts/check-expected-findings.ts --findings-json <file>`. Kỳ vọng: PASS 9/9.
+- Các phát hiện cũ mà lần chạy mới không tạo lại vẫn nằm trên Home với trạng thái cũ. Nếu muốn dọn, xem danh sách (`"lastRunId" <> <lần chạy mới>` và chưa resolved/dismissed) rồi mới quyết định.
 
-```bash
-DAAB_API_KEY=<khoá developer> scripts/demo_data/resync_daab_schema.sh   # source_tables=25 architecture_nodes=25/25
-```
-
-## 6. DAAB: as-of → chỉ tiêu → metric (đúng thứ tự)
-
-```bash
-# 6a. as-of TRƯỚC (chỉ sau 00:00 giờ Chicago ngày 2026-10-09)
-docker exec -w /app daab-server go run ./cmd/kg-packs set-as-of --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --date 2026-10-09
-# 6b. thay dataset chỉ tiêu (write_mode=replace thay toàn bộ 170 dòng cũ bằng 150 dòng mới)
-curl -fsS -X POST -H "Authorization: Bearer $DAAB_API_KEY" -F ingest_mode=tabular -F dataset_name=store_targets \
-  -F write_mode=replace -F file=@demo_mockdata_shifted_70/targets.xlsx \
-  http://localhost:8082/api/v1/projects/4ad7a5fa-a036-4f6a-8229-39a20af23e38/ingest/upload
-#     (hoặc giao diện Knowledge Sources → "Dữ liệu bảng", dataset store_targets, chế độ thay thế)
-# 6c. tính lại toàn bộ metric
-docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-10
-```
-
-- `--from 2025-08-01` là ngày đầu của dữ liệu **gốc**. Bộ lưu xoá rồi ghi lại theo cửa sổ, nên bắt đầu từ đó thì xoá hết metric cũ của 2025-08-01..2025-10-09.
-- Việc tải chỉ tiêu tự kích hoạt một lần tính metric. `run-metrics` vẫn phải chạy để tính lại toàn bộ lịch sử.
-- Không cần khởi động lại `daab-server`.
-
-Kiểm tra:
-
-```bash
-docker exec daab-postgres psql -U "$U" -d ennam_kg -c "select metric_key, min(period_date), max(period_date) from metric_value where project_id='4ad7a5fa-a036-4f6a-8229-39a20af23e38' group by 1 order by 1"
-```
-
-Kỳ vọng:
-- Metric ngày nằm trong 2025-10-10..2026-10-09.
-- `retail.target_net_sales` có kỳ 2026-10-01.
-
-## 7. Seed LAAM: KHÔNG chạy lại trước khi sửa (repo LAAM, người điều phối sửa)
+## 5. Seed LAAM: KHÔNG chạy lại trước khi sửa (repo LAAM, người điều phối sửa)
 
 `LAAM/scripts/seed-intel-demo.ts` ghi `asOfOverride = DEMO_AS_OF` ("2026-07-31") cho **cả** `bp-pharmacy-chain-demo` lẫn `bp-demo-synthetic` (dòng 63). Chạy lại seed sẽ đưa as-of về 07-31.
 
-Dự án tổng hợp dùng `LAAM/scripts/intel-demo-fixture.ts`, trong đó có nhiều ngày cài cứng (05-01, 07-01, 07-18). Vì vậy **đừng** đổi `DEMO_AS_OF` chung. Chỉ sửa một dòng:
+Đừng đổi `DEMO_AS_OF` chung, vì fixture tổng hợp có các ngày cài cứng. Chỉ sửa một dòng:
 
 ```ts
 // LAAM/scripts/seed-intel-demo.ts:63
@@ -188,47 +192,10 @@ Kèm sửa comment dòng 36 thành `--date 2026-10-09`.
 
 Chỉ khi muốn dự án tổng hợp cũng "trẻ" lại, mới cần sửa thêm:
 - Đổi `DEMO_AS_OF` thành "2026-10-09".
-- Trong `intel-demo-fixture.ts:37-38`, đổi `from: "2026-07-18"` thành `"2026-09-26"` và cộng 70 ngày cho các `from` khác (05-01 → 07-10, 07-01 → 09-09).
+- Trong `intel-demo-fixture.ts:37-38`, đổi `"2026-07-18"` thành `"2026-09-26"`, và cộng 70 ngày cho các `from` khác (05-01 → 07-10, 07-01 → 09-09).
 - Cập nhật `intel-demo-fixture.test.ts`.
 
-## 8. LAAM: đặt as-of cho dự án demo
-
-```bash
-docker exec laam-postgres psql -U "$LU" -d laam -c "select id, \"metricsProvider\", \"daabProjectId\", \"asOfOverride\" from business_project where id in ('bp-pharmacy-chain-demo','bp-demo-retail-mart','bp-demo-synthetic')"
-docker exec laam-postgres psql -U "$LU" -d laam -c "update business_project set \"asOfOverride\"='2026-10-09', \"updatedAt\"=now() where id='bp-pharmacy-chain-demo'"
-```
-
-`bp-demo-retail-mart`: chỉ đổi khi `metricsProvider='daab'` và `daabProjectId='4ad7a5fa-…'`. Nếu dùng fixture giả thì để nguyên, xem mục 7.
-
-## 9. Chạy lại phân tích LAAM
-
-Cách 1: trang quản trị dự án → **Kiểm tra hằng ngày** → **Chạy ngay**.
-
-Cách 2:
-
-```bash
-docker exec laam-postgres psql -U "$LU" -d laam -c "update analysis_job set \"nextRunAt\"=now() - interval '1 minute' where \"businessProjectId\"='bp-pharmacy-chain-demo' and kind='daily'"
-```
-
-## 10. Kiểm tra
-
-⚠️ **Đừng chạy trình kiểm tra trên toàn bảng `finding`.**
-- Phát hiện được gộp theo `luật + dims`, không theo ngày (`LAAM/src/lib/intel/engine/dedupe.ts`). Các dòng tạo từ thời as-of 07-31 vẫn còn, nên `check-expected-findings.ts` đọc cả bảng sẽ PASS kể cả khi dữ liệu mới không phát hiện gì.
-- Mỗi lần ghi (thêm hoặc cập nhật) đều đặt `lastRunId` (`LAAM/src/lib/intel/store/repo.ts`). Vì vậy chỉ kiểm tra các phát hiện **của lần chạy sau cutover**:
-
-```bash
-RUN=$(docker exec laam-postgres psql -U "$LU" -d laam -At -c "select id from analysis_run where \"businessProjectId\"='bp-pharmacy-chain-demo' and status='succeeded' order by \"finishedAt\" desc limit 1")
-docker exec laam-postgres psql -U "$LU" -d laam -At -c "select coalesce(json_agg(json_build_object('ruleId',\"ruleId\",'dims',dims,'severity',severity)),'[]') from finding where \"projectId\"='bp-pharmacy-chain-demo' and \"lastRunId\"='$RUN'" > /tmp/findings_after_cutover.json
-node scripts/check-expected-findings.ts --findings-json /tmp/findings_after_cutover.json      # kỳ vọng: PASS 9/9
-```
-
-- Kiểm tra `RUN` có `finishedAt` sau thời điểm cutover. Nếu không, lần chạy ở bước 9 chưa xong.
-- Các phát hiện cũ không được lần chạy mới tạo lại vẫn nằm trên Home với trạng thái cũ.
-- Người điều phối có thể quyết định đóng các phát hiện đó (chỉ những dòng có `"lastRunId" <> '$RUN'` và đang mở), sau khi đã xem danh sách:
-
-```bash
-docker exec laam-postgres psql -U "$LU" -d laam -c "select \"ruleId\", dims, status from finding where \"projectId\"='bp-pharmacy-chain-demo' and \"lastRunId\" is distinct from '$RUN' and status not in ('resolved','dismissed')"
-```
+## 6. Mô tả kỳ vọng và Home
 
 Nên sửa phần mô tả trong `demo_mockdata/expected_findings.csv` (trình kiểm tra không đọc phần này):
 - FND-009: "From 2026-07-18" → "From 2026-09-26".
@@ -236,36 +203,39 @@ Nên sửa phần mô tả trong `demo_mockdata/expected_findings.csv` (trình k
 
 Trên **LAAM Home** (`bp-pharmacy-chain-demo`):
 - Dòng trạng thái: "Data through Oct 9, 2026".
-- **Không** còn câu "Dữ liệu cũ hơn … ngày" (đúng cho các lần chạy tới hết 2026-10-16).
+- Không còn câu "Dữ liệu cũ hơn … ngày" (đúng cho các lần chạy tới hết 2026-10-16).
+- Không còn cảnh báo "về trễ".
 - 9 phát hiện: hoàn tiền của Sarah Miller (EMP-0006), hao hụt PH-005, hoàn tiền trùng, override PH-002 (EMP-0023), từ chối claim PH-004, thiếu két PH-005 (EMP-0102), in lại hoá đơn trước hoàn tiền, PH-004 dưới chỉ tiêu (critical), biên Rx PH-003 giảm từ 2026-09-26.
 
-## 11. Làm mới trước một ngày demo khác
+## 7. Làm mới trước một ngày demo khác
 
 ```bash
-scripts/demo_data/refresh_demo.sh <ngày-demo hoặc hôm trước>            # không phá gì, in ra lệnh
-REFRESH_REPLACE=yes CONFIRM_LIVE_RELOAD=yes scripts/demo_data/refresh_demo.sh <ngày> ~/backups/demo-shift/<bản sao lưu>.dump
+scripts/demo_data/refresh_demo.sh <ngày-demo hoặc hôm trước>      # không phá gì: tạo gói + in các bước theo thứ tự
+REFRESH_REPLACE=yes CONFIRM_LIVE_RELOAD=yes DAAB_API_KEY=… scripts/demo_data/refresh_demo.sh <ngày> <bản sao lưu>.dump   # chạy luôn phần 1
+scripts/demo_data/cutover.sh part2 demo_mockdata_shifted_<N>      # từ 00:00 Chicago của ngày as-of
+scripts/demo_data/cutover.sh part3 demo_mockdata_shifted_<N>
 ```
 
-- Script lấy N = bội số 7 lớn nhất sao cho 2026-07-31 + N ≤ ngày đó. Script luôn dời từ **gói gốc**, không dời chồng.
-- Chạy với `CONFIRM_LIVE_RELOAD=yes` + bản sao lưu thì script chỉ nạp lại `pharmacy_demo` và chạy `verify_plants`. Các bước 5–10 vẫn phải làm tay theo lệnh nó in ra.
+- Script lấy N = bội số 7 lớn nhất sao cho 2026-07-31 + N ≤ ngày đó, và luôn dời từ **gói gốc**.
 - Chọn ngày demo hoặc ngày trước đó, để độ trễ ≤ 7.
 
-## 12. Hoàn tác
+## 8. Hoàn tác
+
+Thứ tự giống cutover: as-of trước, rồi tải chỉ tiêu **sau** `run-metrics`.
 
 ```bash
-docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > ~/backups/demo-shift/pharmacy_demo_shifted_$TS.dump
-DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes scripts/demo_data/load_pharmacy_demo.sh ~/backups/demo-shift/pharmacy_demo_shifted_$TS.dump   # nạp lại CSV gốc
-DAAB_API_KEY=<khoá> scripts/demo_data/resync_daab_schema.sh
+docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > $B/pharmacy_demo_shifted_$TS.dump
+DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes scripts/demo_data/load_pharmacy_demo.sh $B/pharmacy_demo_shifted_$TS.dump   # nạp lại CSV gốc
+scripts/demo_data/resync_daab_schema.sh
 docker exec -w /app daab-server go run ./cmd/kg-packs set-as-of --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --date 2026-07-31
+docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-10
 curl -fsS -X POST -H "Authorization: Bearer $DAAB_API_KEY" -F ingest_mode=tabular -F dataset_name=store_targets -F write_mode=replace \
   -F file=@demo_mockdata/targets.xlsx http://localhost:8082/api/v1/projects/4ad7a5fa-a036-4f6a-8229-39a20af23e38/ingest/upload
-docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-10
-docker exec laam-postgres psql -U "$LU" -d laam -c "update business_project set \"asOfOverride\"='2026-07-31', \"updatedAt\"=now() where id='bp-pharmacy-chain-demo'"
+# LAAM: asOfOverride='2026-07-31' cho bp-pharmacy-chain-demo (giao diện quản trị, hoặc docker exec laam-v2-app node như cutover.sh part3), rồi Chạy ngay
 ```
 
-Khi hoàn tác, `--to 2026-10-10` xoá luôn các metric của 2026-08-01..2026-10-09.
-
-Nếu cần khôi phục đúng nguyên trạng DB: `pg_restore` bản `pharmacy_demo_$TS.dump` vào một `pharmacy_demo` vừa tạo lại, và `ennam_kg_intel_$TS.dump` (cẩn thận: chỉ 4 bảng intel).
+- `--to 2026-10-10` xoá luôn các metric của 2026-08-01..2026-10-09.
+- Nếu cần khôi phục đúng nguyên trạng DB: `pg_restore` bản `pharmacy_demo_precutover_*.dump` vào một `pharmacy_demo` vừa tạo lại, và `ennam_kg_intel_precutover_*.dump` (cẩn thận: chỉ có 4 bảng intel).
 
 ## Ghi chú
 
