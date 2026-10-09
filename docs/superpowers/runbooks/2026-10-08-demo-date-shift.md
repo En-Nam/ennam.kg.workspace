@@ -1,213 +1,279 @@
-# Runbook: dời ngày dữ liệu demo nhà thuốc lên 63 ngày (2026-07-31 → 2026-10-02)
+# Runbook: làm "trẻ" dữ liệu demo nhà thuốc (+70 ngày, as-of 2026-10-09)
 
-Mục đích: LAAM Home đang báo "Dữ liệu cũ hơn bản phân tích này 68 ngày" vì dữ liệu demo kết thúc ngày 2026-07-31. Ta dời **mọi** cột ngày/giờ của 25 bảng thêm 63 ngày (đúng 9 tuần). Thứ trong tuần, giờ trong ngày, tỉ lệ và mọi mẫu dữ liệu cài sẵn đều giữ nguyên. Cửa sổ mới là **2025-10-03 → 2026-10-02**.
+## Mục đích
 
-Đã kiểm tra trên DB tạm `pharmacy_demo_shift_check` (đã xoá sau khi kiểm tra), ngày 2026-10-08:
+LAAM Home đang báo "Dữ liệu cũ hơn bản phân tích này 68 ngày", vì gói dữ liệu demo kết thúc ngày 2026-07-31. Ta dời **mọi** cột ngày/giờ của 25 bảng thêm **70 ngày** (10 tuần), nên cửa sổ dữ liệu mới là **2025-10-10 → 2026-10-09** (thứ Sáu, giống 2026-07-31). Sau đó ta tạo lại chỉ tiêu cửa hàng (`targets.xlsx`) cho tháng mới, để đủ 9 phát hiện kỳ vọng vẫn còn.
+
+Đã kiểm tra trên DB tạm (đã xoá), DB thật `pharmacy_demo` **chưa** bị đụng tới (2026-10-09):
 - 25/25 bảng khớp số dòng.
-- So từng bảng với dữ liệu gốc sau khi trừ lại 63 ngày: trùng khớp 100% (md5).
-- `verify_plants.sql -v shift_days=63` cho kết quả y hệt bản gốc, chỉ khác dòng `window`.
-- Ngày lớn nhất của các bảng sự kiện chính là 2026-10-02.
+- Từng bảng sau khi trừ lại 70 ngày trùng md5 100% với bản gốc.
+- `verify_plants.sql -v shift_days=70` cho kết quả y hệt bản gốc, chỉ khác dòng `window`.
+- Ngày lớn nhất của các bảng sự kiện chính là 2026-10-09.
+- Luật chỉ tiêu (RET-SALES-001, RET-MARGIN-001) được tính lại bằng SQL mô phỏng đúng công thức của LAAM. Kết quả ở mục 1.
 
-DB thật `pharmacy_demo` **chưa** bị đụng tới.
+> Chạy lệnh từ thư mục gốc workspace: `cd /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace`.
+> Chỉ dùng container `daab-postgres` (cổng 5433). Không đụng cổng 5432. DB LAAM (5500) chỉ dùng ở bước 8–10.
 
-> Lệnh chạy từ thư mục gốc workspace: `cd /Users/danhtrinh/Projects/Exnodes/EnnamKG/ennam.kg.workspace`.
-> Chỉ dùng container `daab-postgres` (cổng 5433). Không đụng cổng 5432. DB của LAAM (cổng 5500) chỉ dùng ở bước 7 và 9.
+## 0. Vì sao là +70, và giới hạn thời gian
 
-## 0. Quyết định trước khi làm (bắt buộc đọc)
+**Cách tính as-of và độ tươi (đọc từ mã nguồn):**
+- DAAB `kg-packs set-as-of` từ chối ngày **sau "hôm nay" theo múi giờ dự án (America/Chicago)** (`ennam.kg.go/cmd/kg-packs/main.go`, `setAsOf`). Ngày bằng hôm nay thì được chấp nhận.
+- DAAB đo độ tươi bằng `as_of − ngày mới nhất của dữ liệu`:
+  - 0 = current, 1–6 = delayed, ≥7 = stale (`engine/runner.go`, `measureFreshness`).
+  - Data kết thúc đúng as-of nên luôn là "current".
+  - Các dòng có ngày sau as-of cho độ trễ âm, cũng là "current".
+- LAAM Home tính độ trễ = `floor((thời điểm chạy phân tích − as_of 00:00Z) / 1 ngày)` và chỉ cảnh báo khi > 7 (`LAAM/src/components/intel/home/DataStatus.tsx`, `STALE_AFTER_DAYS = 7`). LAAM không có kiểm tra "as-of ở tương lai".
+- Job hằng ngày chạy lúc 06:00 America/Chicago (11:00 UTC), tức là tự chạy mỗi ngày.
 
-1. **Phát hiện FND-008 (RET-SALES-001, PH-004 doanh số giảm) sẽ KHÔNG còn**, và sẽ có thêm **một cảnh báo critical lạ ở PH-005**, nếu chỉ dời +63 và giữ nguyên `targets.xlsx`.
-   - Luật này so doanh số **từ đầu tháng tới ngày as-of** với chỉ tiêu tháng (chia theo số ngày).
-   - As-of 2026-10-02 thì "từ đầu tháng" chỉ có 2 ngày (1–2/10, tức 30–31/7 của dữ liệu gốc), so với chỉ tiêu tháng 10/2026.
-   - Ước tính (cùng công thức với metric `retail.net_sales`):
+**So sánh hai lựa chọn:**
 
-     | Store | Tỉ lệ so với chỉ tiêu | Kết quả |
-     |---|---|---|
-     | PH-004 | 1.08 | không bắn |
-     | PH-005 | 0.72 | critical, ngoài kỳ vọng |
-     | PH-001 | 0.89 | high |
+| Shift | as-of | Độ trễ khi chạy hôm nay | Cảnh báo |
+|---|---|---|---|
+| +63 | 2026-10-02 | 7 | Quay lại từ lần chạy 2026-10-10 |
+| **+70** | **2026-10-09** | 0 | Yên lặng tới hết lần chạy **2026-10-16**; lần chạy 2026-10-17 báo "8 ngày" |
 
-   - Khi đó `check-expected-findings` sẽ **FAIL** (thiếu FND-008, thừa critical RET-SALES-001 ở PH-005).
-   - Các luật dùng cửa sổ trượt (PH-CLAIM-001, PH-MARGIN-001, RET-MARGIN-002, RET-INV-010, RET-REF-*, RET-CASH-*, RET-VENDOR-001, RET-X-REPRINT-001, RET-DISC-003…) **không bị ảnh hưởng**.
-2. **Cảnh báo "dữ liệu cũ" quay lại sau 7 ngày.** LAAM chỉ báo khi `ngày chạy − as_of > 7`. Với as-of 2026-10-02, các lần chạy **từ 2026-10-10** sẽ lại báo "8 ngày". Muốn Home "sạch" trong buổi demo thì phải chạy phân tích trước ngày 10/10, hoặc dời thêm 7·k ngày gần ngày demo hơn.
-   - Lưu ý: job hằng ngày (cron `0 6 * * *` giờ Chicago) **tự chạy** vào 10/10 và làm cảnh báo hiện lại. Không ai cần bấm gì cả.
-   - Cách xử lý rẻ nhất: chạy lại `shift_dates.py` từ **`demo_mockdata/` gốc** với `--days 70`, `77`, … sao cho as-of mới nằm trong vòng 7 ngày trước buổi demo. Không dời chồng lên bản đã dời; công cụ cũng từ chối việc này. Sau đó lặp lại các bước 2–9.
-   - Hoặc tạm tắt job hằng ngày cho tới buổi demo.
-3. Các phương án (người điều phối chọn):
-   - **(a) +63 như kế hoạch**, chấp nhận mất FND-008. Khi đó phải sửa kỳ vọng (bỏ hoặc tạm loại FND-008) và chấp nhận critical PH-005; hoặc tạo lại targets cho đúng tháng mới (vẫn chỉ có 2 ngày dữ liệu, rất nhiễu).
-   - **(b) +56 ngày** (`--days 56`, as-of **2026-09-25**). Giữ được FND-008 mà không cần sửa `targets.xlsx`:
-     - PH-004 tỉ lệ 0.66 → critical.
-     - Các store khác 1.04–1.18 → không bắn.
-     - Dữ liệu cũ 13 ngày vào ngày 8/10, nên cảnh báo "cũ" vẫn hiện.
-   - **(c) +63, dời as-of về 2026-09-30.** PH-004 vẫn critical (0.64). Nhưng các luật cửa sổ trượt mất 2 ngày cuối của dữ liệu cài sẵn (biên margin PH-003 chỉ còn 12/14 ngày), nên **không khuyến nghị**.
+→ Chọn **+70**.
 
-   Phần còn lại của runbook viết cho +63 / 2026-10-02. Nếu chọn (b), thay `63` bằng `56` và `2026-10-02` bằng `2026-09-25`, `2026-10-03` bằng `2026-09-26`.
+⚠️ **Ràng buộc giờ:**
+- `set-as-of --date 2026-10-09` chỉ chạy được sau **2026-10-09 00:00 giờ Chicago** (= 05:00 UTC = 12:00 giờ Việt Nam). Trước giờ đó lệnh bị từ chối vì là "ngày tương lai".
+- Ngày 2026-10-09 lúc 06:00 Chicago, ngày 9/10 trên thực tế mới bắt đầu, nhưng dữ liệu demo đã có đủ cả ngày đó. Phân tích vẫn đúng vì mọi luật lọc theo as-of. Đây chỉ là chuyện ngữ nghĩa.
 
-## 1. Tạo bộ CSV đã dời ngày
+## 1. Chỉ tiêu cửa hàng: vì sao phải tạo lại, và công thức
+
+**Vì sao phải tạo lại:**
+- RET-SALES-001 so **doanh số từ đầu tháng tới as-of** với **chỉ tiêu tháng × số ngày đã qua / số ngày của tháng** (`LAAM/src/lib/intel/engine/rules.ts`, `compare: target`, `monthToDate`). RET-MARGIN-001 so tỉ lệ lãi gộp, không chia theo ngày.
+- Chỉ tiêu đến từ dataset file `store_targets`, được tải lên từ `targets.xlsx` (mapping `target`, mode=file, cột `Store ID | Metric Key | Period | Target Value`).
+- Dời ngày làm as-of rơi vào tháng 10/2026, chỉ có 9 ngày (1–9/10, tức 23–31/7 của dữ liệu gốc). Nếu giữ `targets.xlsx` cũ, kết quả là: PH-004 0.946 (chỉ warning), PH-002 0.972, PH-001 1.16. Mất mức critical của FND-008.
+
+**Cách tạo lại:** `scripts/demo_data/retarget_demo.py` (có test, chạy lại luôn ra cùng kết quả).
+
+Số liệu thực tế được tính theo đúng định nghĩa metric `retail.net_sales` / `retail.gross_margin_pct` trên mapping `pharmacy_demo`:
+- Chỉ đơn `completed`.
+- Bỏ sản phẩm kê đơn.
+- Doanh số thuần = SL × giá − giảm giá.
+- Giá vốn = SL × COALESCE(giá vốn dòng, giá vốn sản phẩm).
+
+`run_rate(tháng) = thực tế × số ngày của tháng / số ngày có dữ liệu trong tháng`.
+
+| Tháng | Công thức net_sales |
+|---|---|
+| Trước tháng as-of | `floor100(run_rate × 0.98)` (giống bộ sinh dữ liệu: "đạt chỉ tiêu") |
+| Tháng as-of, các cửa hàng khác | `floor100(run_rate × 0.98)` → tỉ lệ ≥ 1/0.98 = 1.0204 |
+| Tháng as-of, PH-004 | `round100(run_rate / plant_ratio)` → tỉ lệ ≈ plant_ratio |
+| Sau tháng as-of | `round100(thực tế cùng tháng năm trước × 1.03)` |
+
+- `plant_ratio` = thực tế tháng 7/2026 gốc của PH-004 / chỉ tiêu tháng 7 gốc = **0.5666**. Script đọc giá trị này từ gói gốc, không đặt cứng.
+- `gross_margin_pct` = `round(gm_thực_tế − 0.55, 1)` cho các tháng có dữ liệu. Tháng tương lai dùng trung bình 3 tháng đủ gần nhất − 0.55. Vì vậy RET-MARGIN-001 không bao giờ bắn: luật cần gm ≤ chỉ tiêu − 2.
+- Khoảng tháng: từ tháng đầu có dữ liệu (2025-10) tới tháng 12 của năm as-of (2026-12). Tổng 15 tháng × 5 cửa hàng × 2 metric = 150 dòng. Bản gốc có 170 dòng, gồm 2025-08..09 nay không còn dữ liệu.
+
+**Kết quả** (SQL mô phỏng trên DB tạm, as-of 2026-10-09, cửa sổ từ đầu tháng 1–9/10):
+
+| Cửa hàng | Doanh số từ đầu tháng | Chỉ tiêu chia theo ngày | Tỉ lệ | RET-SALES-001 |
+|---|---|---|---|---|
+| PH-001 | 21 092 | 20 642 | 1.0218 | — |
+| PH-002 | 19 391 | 18 987 | 1.0213 | — |
+| PH-003 | 19 035 | 18 639 | 1.0212 | — |
+| **PH-004** | 16 637 | 29 352 | **0.5668** | **critical** (gốc 0.5666) |
+| PH-005 | 19 068 | 18 668 | 1.0214 | — |
+
+RET-MARGIN-001: không cửa hàng nào bắn (gm thực tế cao hơn chỉ tiêu 0.5–0.6 điểm).
+
+Gốc (as-of 2026-07-31): PH-004 0.5666 critical, các cửa hàng khác 1.0199–1.0208. SQL mô phỏng tái tạo đúng kết quả này, nên công thức mô phỏng là đáng tin.
+
+⚠️ **Điều người xem có thể thấy:**
+- Chỉ tiêu tháng 10 của PH-004 là **101 100**, trong khi các cửa hàng khác chỉ 64–71 nghìn. Lý do: trong 23–31/7 gốc, PH-004 đã hồi phục một phần (chỉ còn thấp hơn khoảng 15% so với các cửa hàng khác). Muốn giữ tỉ lệ 0.57 thì chỉ tiêu phải cao.
+- Nếu muốn chỉ tiêu PH-004 "bình thường" (bằng mức trước khi sụt, tức thực tế tháng 8/2026 = 70 370), tỉ lệ sẽ là **0.814**: high, sát ngưỡng critical 0.80. FND-008 vẫn được bắt, vì trình kiểm tra không xét mức độ.
+- Hiện script dùng 0.5666 theo yêu cầu.
+
+## 2. Tạo gói dữ liệu (không phá gì)
 
 ```bash
-cd scripts/demo_data
-uv run pytest -q                                  # kỳ vọng: 96 passed
-uv run python shift_dates.py --dry-run | tail -3  # chỉ báo cáo, không ghi
-rm -rf ../../demo_mockdata_shifted                # công cụ từ chối ghi vào thư mục không rỗng
-uv run python shift_dates.py                      # ghi ../../demo_mockdata_shifted/ + SHIFT_MANIFEST.json
-cd ../..
+scripts/demo_data/refresh_demo.sh 2026-10-09
+# → demo_mockdata_shifted_70/ (25 CSV + targets.xlsx + SHIFT_MANIFEST.json) + in ra các lệnh cutover
 ```
 
-- `demo_mockdata/` giữ nguyên (đó là đầu ra của bộ sinh dữ liệu). `demo_mockdata_shifted/` không commit (47 MB).
-- Công cụ từ chối dời hai lần: nếu thư mục vào đã có `SHIFT_MANIFEST.json` thì nó không chạy.
+- Lệnh từ chối nếu ngày 2026-10-09 vẫn là "ngày mai" ở Chicago. Nếu cần, có thể chạy tay:
 
-## 2. Sao lưu (bắt buộc)
+  ```bash
+  cd scripts/demo_data
+  uv run pytest -q   # kỳ vọng: 112 passed
+  uv run python shift_dates.py --days 70 --output ../../demo_mockdata_shifted_70
+  uv run python retarget_demo.py --data ../../demo_mockdata_shifted_70
+  cd ../..
+  ```
+
+- `demo_mockdata/` gốc giữ nguyên. Thư mục `demo_mockdata_shifted_70/` không được commit.
+
+## 3. Sao lưu (bắt buộc)
 
 ```bash
-TS=$(date +%Y%m%dT%H%M%S)
+TS=$(date +%Y%m%dT%H%M%S); mkdir -p ~/backups/demo-shift
 U=$(docker exec daab-postgres printenv POSTGRES_USER)
-mkdir -p ~/backups/demo-shift
 docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > ~/backups/demo-shift/pharmacy_demo_$TS.dump
-docker exec daab-postgres pg_dump -U "$U" -Fc -t metric_value -t project_intel_settings ennam_kg > ~/backups/demo-shift/ennam_kg_intel_$TS.dump
-docker exec -i daab-postgres pg_restore --list < ~/backups/demo-shift/pharmacy_demo_$TS.dump | grep -c "TABLE DATA public"   # kỳ vọng 25
-```
-
-LAAM: ghi lại giá trị hiện tại để có thể hoàn tác (cổng 5500, chỉ đọc):
-
-```bash
+docker exec daab-postgres pg_dump -U "$U" -Fc -t metric_value -t project_intel_settings -t file_dataset -t file_dataset_row ennam_kg \
+  > ~/backups/demo-shift/ennam_kg_intel_$TS.dump
+docker exec -i daab-postgres pg_restore --list < ~/backups/demo-shift/pharmacy_demo_$TS.dump | grep -c "TABLE DATA public"   # 25
 LU=$(docker exec laam-postgres printenv POSTGRES_USER)
 docker exec laam-postgres psql -U "$LU" -d laam -c \
   "select id, \"metricsProvider\", \"daabProjectId\", \"asOfOverride\" from business_project order by id" \
   | tee ~/backups/demo-shift/laam_business_project_$TS.txt
 ```
 
-## 3. Nạp dữ liệu mới vào `pharmacy_demo`
+## 4. Nạp dữ liệu mới vào `pharmacy_demo`
 
 ```bash
-DEMO_DATA_DIR=demo_mockdata_shifted DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes \
-  scripts/demo_data/load_pharmacy_demo.sh ~/backups/demo-shift/pharmacy_demo_$TS.dump
-# kỳ vọng: 25 dòng "ok <bảng> <số dòng>", không có MISMATCH
-docker exec -i daab-postgres psql -U "$U" -d pharmacy_demo -X -v shift_days=63 -f - < scripts/demo_data/verify_plants.sql
+DEMO_DATA_DIR=demo_mockdata_shifted_70 DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes \
+  scripts/demo_data/load_pharmacy_demo.sh ~/backups/demo-shift/pharmacy_demo_$TS.dump      # 25 dòng "ok"
+docker exec -i daab-postgres psql -U "$U" -d pharmacy_demo -X -v shift_days=70 -f - < scripts/demo_data/verify_plants.sql
 ```
 
 Kết quả `verify_plants.sql` phải như sau:
 
 | Kiểm tra | Kỳ vọng |
 |---|---|
-| `window` | 2025-10-03 → 2026-10-02 |
+| `window` | 2025-10-10 → 2026-10-09 |
 | Tỉ lệ từ chối claim | PH-004 15.9%, các store khác 4.6–5.8% |
-| `rx_margin_pct` PH-003 | last_14d 17.7 / prior 20.0 |
+| `rx_margin_pct` PH-003 | 17.7 / 20.0 |
 | `sarah_refunds_jul` | 60 |
 | `movement_types` | RECEIPT 2571 / REFUND_RETURN 688 / SALE 93435 |
 
-⚠️ Phải có `DEMO_DATA_DIR=demo_mockdata_shifted`. Thiếu biến này thì script nạp lại cửa sổ **cũ**.
+⚠️ Phải có `DEMO_DATA_DIR`. Thiếu biến này thì script nạp lại cửa sổ **cũ**.
 
-## 4. Đồng bộ lại schema DAAB
-
-```bash
-DAAB_API_KEY=<khoá developer> scripts/demo_data/resync_daab_schema.sh
-# kỳ vọng: source_tables=25 architecture_nodes(total/distinct)=25/25
-```
-
-## 5. Đặt as-of DAAB, rồi tính lại metric
-
-Đặt as-of **trước** khi tính metric. `set-as-of` từ chối ngày ở tương lai.
+## 5. Đồng bộ schema DAAB
 
 ```bash
-docker exec -w /app daab-server go run ./cmd/kg-packs set-as-of --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --date 2026-10-02
-docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-03
+DAAB_API_KEY=<khoá developer> scripts/demo_data/resync_daab_schema.sh   # source_tables=25 architecture_nodes=25/25
 ```
 
-- `--from 2025-08-01` là ngày **đầu cũ**. Bộ lưu xoá rồi ghi lại theo cửa sổ, nên đi từ ngày đầu cũ thì xoá được các dòng metric cũ của 2025-08-01..2025-10-02.
-- Không cần khởi động lại `daab-server` vì danh mục pack không đổi.
-- Nếu chọn sửa `targets.xlsx` (phương án a): tải lại dataset `store_targets` qua tab "Dữ liệu bảng" **trước** lệnh `run-metrics`.
+## 6. DAAB: as-of → chỉ tiêu → metric (đúng thứ tự)
 
-Kiểm tra (chỉ đọc):
+```bash
+# 6a. as-of TRƯỚC (chỉ sau 00:00 giờ Chicago ngày 2026-10-09)
+docker exec -w /app daab-server go run ./cmd/kg-packs set-as-of --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --date 2026-10-09
+# 6b. thay dataset chỉ tiêu (write_mode=replace thay toàn bộ 170 dòng cũ bằng 150 dòng mới)
+curl -fsS -X POST -H "Authorization: Bearer $DAAB_API_KEY" -F ingest_mode=tabular -F dataset_name=store_targets \
+  -F write_mode=replace -F file=@demo_mockdata_shifted_70/targets.xlsx \
+  http://localhost:8082/api/v1/projects/4ad7a5fa-a036-4f6a-8229-39a20af23e38/ingest/upload
+#     (hoặc giao diện Knowledge Sources → "Dữ liệu bảng", dataset store_targets, chế độ thay thế)
+# 6c. tính lại toàn bộ metric
+docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-10
+```
+
+- `--from 2025-08-01` là ngày đầu của dữ liệu **gốc**. Bộ lưu xoá rồi ghi lại theo cửa sổ, nên bắt đầu từ đó thì xoá hết metric cũ của 2025-08-01..2025-10-09.
+- Việc tải chỉ tiêu tự kích hoạt một lần tính metric. `run-metrics` vẫn phải chạy để tính lại toàn bộ lịch sử.
+- Không cần khởi động lại `daab-server`.
+
+Kiểm tra:
 
 ```bash
 docker exec daab-postgres psql -U "$U" -d ennam_kg -c "select metric_key, min(period_date), max(period_date) from metric_value where project_id='4ad7a5fa-a036-4f6a-8229-39a20af23e38' group by 1 order by 1"
 ```
 
-Kỳ vọng: metric theo ngày nằm trong 2025-10-03..2026-10-02. Không còn dòng nào trước 2025-10-03, trừ metric theo tháng (bắt đầu từ ngày 1 của tháng).
+Kỳ vọng:
+- Metric ngày nằm trong 2025-10-10..2026-10-09.
+- `retail.target_net_sales` có kỳ 2026-10-01.
 
-## 6. (Nếu cần) cập nhật seed LAAM
+## 7. Seed LAAM: KHÔNG chạy lại trước khi sửa (repo LAAM, người điều phối sửa)
 
-`LAAM/scripts/seed-intel-demo.ts` đang đặt cứng `DEMO_AS_OF = "2026-07-31"`. Nếu chạy lại seed, nó **ghi đè** as-of về 2026-07-31.
-- Đổi thành `"2026-10-02"` trong repo LAAM.
-- Đổi kèm `LAAM/scripts/intel-demo-fixture.ts:37-38` từ `"2026-07-18"` thành `"2026-09-19"`, kèm test của file đó.
-- Xem `.superpowers/sdd/2026-10-08-demo-date-shift/stale-references.md`.
+`LAAM/scripts/seed-intel-demo.ts` ghi `asOfOverride = DEMO_AS_OF` ("2026-07-31") cho **cả** `bp-pharmacy-chain-demo` lẫn `bp-demo-synthetic` (dòng 63). Chạy lại seed sẽ đưa as-of về 07-31.
 
-## 7. Cập nhật as-of LAAM cho các dự án demo
+Dự án tổng hợp dùng `LAAM/scripts/intel-demo-fixture.ts`, trong đó có nhiều ngày cài cứng (05-01, 07-01, 07-18). Vì vậy **đừng** đổi `DEMO_AS_OF` chung. Chỉ sửa một dòng:
 
-Kiểm tra trước, chỉ đổi dự án nào thật sự đọc DAAB project `4ad7a5fa-…`:
+```ts
+// LAAM/scripts/seed-intel-demo.ts:63
+    timezone: TIME_ZONE, localeDefault: "en", asOfOverride: id === BP_SYNTHETIC_ID ? DEMO_AS_OF : "2026-10-09", updatedAt: new Date(),
+```
+
+Kèm sửa comment dòng 36 thành `--date 2026-10-09`.
+
+Chỉ khi muốn dự án tổng hợp cũng "trẻ" lại, mới cần sửa thêm:
+- Đổi `DEMO_AS_OF` thành "2026-10-09".
+- Trong `intel-demo-fixture.ts:37-38`, đổi `from: "2026-07-18"` thành `"2026-09-26"` và cộng 70 ngày cho các `from` khác (05-01 → 07-10, 07-01 → 09-09).
+- Cập nhật `intel-demo-fixture.test.ts`.
+
+## 8. LAAM: đặt as-of cho dự án demo
 
 ```bash
 docker exec laam-postgres psql -U "$LU" -d laam -c "select id, \"metricsProvider\", \"daabProjectId\", \"asOfOverride\" from business_project where id in ('bp-pharmacy-chain-demo','bp-demo-retail-mart','bp-demo-synthetic')"
-docker exec laam-postgres psql -U "$LU" -d laam -c "update business_project set \"asOfOverride\"='2026-10-02', \"updatedAt\"=now() where id in ('bp-pharmacy-chain-demo' /*, 'bp-demo-retail-mart' nếu daabProjectId = 4ad7a5fa-… */)"
+docker exec laam-postgres psql -U "$LU" -d laam -c "update business_project set \"asOfOverride\"='2026-10-09', \"updatedAt\"=now() where id='bp-pharmacy-chain-demo'"
 ```
 
-- `bp-demo-retail-mart` (Mini Mart) và `bp-demo-synthetic` là dự án tổng hợp. Nếu chúng dùng fixture giả thì đặt as-of 2026-10-02 sẽ làm mẫu cài sẵn của fixture nằm ngoài cửa sổ. Khi đó chỉ đổi cùng lúc với bước 6.
-- Có thể đổi bằng giao diện quản trị dự án (trường ngày dữ liệu) thay cho SQL.
+`bp-demo-retail-mart`: chỉ đổi khi `metricsProvider='daab'` và `daabProjectId='4ad7a5fa-…'`. Nếu dùng fixture giả thì để nguyên, xem mục 7.
 
-## 8. Chạy lại phân tích LAAM
+## 9. Chạy lại phân tích LAAM
 
-Cách 1: giao diện quản trị dự án → **Kiểm tra hằng ngày** → **Chạy ngay** (1–2 phút).
+Cách 1: trang quản trị dự án → **Kiểm tra hằng ngày** → **Chạy ngay**.
 
-Cách 2: đưa `nextRunAt` về quá khứ, tick sẽ nhận trong khoảng 1 phút:
+Cách 2:
 
 ```bash
 docker exec laam-postgres psql -U "$LU" -d laam -c "update analysis_job set \"nextRunAt\"=now() - interval '1 minute' where \"businessProjectId\"='bp-pharmacy-chain-demo' and kind='daily'"
 ```
 
-## 9. Kiểm tra kết quả
+## 10. Kiểm tra
 
 ```bash
-node --env-file=LAAM/.env scripts/check-expected-findings.ts
+node --env-file=LAAM/.env scripts/check-expected-findings.ts      # kỳ vọng: PASS 9/9
 ```
 
-- Phương án (b): kỳ vọng `PASS 9/9`.
-- Phương án (a) với `targets.xlsx` nguyên: kỳ vọng `FAIL 8/9`, gồm `MISS FND-008` và `UNEXPECTED CRITICAL RET-SALES-001 PH-005`. Phải sửa `demo_mockdata/expected_findings.csv` (bỏ hoặc tạm loại FND-008) hoặc tạo lại targets.
-
-Dù chọn phương án nào, nên sửa phần mô tả trong `expected_findings.csv`:
-- FND-009: "From 2026-07-18" → "From 2026-09-19".
-- FND-008: "July 2026 … June 2026" → mô tả theo cửa sổ mới.
-
-Trình kiểm tra không đọc phần mô tả này, nhưng người xem demo sẽ đọc.
+Nên sửa phần mô tả trong `demo_mockdata/expected_findings.csv` (trình kiểm tra không đọc phần này):
+- FND-009: "From 2026-07-18" → "From 2026-09-26".
+- FND-008: "net sales in July 2026 are roughly 40% below June 2026" → "month-to-date net sales in October 2026 are about 43% below target".
 
 Trên **LAAM Home** (`bp-pharmacy-chain-demo`):
-- Dòng trạng thái ghi "Data through Oct 2, 2026".
-- **Không** còn câu "Dữ liệu cũ hơn bản phân tích này … ngày" (đúng nếu chạy trước 2026-10-10).
-- Các phát hiện: Sarah Miller (EMP-0006) hoàn tiền, PH-005 hao hụt kho, hoàn tiền trùng, override PH-002 (EMP-0023), từ chối claim PH-004, thiếu két PH-005 (EMP-0102), in lại hoá đơn trước hoàn tiền, biên Rx PH-003 giảm từ 2026-09-19, và (tuỳ phương án) PH-004 doanh số giảm.
+- Dòng trạng thái: "Data through Oct 9, 2026".
+- **Không** còn câu "Dữ liệu cũ hơn … ngày" (đúng cho các lần chạy tới hết 2026-10-16).
+- 9 phát hiện: hoàn tiền của Sarah Miller (EMP-0006), hao hụt PH-005, hoàn tiền trùng, override PH-002 (EMP-0023), từ chối claim PH-004, thiếu két PH-005 (EMP-0102), in lại hoá đơn trước hoàn tiền, PH-004 dưới chỉ tiêu (critical), biên Rx PH-003 giảm từ 2026-09-26.
 
-## 10. Hoàn tác
+## 11. Làm mới trước một ngày demo khác
 
 ```bash
-# pharmacy_demo về bản cũ (nạp lại từ CSV gốc; bản sao lưu của chính DB hiện tại được dùng làm "giấy phép")
-docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > ~/backups/demo-shift/pharmacy_demo_shifted_$TS.dump
-DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes scripts/demo_data/load_pharmacy_demo.sh ~/backups/demo-shift/pharmacy_demo_shifted_$TS.dump
-# hoặc khôi phục đúng bản sao lưu: docker exec daab-postgres psql -U "$U" -d postgres -c "DROP DATABASE pharmacy_demo WITH (FORCE)" -c "CREATE DATABASE pharmacy_demo"
-#   docker exec -i daab-postgres pg_restore -U "$U" -d pharmacy_demo --no-owner < ~/backups/demo-shift/pharmacy_demo_$TS.dump
-scripts/demo_data/resync_daab_schema.sh
-docker exec -w /app daab-server go run ./cmd/kg-packs set-as-of --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --date 2026-07-31
-docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-03
-docker exec laam-postgres psql -U "$LU" -d laam -c "update business_project set \"asOfOverride\"='2026-07-31', \"updatedAt\"=now() where id in ('bp-pharmacy-chain-demo')"
+scripts/demo_data/refresh_demo.sh <ngày-demo hoặc hôm trước>            # không phá gì, in ra lệnh
+REFRESH_REPLACE=yes CONFIRM_LIVE_RELOAD=yes scripts/demo_data/refresh_demo.sh <ngày> ~/backups/demo-shift/<bản sao lưu>.dump
 ```
 
-Khi hoàn tác, `run-metrics` dùng `--to 2026-10-03` để xoá luôn các metric của khoảng 2026-08-01..2026-10-02.
+- Script lấy N = bội số 7 lớn nhất sao cho 2026-07-31 + N ≤ ngày đó. Script luôn dời từ **gói gốc**, không dời chồng.
+- Chạy với `CONFIRM_LIVE_RELOAD=yes` + bản sao lưu thì script chỉ nạp lại `pharmacy_demo` và chạy `verify_plants`. Các bước 5–10 vẫn phải làm tay theo lệnh nó in ra.
+- Chọn ngày demo hoặc ngày trước đó, để độ trễ ≤ 7.
 
-## Ghi chú về dữ liệu
+## 12. Hoàn tác
 
-Một số dòng nằm **sau ngày hôm nay** (2026-10-08). Chúng vốn đã nằm sau as-of trong gói gốc (hoàn tiền / in lại hoá đơn tới 2026-08-25):
+```bash
+docker exec daab-postgres pg_dump -U "$U" -Fc pharmacy_demo > ~/backups/demo-shift/pharmacy_demo_shifted_$TS.dump
+DAAB_PG_CONTAINER=daab-postgres CONFIRM_LIVE_RELOAD=yes scripts/demo_data/load_pharmacy_demo.sh ~/backups/demo-shift/pharmacy_demo_shifted_$TS.dump   # nạp lại CSV gốc
+DAAB_API_KEY=<khoá> scripts/demo_data/resync_daab_schema.sh
+docker exec -w /app daab-server go run ./cmd/kg-packs set-as-of --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --date 2026-07-31
+curl -fsS -X POST -H "Authorization: Bearer $DAAB_API_KEY" -F ingest_mode=tabular -F dataset_name=store_targets -F write_mode=replace \
+  -F file=@demo_mockdata/targets.xlsx http://localhost:8082/api/v1/projects/4ad7a5fa-a036-4f6a-8229-39a20af23e38/ingest/upload
+docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project 4ad7a5fa-a036-4f6a-8229-39a20af23e38 --from 2025-08-01 --to 2026-10-10
+docker exec laam-postgres psql -U "$LU" -d laam -c "update business_project set \"asOfOverride\"='2026-07-31', \"updatedAt\"=now() where id='bp-pharmacy-chain-demo'"
+```
 
-| Bảng.cột | Số dòng sau 2026-10-08 | Ngày muộn nhất |
+Khi hoàn tác, `--to 2026-10-10` xoá luôn các metric của 2026-08-01..2026-10-09.
+
+Nếu cần khôi phục đúng nguyên trạng DB: `pg_restore` bản `pharmacy_demo_$TS.dump` vào một `pharmacy_demo` vừa tạo lại, và `ennam_kg_intel_$TS.dump` (cẩn thận: chỉ 4 bảng intel).
+
+## Ghi chú
+
+**Dòng có ngày sau as-of (2026-10-09).** Các dòng này vốn đã nằm sau as-of trong gói gốc, tới tối đa 2026-08-25. Luật lọc theo `< as_of + 1`, và độ trễ âm vẫn tính là "current", nên không ảnh hưởng:
+
+| Bảng.cột | Số dòng | Ngày muộn nhất |
 |---|---|---|
-| refunds.refund_datetime | 15 | 2026-10-27 |
-| receipts.printed_datetime | 17 | |
-| inventory_movements.movement_datetime | 22 | |
-| audit_events.event_datetime | 15 | |
-| invoices.paid_date | 22 | |
-| invoices.due_date | 72 | |
+| refunds | 27 | 2026-11-03 |
+| receipts | 30 | |
+| inventory_movements | 38 | |
+| audit_events | 25 | |
+| invoices.issued | 6 | |
+| invoices.paid | 39 | |
+| invoices.due | 97 | |
+| prescriptions.picked_up | 111 | |
+| insurance_claims.resolved | 1 | |
 
-Các luật đều lọc theo `< as_of + 1`, nên không ảnh hưởng tới phân tích.
+**Cột không dời và lý do:**
+- `invoices.invoice_number` (`2026-NNNNNN`): mọi ngày phát hành sau khi dời vẫn ở năm 2026.
+- `days_after_purchase`, `turnaround_minutes`, `lead_time_days`: là khoảng thời gian, không đổi.
+- `order_weekday`: 70 chia hết cho 7.
 
-Những cột không dời và lý do:
-- `invoices.invoice_number` (`2026-NNNNNN`): mọi `issued_datetime` sau khi dời vẫn nằm trong năm 2026.
-- `refunds.days_after_purchase`, `prescriptions.turnaround_minutes`, `vendors.lead_time_days`: là khoảng thời gian, không đổi khi cả hai mốc cùng dời.
-- `vendors.order_weekday`: 63 chia hết cho 7 nên thứ trong tuần không đổi.
+**Các luật cửa sổ trượt giữ nguyên kết quả.** 31 metric dữ liệu của DAAB đều theo ngày và không dùng hàm lịch (date_trunc, tháng, thứ). Các cửa sổ của LAAM (`windowEnding`, `shiftWindow`, nền cùng thứ 4 tuần) đều tính tương đối theo as-of. Dữ liệu dời +70 trùng md5 với gốc, và as-of cũng dời +70, nên các luật này cho đúng giá trị như trước.
 
-`product_costs` đổi kỳ giá "Annual price list" từ 2026-01-01 sang **2026-03-05**. Mô tả `change_reason` vẫn ghi "Annual" và không ảnh hưởng luật nào.
+Chỉ có hai metric theo tháng (chỉ tiêu) là phụ thuộc lịch; chúng được xử lý ở mục 1.
