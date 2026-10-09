@@ -93,6 +93,20 @@ def shift_value(value: str, days: int) -> str:
     return (date.fromisoformat(value[:10]) + timedelta(days=days)).isoformat() + value[10:]
 
 
+def weekly_shift_days(data_end: date, wanted_as_of: date) -> int:
+    """Largest multiple of 7 that moves data_end to wanted_as_of or earlier (as-of may not be in the future)."""
+    gap = (wanted_as_of - data_end).days
+    if gap < 0:
+        raise ValueError(f"wanted as-of {wanted_as_of} is before the data end {data_end}")
+    return gap - gap % 7
+
+
+def data_end(directory: Path) -> date:
+    """Last sales day of a package (max transactions.transaction_datetime)."""
+    with (directory / "transactions.csv").open(newline="", encoding="utf-8") as fh:
+        return max(date.fromisoformat(r["transaction_datetime"][:10]) for r in csv.DictReader(fh))
+
+
 def _tables_in(directory: Path, tables) -> list[str]:
     return list(tables) if tables is not None else sorted(p.stem for p in directory.glob("*.csv"))
 
@@ -202,7 +216,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--days", type=int, default=63)
     ap.add_argument("--dry-run", action="store_true", help="report only, write nothing")
     ap.add_argument("--allow-non-weekly", action="store_true", help="allow --days not divisible by 7")
+    ap.add_argument("--days-for", type=date.fromisoformat, metavar="YYYY-MM-DD",
+                    help="only print the weekly shift that ends the --input data on or before this as-of")
     args = ap.parse_args(argv)
+    if args.days_for:
+        try:
+            print(weekly_shift_days(data_end(args.input), args.days_for))
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        return 0
     if args.days % 7 and not args.allow_non_weekly:
         ap.error(f"--days {args.days} is not a multiple of 7: weekday patterns would break")
     schema_sql = "\n".join(p.read_text(encoding="utf-8") for p in SCHEMA_FILES)
