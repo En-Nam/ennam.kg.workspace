@@ -65,5 +65,6 @@ cat <<EOF
        -F write_mode=replace -F file=@$OUT/targets.xlsx http://localhost:8082/api/v1/projects/$PROJECT/ingest/upload
   docker exec -w /app daab-server go run ./cmd/kg-packs run-metrics --project $PROJECT --from $FROM_OLD --to $TO_EXCL
   LAAM: business_project.asOfOverride='$END' for bp-pharmacy-chain-demo, then "Chạy ngay"; then
-  node --env-file=LAAM/.env scripts/check-expected-findings.ts   # expect PASS 9/9
+  check ONLY the post-cutover run: export finding rows with "lastRunId" = <that run> to JSON, then
+  node scripts/check-expected-findings.ts --findings-json <file>   # expect PASS 9/9 (runbook step 10)
 EOF

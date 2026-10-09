@@ -212,8 +212,22 @@ docker exec laam-postgres psql -U "$LU" -d laam -c "update analysis_job set \"ne
 
 ## 10. Kiểm tra
 
+⚠️ **Đừng chạy trình kiểm tra trên toàn bảng `finding`.**
+- Phát hiện được gộp theo `luật + dims`, không theo ngày (`LAAM/src/lib/intel/engine/dedupe.ts`). Các dòng tạo từ thời as-of 07-31 vẫn còn, nên `check-expected-findings.ts` đọc cả bảng sẽ PASS kể cả khi dữ liệu mới không phát hiện gì.
+- Mỗi lần ghi (thêm hoặc cập nhật) đều đặt `lastRunId` (`LAAM/src/lib/intel/store/repo.ts`). Vì vậy chỉ kiểm tra các phát hiện **của lần chạy sau cutover**:
+
 ```bash
-node --env-file=LAAM/.env scripts/check-expected-findings.ts      # kỳ vọng: PASS 9/9
+RUN=$(docker exec laam-postgres psql -U "$LU" -d laam -At -c "select id from analysis_run where \"businessProjectId\"='bp-pharmacy-chain-demo' and status='succeeded' order by \"finishedAt\" desc limit 1")
+docker exec laam-postgres psql -U "$LU" -d laam -At -c "select coalesce(json_agg(json_build_object('ruleId',\"ruleId\",'dims',dims,'severity',severity)),'[]') from finding where \"projectId\"='bp-pharmacy-chain-demo' and \"lastRunId\"='$RUN'" > /tmp/findings_after_cutover.json
+node scripts/check-expected-findings.ts --findings-json /tmp/findings_after_cutover.json      # kỳ vọng: PASS 9/9
+```
+
+- Kiểm tra `RUN` có `finishedAt` sau thời điểm cutover. Nếu không, lần chạy ở bước 9 chưa xong.
+- Các phát hiện cũ không được lần chạy mới tạo lại vẫn nằm trên Home với trạng thái cũ.
+- Người điều phối có thể quyết định đóng các phát hiện đó (chỉ những dòng có `"lastRunId" <> '$RUN'` và đang mở), sau khi đã xem danh sách:
+
+```bash
+docker exec laam-postgres psql -U "$LU" -d laam -c "select \"ruleId\", dims, status from finding where \"projectId\"='bp-pharmacy-chain-demo' and \"lastRunId\" is distinct from '$RUN' and status not in ('resolved','dismissed')"
 ```
 
 Nên sửa phần mô tả trong `demo_mockdata/expected_findings.csv` (trình kiểm tra không đọc phần này):
@@ -277,3 +291,7 @@ Nếu cần khôi phục đúng nguyên trạng DB: `pg_restore` bản `pharmacy
 **Các luật cửa sổ trượt giữ nguyên kết quả.** 31 metric dữ liệu của DAAB đều theo ngày và không dùng hàm lịch (date_trunc, tháng, thứ). Các cửa sổ của LAAM (`windowEnding`, `shiftWindow`, nền cùng thứ 4 tuần) đều tính tương đối theo as-of. Dữ liệu dời +70 trùng md5 với gốc, và as-of cũng dời +70, nên các luật này cho đúng giá trị như trước.
 
 Chỉ có hai metric theo tháng (chỉ tiêu) là phụ thuộc lịch; chúng được xử lý ở mục 1.
+
+Múi giờ cũng không ảnh hưởng: DAAB chỉ đổi giờ địa phương (`AT TIME ZONE`) cho cột **có** múi giờ (`ennam.kg.go/internal/intel/compile.go`). Các cột của `pharmacy_demo` là `timestamp without time zone`, nên được đọc nguyên, kể cả quanh các ngày đổi giờ mùa hè.
+
+**Home hiển thị chỉ tiêu.** Mục dự báo trên Home so (doanh số từ đầu tháng + dự báo các ngày còn lại) với chỉ tiêu tháng (`home/derive.ts`, `targetView`). PH-004 sẽ hiện chỉ tiêu 101 100 và "thấp hơn chỉ tiêu" khoảng 40%, khớp với câu chuyện FND-008. Các cửa hàng khác sẽ quanh mức đạt chỉ tiêu.
