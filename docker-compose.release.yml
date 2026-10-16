@@ -92,6 +92,11 @@ services:
       KG_SUPABASE_ADMIN_EMAILS: ${KG_SUPABASE_ADMIN_EMAILS:-}
       # AES-256-GCM key (base64, 32 bytes) for credential + AI-provider-key encryption
       KG_ENCRYPTION_KEY: ${KG_ENCRYPTION_KEY:?set KG_ENCRYPTION_KEY in .env (openssl rand -base64 32)}
+      # Ennam-owned AI keys: the catalog models (Claude, BytePlus) are provisioned from these at startup, and customers
+      # cannot add a provider or key of their own while KG_ALLOW_CUSTOM_AI_PROVIDERS is false.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      BYTEPLUS_API_KEY: ${BYTEPLUS_API_KEY:-}
+      KG_ALLOW_CUSTOM_AI_PROVIDERS: ${KG_ALLOW_CUSTOM_AI_PROVIDERS:-false}
       # Queue
       KG_QUEUE_PROVIDER: redis
       KG_REDIS_URL: redis://redis:6379/0
