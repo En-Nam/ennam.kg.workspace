@@ -47,10 +47,13 @@ numbers below (§) refer to it.
 - **Failure is never user-visible.** Any Jev failure → full schema (today's behaviour). Only `ok`
   selections are cached.
 - **Never log** the API key or the raw question text (`query_hash` only).
-- **Dev DB is on :5433.** For migrations and integration tests use
-  `postgres://ennam_kg:ennam_kg_dev@localhost:5433/ennam_kg?sslmode=disable` for `DATABASE_URL`,
-  `KG_TEST_DATABASE_URL` and `KG_TEST_DSN`. A `dial :5432 refused` error means a wrong env var,
-  not a code bug.
+- **Dev DB is on :5433. :5432 on this machine is `am-ai-postgres`, a DIFFERENT product. Never run
+  a migration command without `KG_DB_PORT=5433`.**
+  - `kg-migrate` reads `KG_DB_*` (not `DATABASE_URL`) and defaults to port 5432
+    (`cmd/kg-migrate/main.go:29-34`). Always run `KG_DB_PORT=5433 make db-migrate`.
+  - Integration tests: set `KG_TEST_DATABASE_URL` and `KG_TEST_DSN` to
+    `postgres://ennam_kg:ennam_kg_dev@localhost:5433/ennam_kg?sslmode=disable`.
+  - **A DB test that SKIPs reports PASS.** Always run with `-v` and confirm the tests ran.
 - **Commit messages:** `<type>: <description>`, ending with
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
@@ -88,7 +91,7 @@ and an entry would show up in the model-assignment UI and validation. Instead,
 **Interfaces:** none new.
 
 - [ ] **Step 1: Create the branch.** `git -C ennam.kg.go switch -c feat/jev-table-selection`
-- [ ] **Step 2: Write failing tests** `TestResolveDefaultTier_ReadsQueryTierKey` (store `ai.query_tier="precise"` → `QueryTierPrecise`) and `TestResolveTopK_ReadsContextTopKKey` (store `ai.context_top_k=15` → `15`). Use the same settings fake the existing tests in this file use.
+- [ ] **Step 2: Write failing tests** `TestResolveDefaultTier_ReadsQueryTierKey` (store `ai.query_tier="precise"` → `QueryTierPrecise`) and `TestResolveTopK_ReadsContextTopKKey` (store `ai.context_top_k=15` → `15`). Existing tests use `&ContextBuilder{}` with a nil cache, so build `&ContextBuilder{settingsCache: NewSettingsService(fakeRepo, nil, nil)}` with a small in-file fake `SettingsRepository`.
 - [ ] **Step 3: Run** `go test ./internal/service/ -run 'TestResolveDefaultTier|TestResolveTopK'`. Expected: FAIL (it returns balanced / 10).
 - [ ] **Step 4: Implement:** read `ai.query_tier` and `ai.context_top_k`, and update the doc comment.
 - [ ] **Step 5: Run** the same command. Expected: PASS. Then run `go test ./internal/service/`. Expected: PASS.
@@ -100,7 +103,7 @@ and an entry would show up in the model-assignment UI and validation. Instead,
 - Create: `ennam.kg.go/db/migrations/000094_ai_judge.up.sql`, `000094_ai_judge.down.sql`
 - Create: `ennam.kg.go/internal/models/ai_judge.go`
 - Create: `ennam.kg.go/internal/store/project_ai_settings.go`, `ennam.kg.go/internal/store/ai_judge_log.go`
-- Test: `ennam.kg.go/internal/store/project_ai_settings_test.go`, `ennam.kg.go/internal/store/ai_judge_log_test.go` (`//go:build integration`, `setupTestDB`)
+- Test: `ennam.kg.go/internal/store/project_ai_settings_test.go`, `ennam.kg.go/internal/store/ai_judge_log_test.go` (`//go:build integration`, `package store_test`, using `setupTestDB` from `favorite_test.go`)
 
 **Interfaces — Produces:**
 ```go
@@ -122,7 +125,7 @@ type ProjectAISettings struct {
     ChangedAt       *time.Time `json:"changed_at"`
 }
 type AIJudgeLog struct {
-    RequestType, Mode, Outcome, ErrorCode, Model, DataSourceID, QueryHash string
+    RequestType, Mode, Outcome, ErrorCode, Model, DataSourceID, QueryHash string // RequestType is always "jev_table_select" (not "table_filter": that is the smart-path LLM function)
     LatencyMs, InputTokens, TableCount, SelectedCount, SchemaCharsFull, SchemaCharsUsed int
     Scores     map[string]float64 // table -> p
     Selected   []string
@@ -140,7 +143,7 @@ func (s *AIJudgeLogStore) Insert(ctx context.Context, l *models.AIJudgeLog) erro
 
 - [ ] **Step 1: Write the migration.**
   - `project_ai_settings`: columns per spec §4.1. `changed_by_user_id` is nullable FK → `users(id)` ON DELETE SET NULL; `changed_via` has CHECK in (`daab_web`,`ennam_admin`).
-  - `ai_judge_logs`: columns per spec §4.6, plus `latency_ms int`, `input_tokens int`, `created_at timestamptz default now()`, and an index on `created_at`. `mode` and `outcome` get CHECK constraints with the spec values.
+  - `ai_judge_logs`: columns per spec §4.6, plus `latency_ms int`, `input_tokens int`, `created_at timestamptz default now()`, and an index on `created_at`. `mode` and `outcome` get CHECK constraints with the spec values. `data_source_id` is a plain uuid with **no FK**, so deleting a data source is never blocked by logs.
   - Seed the three settings with category `'ai'` using `ON CONFLICT (key) DO NOTHING`.
   - The down migration drops both tables and deletes the three keys.
 - [ ] **Step 2: Write failing integration tests:**
@@ -148,9 +151,9 @@ func (s *AIJudgeLogStore) Insert(ctx context.Context, l *models.AIJudgeLog) erro
   - `TestProjectAISettings_SetThenGetRoundTrip` (label, via, changed_at set)
   - `TestProjectAISettings_JevAllowedForDataSource` (allowed project's data source → true; other project's → false; unknown id → false, nil)
   - `TestAIJudgeLog_InsertWithNilPlanTables` (row exists, `plan_tables` IS NULL)
-- [ ] **Step 3: Migrate the test DB** with `DATABASE_URL=<:5433 DSN> make db-migrate`, then run `KG_TEST_DATABASE_URL=<:5433 DSN> go test -tags=integration ./internal/store/ -run 'ProjectAISettings|AIJudgeLog'`. Expected: FAIL (types undefined).
+- [ ] **Step 3: Migrate and run.** Run `KG_DB_PORT=5433 make db-migrate`, then `KG_TEST_DATABASE_URL=<:5433 DSN> go test -tags=integration -v ./internal/store/ -run 'ProjectAISettings|AIJudgeLog'`. Expected: FAIL (types undefined).
 - [ ] **Step 4: Implement models and stores.** Scores, Selected and PlanTables are stored as jsonb; nil PlanTables is written as SQL NULL.
-- [ ] **Step 5: Run the tests.** Expected: PASS. Also run `make db-migrate-down` then up again on the dev DB (with `DATABASE_URL` on :5433) to prove the down migration works.
+- [ ] **Step 5: Run the tests with `-v`.** Expected: PASS, with no SKIP lines. Prove the down migration works with `KG_DB_PORT=5433 make db-migrate-down` then `KG_DB_PORT=5433 make db-migrate`. **Check `KG_DB_PORT=5433` is set before pressing enter.**
 - [ ] **Step 6: Commit:** `feat: project_ai_settings and ai_judge_logs tables for the Jev judge`.
 
 ### Task 3: Jev HTTP client (`internal/judge`)
@@ -200,6 +203,11 @@ const TableQuestionText = "Is `table` needed to answer `state.question` with SQL
 func TableQuestions(cards []TableCard) map[string]NoulQuestion // keys "t0".."tN" in card order; criteria true/false per spec §4.3; Description truncated to 200 runes, omitted when empty
 func SelectTables(cards []TableCard, fks []FK, noul map[string]float64, threshold float64) (selected []string, empty bool)
 func MaskPII(q string) string // emails → "<email>", phone-like digit runs → "<phone>"
+// Turns QueryPlan.Tables + Joins[].Table entries into qualified names from `known` ("schema.table").
+// Entries may be "name", "schema.name", "name alias", or "(SELECT … FROM x JOIN y …) alias" — for
+// subqueries take every FROM/JOIN target inside. Bare names resolve to the single known "schema.name"
+// with that table part; unknown names (CTEs, typos) are dropped. Result is sorted and deduplicated.
+func NormalizePlanTables(entries []string, known []string) []string
 ```
 
 `SelectTables` keeps card order. It keeps every card with `noul[key] ≥ threshold`. Then the **bridge
@@ -217,10 +225,15 @@ nothing passes the threshold it returns `(allNames, true)`.
     - `"a.b@x.vn"` → `"<email>"`
     - `"TXN-0004917"` unchanged
     - `"top 10 sản phẩm 2026"` unchanged
-- [ ] **Step 2: Run** `go test ./internal/judge/ -run 'TableQuestions|SelectTables|MaskPII'`. Expected: FAIL.
+  - `TestNormalizePlanTables` (known = `public.sales`, `public.stores`, `public.refunds`):
+    - `["sales s"]` → `[public.sales]`
+    - `["public.stores"]` → `[public.stores]`
+    - `["(SELECT store_id, SUM(x) FROM refunds GROUP BY store_id) r_agg"]` → `[public.refunds]`
+    - `["cte_x", ""]` → `[]`
+- [ ] **Step 2: Run** `go test ./internal/judge/ -run 'TableQuestions|SelectTables|MaskPII|NormalizePlanTables'`. Expected: FAIL.
 - [ ] **Step 3: Implement.** Phone pattern: an optional `+84` or a leading `0`, then 9–10 more digits with optional spaces, dots or dashes. It must not match inside an identifier like `TXN-0004917` (require a non-alphanumeric boundary before it, and a total of ≥9 digits).
 - [ ] **Step 4: Run.** Expected: PASS.
-- [ ] **Step 5: Commit:** `feat: Jev table-selection questions, selection with join bridges, PII masking`.
+- [ ] **Step 5: Commit:** `feat: Jev table-selection questions, selection with join bridges, PII masking, plan-table normalisation`.
 
 ### Task 5: `service.TableJudge` — gate, modes, caches, logging
 
@@ -251,15 +264,27 @@ func (j *TableJudge) Mode(ctx context.Context) models.JudgeMode
 
 **Behaviour** (spec §4.4, §4.5, §4.6):
 - The gate order is: client nil → mode → table count → project flag. Any "no" returns the input tree and a no-op `Finish`, with no HTTP call and no log row.
-- Settings are read on every call. An invalid stored mode counts as off, an invalid threshold as 0.2, and an invalid max_tables as 60.
+- The three settings are cached inside `TableJudge` for 5s. `SettingsService.Get` does not keep its cache fresh on its own (`settings.go:69,176`), so without this every question would cost 3 DB reads. An invalid stored mode counts as off, an invalid threshold as 0.2, and an invalid max_tables as 60.
 - The project flag is cached per data source for 10s.
-- **Selection cache:** an in-process map with a 10-minute TTL and at most 1000 entries (evict the oldest). Key: `dsID|normalizeNLQuery(q)|sha256(table names)|model|threshold`. Only `ok` results are stored.
+- **Selection cache:** an in-process LRU with **no TTL**, at most 1000 entries, evicting the least recently used. The key invalidates itself when anything sent to Jev changes:
+  - `dsID`
+  - `sha256(json.Marshal(TableQuestions(cards)))` — so column or description changes miss
+  - `MaskPII(question)` after `normalizeNLQuery`
+  - model
+  - threshold
+
+  Only `ok` results are stored. A repeated question therefore never pays Jev again until restart, which keeps the "repeated questions don't get slower" anti-goal.
+- `Finish` is wrapped in `sync.Once`. Calling it twice is harmless, and its send to the shadow goroutine is non-blocking.
+- **Log writes are off the request path** in both modes: a goroutine with `context.WithoutCancel(ctx)` and a 5s timeout.
+- `plan_tables` and `selected` are both normalised with `judge.NormalizePlanTables` against the tree's qualified names before logging.
+- Also produce `func TableCardsFromTree(tree []*store.SchemaTreeNode) ([]judge.TableCard, []judge.FK)` (exported).
 - **`on` mode:**
   - On a cache hit, prune and log nothing.
   - On a miss, call Jev synchronously with the request ctx. On `ok`, prune the tree to the selected names. On error or `empty`, keep the full tree. `Finish` writes one log row with `mode=on`, the outcome, and the plan tables.
 - **`shadow` mode:**
   - Return the input tree.
-  - On a cache miss, and if the shadow semaphore (4) has a free slot, start a goroutine with `context.WithoutCancel(ctx)` plus the client timeout. It calls Jev, then waits up to 2 minutes for `Finish` (a buffered channel of 1), then writes the row (`plan_tables` NULL if `Finish` never came).
+  - On a cache miss, and if the shadow semaphore (4) has a free slot, start a goroutine with `context.WithoutCancel(ctx)` plus the client timeout.
+  - It calls Jev and **releases the semaphore slot as soon as the HTTP call returns**. Then it waits up to 2 minutes for `Finish` (a buffered channel of 1) and writes the row (`plan_tables` NULL if `Finish` never came). The planner's p90 is 6.8s, so holding the slot through the wait would starve the 4 slots.
   - When no slot is free, drop the shadow run.
 - `SchemaCharsFull` and `SchemaCharsUsed` come from `renderLen(tree)` and `renderLen(pruned)`. In shadow, `SchemaCharsUsed` is the size the pruned tree would have had.
 - `QueryHash` = hex sha256 of the normalized question. The raw question is never stored.
@@ -276,6 +301,10 @@ func (j *TableJudge) Mode(ctx context.Context) models.JudgeMode
   - `TestTableJudge_ShadowReturnsFullTreeAndLogsAsync`: `Tree` = input; after `Finish(["public.b"])` the row appears (wait on the writer with a deadline) with `Mode=="shadow"`.
   - `TestTableJudge_SendsMaskedQuestion`: question `"khách 0912345678"` → the received body's `state.question` contains `<phone>` and not the digits.
   - `TestTableJudge_BadStoredSettingsActAsDefaults`: mode `"ON"` → off (no hit); threshold `"1.5"` with mode on → 0.2 is used.
+  - `TestTableJudge_SettingsReadAtMostOncePer5s`: 10 `Decide` calls → the fake settings reader sees ≤ 3 reads (one per key).
+  - `TestTableJudge_CacheMissesWhenColumnsChange`: same question, one column renamed → 2 HTTP hits.
+  - `TestTableJudge_ShadowSlotReleasedBeforeFinish`: 5 shadow decisions without calling `Finish` → 5 HTTP hits (no starvation).
+  - `TestTableJudge_FinishTwiceIsSafe`
 - [ ] **Step 2: Run** `go test ./internal/service/ -run TableJudge -race`. Expected: FAIL.
 - [ ] **Step 3: Implement** in `table_judge.go`. Build cards from the tree: name `schema.table`, description from `tableDescription(t.Table)`, column names in order. FKs come from `ForeignKeys` (`ReferencedSchema.ReferencedTable`).
 - [ ] **Step 4: Run** the same command with `-race`. Expected: PASS.
@@ -287,24 +316,24 @@ func (j *TableJudge) Mode(ctx context.Context) models.JudgeMode
 - Modify: `ennam.kg.go/internal/service/query_intent.go` (`QueryIntentParser` struct, new option, `buildLegacyContext` ~L403, `ParseWithTier` ~L196–300 where the plan is returned)
 - Modify: `ennam.kg.go/cmd/kg-server/main.go` (~L667–707, where the intent parser is built)
 - Modify: `docker-compose.yml` (kg-server `environment:` next to `BYTEPLUS_API_KEY`), `.env.example`, `.env.release.example` (workspace root)
-- Test: `ennam.kg.go/internal/service/query_intent_judge_test.go`
+- Test: `ennam.kg.go/internal/service/query_intent_judge_integration_test.go`. Use `//go:build integration` and reuse `queryIntentCacheTestDB` and `seedQueryIntentFixture` from `query_intent_cache_integration_test.go`, along with that file's way of stubbing the AI planner. `metaStore` is a concrete store, so these tests need the DB.
 
 **Interfaces:**
 - **Consumes:** `NewTableJudge`, `JudgeDecision` (Task 5); `NewProjectAISettingsStore`, `NewAIJudgeLogStore` (Task 2); `judge.ConfigFromEnv`, `judge.NewClient` (Task 3).
 - **Produces:**
-  - `func WithTableJudge(j *TableJudge) QueryIntentOption`
-  - `buildLegacyContext(ctx, dataSourceID, nlQuery string) (string, func([]string), error)` — the second return value is `Finish`, a no-op when no judge is set.
+  - `func WithTableJudge(j *TableJudge) QueryIntentOption`, which sets the new field `tableJudge *TableJudge`.
+  - `buildLegacyContext(ctx, dataSourceID, nlQuery string, judge bool) (string, func([]string), error)` — the second return value is `Finish`, a no-op when the judge is off or not set.
 
-- [ ] **Step 1: Write failing tests** with the parser's existing fakes, a stub Jev server and a 3-table tree:
-  - `TestParseWithTier_JudgeOnShrinksSchemaContext`: the prompt sent to the planner contains only the selected tables, and `Finish` receives `plan.Tables` plus the join tables.
-  - `TestParseWithTier_NoJudgeUnchanged`: the context is byte-identical to today's.
-  - `TestParseWithTier_JudgeFinishCalledOnClarification`: `Finish(nil)`.
-  - `TestParseWithTier_PlanCacheHitStillFinishes`
-- [ ] **Step 2: Run** `go test ./internal/service/ -run ParseWithTier_Judge -race`. Expected: FAIL.
+- [ ] **Step 1: Write failing tests** with a stub Jev server and the seeded fixture tree:
+  - `TestParseWithTier_JudgeOnShrinksSchemaContext`: the prompt sent to the planner contains only the selected tables, and `Finish` receives `plan.Tables` plus `plan.Joins[].Table` (raw; TableJudge normalises).
+  - `TestParseWithTier_JudgeAbsentUnchanged`: the context is byte-identical to today's.
+  - `TestParseWithTier_JudgeFinishOnClarification`: `Finish(nil)`.
+  - `TestParseWithTier_JudgePlanCacheHitFinishes`
+- [ ] **Step 2: Run** `KG_TEST_DATABASE_URL=<:5433 DSN> go test -tags=integration -v -race ./internal/service/ -run 'TestParseWithTier_Judge'`. Expected: FAIL, and all 4 tests listed (not SKIP).
 - [ ] **Step 3: Implement.**
-  - In `buildLegacyContext`, call `judge.Decide(ctx, dsID, nlQuery, tree, func(t) int { return len(p.buildSchemaContext(t, schemaContextMaxChars)) })` and render `decision.Tree`.
-  - Call `Finish` exactly once on every return path of `ParseWithTier` after context building (plan → tables from `plan.Tables` and `plan.Joins[].Table`; clarification or error → `nil`), using a deferred guard.
-  - Leave the smart-context branch untouched.
+  - Add a `judge bool` parameter to `buildLegacyContext`. The no-smart-context branch passes `true`; the smart-context **fallback** at ~L206 passes `false`, so the smart path, including its fallback, never runs the judge.
+  - When `judge` is true and a judge is set, call `p.tableJudge.Decide(ctx, dsID, nlQuery, tree, func(t) int { return len(p.buildSchemaContext(t, schemaContextMaxChars)) })` and render `decision.Tree`.
+  - Call `Finish` on every return path of `ParseWithTier` after context building (plan → `plan.Tables` + `plan.Joins[].Table`; clarification or error → `nil`) through a single `defer` that reads a named result. `Finish` is `sync.Once`-safe.
 - [ ] **Step 4: Wire it in `main.go`.**
   - `jc := judge.NewClient(judge.ConfigFromEnv(os.Getenv), nil)`.
   - Always build `NewTableJudge(jc, settingsSvc, projectAISettingsStore, aiJudgeLogStore, logger)` and append `WithTableJudge`.
@@ -335,7 +364,8 @@ func (j *TableJudge) Mode(ctx context.Context) models.JudgeMode
   - `func validateJudgeSetting(key string, raw json.RawMessage) error`
 
 Rules:
-- All three project-AI routes return 403 unless `isGlobalAdmin(r)`, and 404 for an unknown project.
+- All three project-AI routes return 403 unless `isGlobalAdmin(r)`.
+- 404 for an unknown project. `ProjectStore.GetByID` returns a raw `sql.ErrNoRows` (`store/project.go:51-62`), so check `errors.Is`. Also check the id with `uuid.Parse` (or the repo's existing UUID check) first, so a malformed id gives 404 rather than a Postgres 500.
 - **PUT with a user session:** label = the user's `DisplayName`, else `Username`; `changed_by_user_id` = `UserID`; via = `daab_web`; the body label is ignored.
 - **PUT with an admin API key and no user:** `changed_by_label` is required (trimmed, 1–200 chars; else 400), via = `ennam_admin`.
 
@@ -343,7 +373,7 @@ Rules:
   - `TestProjectAISettings_ForbiddenForNonAdmin` (agent key, project-scoped admin key) → 403
   - `TestProjectAISettings_PutBySessionRecordsUser` → via `daab_web`
   - `TestProjectAISettings_PutByAdminKeyRequiresLabel` → 400 without a label, 200 with one and via `ennam_admin`
-  - `TestProjectAISettings_UnknownProject404`
+  - `TestProjectAISettings_UnknownProject404` (both an unknown valid UUID and `"not-a-uuid"`)
   - `TestValidateJudgeSetting` (table cases: mode `"shadow"` ok, `"ON"` 400; threshold `0.2` ok, `0`/`1`/`1.5`/`"x"` 400; max_tables `60` ok, `1`/`-1`/`2.5` 400 — the minimum allowed is 2; non-judge key → nil)
   - `TestListFunctions_IncludesJudgeInfo` (nil judge → `available:false, mode:"off"`)
 - [ ] **Step 2: Run** `go test ./internal/handler/ -run 'ProjectAISettings|ValidateJudgeSetting|ListFunctions'`. Expected: FAIL.
@@ -367,7 +397,7 @@ Rules:
 UI copy (English, matching the page):
 - Section caption: "Jev table selection".
 - Intro: "Jev picks the tables a question needs so the planner reads less. Questions, table names and column names of allowed projects are sent to TypeSafe; no row data."
-- Mode control: Off / Shadow / On, writing `ai.judge.table_filter`.
+- Mode control: Off / Shadow / On, writing `ai.judge.table_filter` **with `category: 'ai'`**. Without it the upsert silently rewrites the category to `general`; `AIModelAssignments.tsx:150` does the same. The current mode is read from `useSettings()`, not from the `ai-functions` query, which has a 5-minute `staleTime`. After saving, invalidate both `['settings']` and `['ai-functions']`.
 - Projects table: name, "Jev allowed" switch, and "changed by · via · when".
 - When `judge.available=false`, every control is disabled and shows: "Jev key not configured on the server".
 - Customer projects carry no special marking; the hint under the table reads: "Customer projects are normally switched in Ennam Admin."
@@ -387,6 +417,9 @@ UI copy (English, matching the page):
 - Modify: `ennam.kg.admin/src/lib/daab/client.ts` (the `DaabClient` interface, the real client, and the zod schema `AiSettingsJson`)
 - Modify: `ennam.kg.admin/src/lib/daab/service.ts` (`setDaabJevAllowed`; `daabCardView` gains `jev`)
 - Modify: `ennam.kg.admin/src/lib/audit.ts` (add `"org.daab_jev_allowed"`, `"org.daab_jev_disallowed"` beside `"org.daab_disconnected"`)
+- Modify: `ennam.kg.admin/src/i18n/dictionaries/audit.ts`. Add labels `audit.action.org.daab_jev_allowed` (vi "Cho phép Jev (DAAB)" / en "Allowed Jev (DAAB)") and `audit.action.org.daab_jev_disallowed` (vi "Tắt Jev (DAAB)" / en "Turned Jev off (DAAB)"). `audit-actions.test.ts` requires a label for every action.
+- Modify: `ennam.kg.admin/test/daab-fake.ts` (`FakeDaabClient` gets `getAiSettings` / `setAiSettings` with configurable answers and failures)
+- Modify: `ennam.kg.admin/src/app/(staff)/orgs/[id]/page.tsx`. Start `daabCardView(...)` inside the existing `Promise.all`, not after it.
 - Test: `ennam.kg.admin/src/lib/daab/client.test.ts` (extend), create `ennam.kg.admin/src/lib/daab/jev.int.test.ts`
 
 **Interfaces — Produces:**
@@ -402,12 +435,16 @@ jev: { ok: true; settings: DaabAiSettings } | { ok: false; kind: DaabErrorKind }
 ```
 
 Rules:
+- Add `"no_project"` to the `DaabOpError` union (`service.ts:32-40`).
+- The project id is always `state.project_id` from `setup_state.daab`. It is kept through disconnect, so a disconnected org can still be switched.
 - `setDaabJevAllowed` takes the org lock (`withOrgLock`), as the other DAAB operations do. It returns:
   - `org_not_found` when there is no org;
   - `internal_org` for an internal org;
   - `no_project` when there is no `state.project_id`.
 - It sends `changedByLabel = actor.email`.
-- On success it writes the audit row `org.daab_jev_allowed` / `org.daab_jev_disallowed` with `{ project_id, previous: boolean }`.
+- It pre-reads the current value with `getAiSettings`. If that read fails, `previous` is `null` and the set still proceeds.
+- On success it writes the audit row `org.daab_jev_allowed` / `org.daab_jev_disallowed` with `{ project_id, previous: boolean | null }`.
+- `getAiSettings` uses a **2s timeout** (a per-call override of `DAAB_TIMEOUT_MS`), because it runs while the org page renders. `setAiSettings` keeps the 10s default.
 - On a DAAB error it writes `org.daab_step_failed` with step `"jev"` and returns the error kind.
 - Admin stores no copy of the flag.
 
@@ -422,6 +459,7 @@ Rules:
     - `setDaabJevAllowed refuses without project` (`no_project`, no audit, no client call)
     - `setDaabJevAllowed records a DAAB failure` (`org.daab_step_failed`, step `jev`)
     - `daabCardView carries jev settings or the error kind`
+    - `daabCardView gives up on a slow DAAB after 2s` (the fake delays 5s → `jev.ok === false`, kind `unreachable`)
 - [ ] **Step 3: Run** `npm run test:unit -- src/lib/daab/client.test.ts` and `npm run test:int -- src/lib/daab/jev.int.test.ts`. Expected: FAIL.
 - [ ] **Step 4: Implement.**
 - [ ] **Step 5: Run** the same commands, then `npm test`. Expected: PASS.
@@ -434,7 +472,12 @@ Rules:
 - Modify: `ennam.kg.admin/src/app/(staff)/orgs/[id]/DaabCard.tsx` (new prop `isAdmin: boolean`; Jev block)
 - Modify: `ennam.kg.admin/src/app/(staff)/orgs/[id]/page.tsx` (pass `isAdmin={ctx.staff.role === "admin"}`)
 - Modify: `ennam.kg.admin/src/i18n/dictionaries/daab.ts` (keys below)
+- Modify: `ennam.kg.admin/src/app/guard-inventory.test.ts`. Add `setDaabJevAction` to `ADMIN_ONLY` and to `REQUIRED_STAFF_ACTIONS` for `daab-actions.ts`.
 - Test: `ennam.kg.admin/src/app/(staff)/orgs/[id]/DaabCard.test.tsx` (extend), `daab-actions.test.ts` (extend)
+
+**The guard inventory checks the action's shape.** The body must start with exactly
+`const ctx = await requireStaff({ role: "admin" });`, and `const su = await stepUp(ctx, fd.get("totp"));`
+must come before any use of `db`.
 
 **Interfaces:**
 - **Consumes:** `setDaabJevAllowed`, `DaabCardView.jev` (Task 9); `requireStaff({ role: "admin" })` and `stepUp` (`src/lib/auth/guards.ts`); `staffActor`.
@@ -472,46 +515,28 @@ The block renders only when `view.jev !== null`.
     - `setDaabJevAction requires admin role`
 - [ ] **Step 2: Run** `npm run test:unit -- 'src/app/(staff)/orgs/[id]'`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** `npm test`, `npx tsc --noEmit` and `npm run lint` (if present). Expected: PASS / clean.
+- [ ] **Step 4: Run** `npm test` (includes `guard-inventory.test.ts` and `audit-actions.test.ts`) and `npm run typecheck`. Admin has no lint script. Expected: PASS / clean.
 - [ ] **Step 5: Verify in the browser** (Admin at http://localhost:3200 against the dev DAAB):
   - Allow Jev on a connected customer org (with 2FA).
   - DAAB `GET /api/v1/projects/{id}/ai-settings` shows `changed_via=ennam_admin` and the staff email.
   - `/audit` shows `org.daab_jev_allowed`.
 - [ ] **Step 6: Commit:** `feat: allow or stop Jev for a customer from the DAAB card`.
 
-### Task 11: Offline replay CLI (`cmd/jev-eval`, spec §5.3)
+### Task 11: Replay script (spec §5.3, reduced per review)
+
+The 200-question replay in spec §5.0 already gave the numbers, and a Go CLI would have to export private
+renderers (`buildSchemaContext`, `tableDescription`). So commit the stdlib Python script that produced
+§5.0 instead, for re-running after prompt, threshold or model changes.
 
 **Files:**
-- Create: `ennam.kg.go/cmd/jev-eval/main.go`
-- Test: `ennam.kg.go/cmd/jev-eval/main_test.go` (pure helpers only)
+- Create: `ennam.kg.go/scripts/jev-eval/jev_eval.py` (port of the smoke-test script: stdlib only, reads `TYPESAFE_*` from an env file, never prints the key)
+- Create: `ennam.kg.go/scripts/jev-eval/README.md` (5 lines: what it measures, how to export `schema.json` / `gold.json` with the two `psql` queries, how to run)
 
-**Interfaces:**
-- **Consumes:** `judge.*` (Tasks 3–4); `store.NewSchemaMetadataStore(db).GetSchemaTree`; the card-building helper from Task 5. Export it as `service.TableCardsFromTree(tree) ([]judge.TableCard, []judge.FK)` if Task 5 kept it private — do that in this task.
-- **Produces:**
-  - The CLI: `go run ./cmd/jev-eval -dsn <dsn> -data-source <id> -n 200 -threshold 0.2`.
-  - The helper: `func tablesInSQL(sql string, known []string) []string`.
-
-It reads the latest N distinct `natural_language_query` with non-empty `generated_sql` from `ai_queries`
-for the data source (read-only queries), calls Jev sequentially, and prints:
-- recall,
-- questions with every needed table kept,
-- average kept / total,
-- schema-char reduction (via `buildSchemaContext` length),
-- latency p50/p90/max,
-- the same split by Vietnamese (any Vietnamese diacritic) vs English.
-
-The key comes from `judge.ConfigFromEnv(os.Getenv)` and is never printed.
-
-- [ ] **Step 1: Write the failing test** `TestTablesInSQL`:
-  - `FROM public.sales s JOIN "public"."stores" st` → `[public.sales public.stores]`
-  - a CTE name is not counted;
-  - an unknown name is ignored.
-- [ ] **Step 2: Run** `go test ./cmd/jev-eval/`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** the test (Expected: PASS), then for real:
-  `set -a; . ../.env; set +a; go run ./cmd/jev-eval -dsn <:5433 DSN> -data-source 3c7af733-b069-4654-b98e-beb5afde588c -n 200 -threshold 0.2`.
-  Expected: recall 1.000 at 0.2, p90 under 800ms, consistent with the smoke test in spec §5.0.
-- [ ] **Step 5: Commit:** `feat: jev-eval replays past questions through the Jev table selection`.
+- [ ] **Step 1: Port the script.**
+  - Use the same question text and criteria as `judge.TableQuestionText` (Task 4). If they differ, the replay measures a different prompt from production.
+  - Print the threshold table (0.1 / 0.2 / 0.3 / 0.5 × all / vi / en), latency p50/p90/max, and the misses at the chosen threshold.
+- [ ] **Step 2: Run it.** `SSL_CERT_FILE=/etc/ssl/cert.pem python3 -I scripts/jev-eval/jev_eval.py <data_dir> ../.env 100`. Expected: recall 1.000 at 0.2, p90 < 800ms.
+- [ ] **Step 3: Commit:** `chore: jev-eval replay script for the Jev table selection`.
 
 ### Task 12: End-to-end check in the dev stack (spec §5.4 kickoff)
 
@@ -519,10 +544,10 @@ The key comes from `judge.ConfigFromEnv(os.Getenv)` and is never printed.
 
 - [ ] **Step 1:** `docker compose up -d --build kg-server dashboard`, with `TYPESAFE_*` in the workspace `.env`.
 - [ ] **Step 2:** In DAAB web, set the mode to **Shadow** and allow **Pharmacy Chain**. Ask 5 Vietnamese questions through LAAM chat or MCP `kg_query_datasource` (for example "Top 5 sản phẩm bán chạy nhất tháng này", "Nhân viên nào có số tiền hoàn trả cao nhất").
-- [ ] **Step 3:** Check `select mode, outcome, latency_ms, selected_count, table_count, plan_tables, selected from ai_judge_logs order by created_at desc limit 5;`. Expected: 5 rows, `outcome=ok`, `plan_tables` filled and ⊆ `selected`. Answers and latency in LAAM unchanged.
+- [ ] **Step 3:** Check `select mode, outcome, latency_ms, selected_count, table_count, plan_tables, selected from ai_judge_logs where request_type='jev_table_select' order by created_at desc limit 5;`. Expected: 5 rows, `outcome=ok`, `plan_tables` filled and ⊆ `selected` (both qualified `schema.table`). Answers and latency in LAAM unchanged.
 - [ ] **Step 4:** Switch the mode to **On** and ask 5 new questions. Expected:
   - answers are correct;
   - `ai_usage_logs` `nl_query_intent.input_tokens` for these questions is clearly below the ~11k baseline;
   - the rows have `mode=on`.
-- [ ] **Step 5:** Turn Pharmacy Chain **off** and ask 1 question. Expected: no new `ai_judge_logs` row within 10s of the flag change.
+- [ ] **Step 5:** Turn Pharmacy Chain **off**, wait **15s** (the flag cache is 10s), and ask 1 new question. Expected: no new `ai_judge_logs` row for it.
 - [ ] **Step 6:** Set the mode back to **Shadow** (the agreed default for dev) and write the Serena checkpoint with the numbers.

@@ -158,8 +158,9 @@ has 2 to `max_tables` tables. One request, one `noul` question per table:
 
 The selection decides the schema text, and the schema text is part of the plan-cache key. So:
 
-- **Selection cache**, in-process LRU with TTL (size/TTL: builder's call):
-  - Key: `(data_source_id, normalizeNLQuery(question), schema-tree hash, judge model, threshold)`.
+- **Selection cache**, in-process LRU of 1000 entries with **no TTL**. The key changes whenever
+  anything sent to Jev changes, so a TTL would only make repeated questions pay Jev again.
+  - Key: `(data_source_id, masked + normalized question, hash of the questions payload sent to Jev, judge model, threshold)`.
   - Value: the selected table names.
   - Only `ok` outcomes are cached. A timeout or error falls back to the full schema for that
     request only, and the next miss tries Jev again.
@@ -190,7 +191,7 @@ so that routing can never pick it.
 | Column | Notes |
 |---|---|
 | `id`, `created_at` | |
-| `request_type` | `table_filter` |
+| `request_type` | `jev_table_select` (distinct from the smart-path LLM function `table_filter`) |
 | `mode` | `shadow` \| `on` |
 | `outcome` | `ok` \| `timeout` \| `error` \| `fallback_empty` |
 | `error_code` | HTTP status or transport class |
