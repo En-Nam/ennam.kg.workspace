@@ -106,6 +106,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       BYTEPLUS_API_KEY: ${BYTEPLUS_API_KEY:-}
       KG_ALLOW_CUSTOM_AI_PROVIDERS: ${KG_ALLOW_CUSTOM_AI_PROVIDERS:-false}
+      # TypeSafe Jev table judge. An empty key = Jev unavailable. Setting it only makes Jev available: no project
+      # uses it until an admin opts that project in (jev_allowed), and ai.judge.table_filter picks off/shadow/on.
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_BASE_URL: ${TYPESAFE_BASE_URL:-https://api.typesafe.ai}
+      TYPESAFE_DEFAULT_MODEL: ${TYPESAFE_DEFAULT_MODEL:-jev-1.13.0}
+      TYPESAFE_TIMEOUT_MS: ${TYPESAFE_TIMEOUT_MS:-800}
       # Queue
       KG_QUEUE_PROVIDER: redis
       KG_REDIS_URL: redis://redis:6379/0
