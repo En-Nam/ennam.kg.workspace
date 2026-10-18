@@ -46,8 +46,7 @@ it does today.
 - LAAM (a separate spec follows; only its env variable names are reserved here, §6).
 - The GraphRAG answerability gate, a clarification judge, and replacing `sql_verification`.
   These are later candidates once this one has numbers.
-- Per-project or per-data-source switches. v1 has one global setting, and the per-environment key
-  is the data gate (§7).
+- Per-data-source switches (the consent unit is the project, §4.1).
 - The Python worker and agentic path.
 - Counting Jev spend against `ai.monthly_budget_usd`. It is logged, not budgeted.
 
@@ -87,6 +86,26 @@ System settings (web, admin only), seeded by migration:
 | `ai.judge.table_filter` | `"off"` \| `"shadow"` \| `"on"` | `"off"` |
 | `ai.judge.table_filter_threshold` | number in (0,1) | `0.2` (smoke test: the lowest score of a needed table was 0.33, so 0.3 leaves almost no margin; see §5.0) |
 | `ai.judge.table_filter_max_tables` | integer | `60` (sources with more tables skip Jev and keep the full schema) |
+
+**Per-project opt-in (the data gate).** One deployment and one env serve many customers, so neither
+the key nor the global setting can express "this customer agreed". New table
+`project_ai_settings` (in the same migration):
+
+| Column | Notes |
+|---|---|
+| `project_id` | PK, FK → `projects(id)` ON DELETE CASCADE |
+| `jev_allowed` | boolean, default `false` |
+| `jev_allowed_by` | user id that last changed it (FK → `users`) |
+| `jev_allowed_at` | when it was last changed |
+
+No row means not allowed. Jev runs for a question **only if all three hold**:
+
+1. the key is set;
+2. `ai.judge.table_filter` is `shadow` or `on`;
+3. the question's project (via `data_sources.project_id`) has `jev_allowed = true`.
+
+This applies to **shadow too**, because shadow sends the same data. Look up the project flag on each
+request through a short-TTL cache, so turning a project off takes effect within seconds.
 
 The threshold leans toward recall on purpose (0.2 rather than the 0.3 first proposed). Dropping a needed table produces a wrong or clarified
 answer; keeping an extra one only costs tokens. It is tuned from shadow and replay data.
@@ -157,7 +176,7 @@ The selection decides the schema text, and the schema text is part of the plan-c
 
 | Mode | Request path | Off the request path |
 |---|---|---|
-| `off`, no key, or table count outside 2..max | today's behaviour | — |
+| `off`, no key, project not opted in, or table count outside 2..max | today's behaviour | — |
 | `shadow` | today's behaviour (full schema) | on a selection-cache miss, run the Jev selection in a detached goroutine (bounded concurrency, e.g. semaphore of 4, drop when full) and log it |
 | `on` | Jev selection → pruned schema; on timeout, error or non-2xx → full schema | — |
 
@@ -201,6 +220,13 @@ question is used only for the Jev request; the planner keeps the original.
 - In `ennam.kg.next` the AI settings page shows an Off / Shadow / On control for it. When
   `judge_available=false` the control is disabled with the hint "Jev key not configured on the
   server". Admin only.
+- Per-project opt-in:
+  - API: `GET` / `PUT /api/v1/projects/{id}/ai-settings` with `{ "jev_allowed": bool }`.
+    **System admin only** (my call: recording a customer's consent is Ennam's job, not the project
+    owner's).
+  - UI: the same admin AI settings page lists projects with a "Jev allowed" switch, showing who
+    allowed it and when.
+  - Turning a project off stops further calls for it. Already-logged rows stay.
 
 ### 4.9 Separate bugfix in the same branch: the two settings-key mismatches
 
@@ -284,23 +310,24 @@ TYPESAFE_TIMEOUT_MS=800
 
 **LAAM** (`LAAM/.env`): same names and meaning. Reserved for the LAAM spec and unused until then.
 
-`.env.example` gets the four lines. `.env.release.example` gets them with `TYPESAFE_API_KEY` left
-empty and the comment: *"Needs owner approval before filling — see §7."* For DAAB, the compose
-passthrough lines are part of this work.
+`.env.example` and `.env.release.example` both get the four lines. Setting the key on a
+deployment only makes Jev *available*: no project uses it until a system admin opts that project in
+(§7). For DAAB, the compose passthrough lines are part of this work.
 
 ## 7. Data policy (owner-approved 2026-10-18)
 
 What leaves the server: the user's question (PII-masked), table names, table descriptions and column
 names. No row data.
 
-- **Dev / demo environments:** allowed.
-- **Customer environments:** only after all three of the following hold:
+- **Dev / demo projects** (our own data): may be opted in freely.
+- **A customer's project:** opt it in only after all three of the following hold:
   - TypeSafe's DPA has been reviewed, and zero data retention is available on our plan
     (today it is enterprise-only);
-  - the customer has agreed;
-  - shadow results on dev meet the §5 bar.
-- **Mechanism:** whether an environment gets `TYPESAFE_API_KEY`. No key, no Jev. There is no
-  separate code gate.
+  - that customer has agreed;
+  - shadow results on our own data meet the §5 bar.
+- **Mechanism:** the per-project `jev_allowed` switch (§4.1), default off, set by a system admin
+  who records who and when. The key is set once per deployment. The global mode only chooses
+  shadow/on for the projects that are opted in.
 
 ## 8. Risks
 
@@ -324,10 +351,11 @@ Owner:
 
 - Plug Jev into the legacy path (option B); smart context is a separate project.
 - Data policy as in §7.
+- Consent is per project, because the env is shared by all customers.
 
 Mine, open to change:
 
-- one global setting;
+- a global mode plus a per-project opt-in that only a system admin can change;
 - threshold 0.2 (from the smoke test);
 - timeout 800ms;
 - max 60 tables;
