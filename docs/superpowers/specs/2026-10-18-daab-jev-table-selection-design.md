@@ -85,10 +85,10 @@ System settings (web, admin only), seeded by migration:
 | Key | Values | Default |
 |---|---|---|
 | `ai.judge.table_filter` | `"off"` \| `"shadow"` \| `"on"` | `"off"` |
-| `ai.judge.table_filter_threshold` | number in (0,1) | `0.3` |
+| `ai.judge.table_filter_threshold` | number in (0,1) | `0.2` (smoke test: the lowest score of a needed table was 0.33, so 0.3 leaves almost no margin; see §5.0) |
 | `ai.judge.table_filter_max_tables` | integer | `60` (sources with more tables skip Jev and keep the full schema) |
 
-The threshold leans toward recall on purpose. Dropping a needed table produces a wrong or clarified
+The threshold leans toward recall on purpose (0.2 rather than the 0.3 first proposed). Dropping a needed table produces a wrong or clarified
 answer; keeping an extra one only costs tokens. It is tuned from shadow and replay data.
 
 ### 4.2 Jev client (package location: builder's call)
@@ -215,6 +215,34 @@ context honour its settings once someone enables it. Ship it as its own commit w
    - Record client-side p50/p90 latency.
    - Eyeball the selections.
    - If p90 exceeds `TYPESAFE_TIMEOUT_MS`, stop and revisit the budget.
+
+   **Done 2026-10-18, from the developer machine in Vietnam.**
+
+   Setup:
+   - `jev-1.13.0`, pharmacy source, 25 tables / 294 columns.
+   - 200 distinct historical questions (100 Vietnamese, 100 English), about 2/3 of them needing
+     2 or more tables.
+   - Gold = the tables referenced by the SQL each question produced.
+
+   Results:
+   - 200/200 calls OK.
+   - Client latency p50 399ms / p90 438ms / max 665ms. Input ≈ 4.4k tokens per call, so
+     ≈ $0.0002 per call.
+
+   | Threshold | Recall | Questions with every needed table kept | Tables kept (avg) | Columns sent vs full |
+   |---|---|---|---|---|
+   | 0.2 | 1.000 | 200/200 | 7.0 / 25 | 29% (p90 55%) |
+   | 0.3 | 1.000 | 200/200 | 5.7 / 25 | 24% (p90 47%) |
+   | 0.5 | 0.989 | 196/200 | 4.1 / 25 | — |
+
+   - Vietnamese and English scored the same.
+   - The lowest score of a needed table was 0.33, hence the 0.2 default.
+   - Caveats:
+     - the gold is what past plans used, not hand-verified;
+     - many questions are templated test phrasings from one source;
+     - the kg-server host's network path is not measured yet.
+
+   Shadow mode (step 4) is still required.
 1. **Unit:**
    - threshold, bridge rule and empty-fallback;
    - the mode table in §4.5 against a fake Jev server: ok / timeout / 500 / 429, and 429 must not
@@ -300,7 +328,7 @@ Owner:
 Mine, open to change:
 
 - one global setting;
-- threshold 0.3;
+- threshold 0.2 (from the smoke test);
 - timeout 800ms;
 - max 60 tables;
 - column names only in the request;
