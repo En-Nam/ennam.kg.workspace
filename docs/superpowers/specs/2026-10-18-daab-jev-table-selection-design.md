@@ -95,8 +95,10 @@ the key nor the global setting can express "this customer agreed". New table
 |---|---|
 | `project_id` | PK, FK → `projects(id)` ON DELETE CASCADE |
 | `jev_allowed` | boolean, default `false` |
-| `jev_allowed_by` | user id that last changed it (FK → `users`) |
-| `jev_allowed_at` | when it was last changed |
+| `changed_by_user_id` | nullable FK → `users`: set when a DAAB web user changed it |
+| `changed_by_label` | text, not null: the person, e.g. the DAAB user's email, or the Ennam Admin staff email passed by Admin |
+| `changed_via` | `daab_web` \| `ennam_admin` |
+| `changed_at` | when it was last changed |
 
 No row means not allowed. Jev runs for a question **only if all three hold**:
 
@@ -220,15 +222,56 @@ question is used only for the Jev request; the planner keeps the original.
 - In `ennam.kg.next` the AI settings page shows an Off / Shadow / On control for it. When
   `judge_available=false` the control is disabled with the hint "Jev key not configured on the
   server". Admin only.
-- Per-project opt-in:
-  - API: `GET` / `PUT /api/v1/projects/{id}/ai-settings` with `{ "jev_allowed": bool }`.
-    **System admin only** (my call: recording a customer's consent is Ennam's job, not the project
-    owner's).
-  - UI: the same admin AI settings page lists projects with a "Jev allowed" switch, showing who
-    allowed it and when.
-  - Turning a project off stops further calls for it. Already-logged rows stay.
+- Per-project opt-in, DAAB API (the single source of truth):
+  - `GET` / `PUT /api/v1/projects/{id}/ai-settings` with body
+    `{ "jev_allowed": bool, "changed_by_label"?: string }`.
+  - **Callers:** system admin only, meaning a user session with role admin or an admin API key with
+    no `project_ids` (that is what Ennam Admin's `DAAB_ADMIN_KEY` is). The project owner cannot change
+    it (owner decision: recording a customer's consent is Ennam's job).
+  - **Who is recorded:**
+    - For a user session, the server records that user and ignores `changed_by_label`.
+    - For an admin API key, `changed_by_label` is required (400 if missing) and `changed_via` is
+      `ennam_admin`.
+  - `GET` returns the flag plus who / when / via, and whether Jev is available on this deployment
+    (key present) and the global mode.
+  - Turning a project off stops further calls for it within the flag cache TTL. Already-logged
+    rows stay.
+- **Where people flip it (owner decision 2026-10-18):**
 
-### 4.9 Separate bugfix in the same branch: the two settings-key mismatches
+  | Place | What | For |
+  |---|---|---|
+  | **Ennam Admin** → org detail → DAAB card | "Allow Jev for this customer" switch | Customer orgs. This is the normal place, because consent is a contract matter. |
+  | **DAAB web** → admin AI settings | Global Off / Shadow / On, plus the list of projects with their Jev flag (switchable) | Internal and demo projects that have no org in Ennam Admin, and an overview of all projects |
+  | **LAAM web** | nothing | LAAM stays connector-agnostic. LAAM's own Jev uses get their own switch in the LAAM spec. |
+
+### 4.9 Ennam Admin (`ennam.kg.admin`), same delivery
+
+Follow the existing DAAB-card pattern (spec 4A, `docs/superpowers/specs/2026-10-05-daab-org-connection-design.md`):
+
+- **Client** (`src/lib/daab/client.ts`): add `getAiSettings(projectId)` and
+  `setAiSettings(projectId, { jevAllowed, changedByLabel })`. Answers are zod-checked, and errors map
+  to the existing `DaabErrorKind`.
+- **Service** (`src/lib/daab/service.ts`): `setDaabJevAllowed(db, actor, { orgId, allowed, now })`.
+  - Only when the org's DAAB state has a `project_id`.
+  - Admin role only (ops gets 404, like other admin-only actions).
+  - Passes the staff email as `changed_by_label`.
+  - Writes an audit entry (`daab.jev_allowed` / `daab.jev_disallowed`) carrying the org, the
+    project and the new value.
+- **Server action and UI** (`orgs/[id]/daab-actions.ts`, `DaabCard.tsx`):
+  - The switch sits in the DAAB card.
+  - Like every mutating action it asks for the 2FA code, plus a confirmation sentence:
+    *"Only turn this on after the customer has agreed to send questions and table names to
+    TypeSafe."*
+  - The card shows the current value, who changed it, when and via where, all read live from DAAB.
+  - When DAAB is unreachable, the card says so, the switch is disabled, and nothing is written
+    locally.
+- **State:** Admin stores no copy of the flag. DAAB is the source of truth, so the two UIs cannot
+  drift.
+- **Tests:** unit tests for the client parsing and the service with the fake client
+  (`overrideDaabClient`); the card in its states (no project / off / on / DAAB unreachable /
+  ops role); an int test that the audit row is written.
+
+### 4.10 Separate bugfix in the same branch: the two settings-key mismatches
 
 Make `resolveDefaultTier` read `ai.query_tier` and `resolveTopK` read `ai.context_top_k`. This has
 **no runtime effect today**, because `ContextBuilder` is not constructed (§3). It only makes smart
@@ -325,8 +368,8 @@ names. No row data.
     (today it is enterprise-only);
   - that customer has agreed;
   - shadow results on our own data meet the §5 bar.
-- **Mechanism:** the per-project `jev_allowed` switch (§4.1), default off, set by a system admin
-  who records who and when. The key is set once per deployment. The global mode only chooses
+- **Mechanism:** the per-project `jev_allowed` switch (§4.1), default off. For customers it is set
+  in Ennam Admin behind 2FA and audit (§4.9); for internal and demo projects it is set in DAAB web. The key is set once per deployment. The global mode only chooses
   shadow/on for the projects that are opted in.
 
 ## 8. Risks
@@ -352,6 +395,8 @@ Owner:
 - Plug Jev into the legacy path (option B); smart context is a separate project.
 - Data policy as in §7.
 - Consent is per project, because the env is shared by all customers.
+- The switch lives in Ennam Admin for customers and in DAAB web for internal and demo projects, with
+  nothing in LAAM. The Ennam Admin part ships in the same delivery.
 
 Mine, open to change:
 
