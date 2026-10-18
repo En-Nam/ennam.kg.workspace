@@ -214,10 +214,10 @@ question is used only for the Jev request; the planner keeps the original.
 
 ### 4.8 API and UI
 
-- `AIFunction` gains `SupportsJudge bool`. Add an entry for this judge (key builder's call, e.g.
-  `nl_table_select`) so it is described in plain language on the settings page. It has no LLM model
-  assignment.
-- `GET /ai-functions` adds `judge_supported`, `judge_available` (key present) and `judge_mode`.
+- The judge is **not** added to `models.AIFunctions`. That registry is kept in step with the Python
+  request tags and drives model assignment, and the judge has no LLM model.
+- `GET /ai-functions` instead adds a top-level
+  `judge: { available, mode, threshold, max_tables }` (plan decision, 2026-10-18).
 - Settings validation: `ai.judge.*` keys accept only the values in §4.1 (400 otherwise).
 - In `ennam.kg.next` the AI settings page shows an Off / Shadow / On control for it. When
   `judge_available=false` the control is disabled with the hint "Jev key not configured on the
@@ -255,7 +255,7 @@ Follow the existing DAAB-card pattern (spec 4A, `docs/superpowers/specs/2026-10-
   - Only when the org's DAAB state has a `project_id`.
   - Admin role only (ops gets 404, like other admin-only actions).
   - Passes the staff email as `changed_by_label`.
-  - Writes an audit entry (`daab.jev_allowed` / `daab.jev_disallowed`) carrying the org, the
+  - Writes an audit entry (`org.daab_jev_allowed` / `org.daab_jev_disallowed`, following the existing `org.daab_*` names) carrying the org, the
     project and the new value.
 - **Server action and UI** (`orgs/[id]/daab-actions.ts`, `DaabCard.tsx`):
   - The switch sits in the DAAB card.
