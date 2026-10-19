@@ -107,6 +107,8 @@ services:
       KG_REDIS_URL: redis://redis:6379/0
       # Python indexer URL (SSE proxy for the agentic AI-query loop)
       KG_PYTHON_URL: http://indexer:8081
+      # Shared secret for the indexer's internal endpoints (tabular parse); must equal the indexer's
+      KG_INTERNAL_TOKEN: ${KG_INTERNAL_TOKEN:?set KG_INTERNAL_TOKEN in .env (openssl rand -base64 32)}
       KG_UPLOAD_DIR: /app/data/uploads
       # Industry packs (writable mount, see volumes): the Template Library installs,
       # updates and rolls back versions in place. PACKS_SOURCE is the pack registry
@@ -149,6 +151,8 @@ services:
     environment:
       GO_API_URL: http://kg-server:8080
       GO_API_KEY: ${KG_API_KEY:?set KG_API_KEY in .env}
+      # Checked on /api/v1/tabular/parse (empty = 503); same value as kg-server's
+      KG_INTERNAL_TOKEN: ${KG_INTERNAL_TOKEN:?set KG_INTERNAL_TOKEN in .env (openssl rand -base64 32)}
       REDIS_URL: redis://redis:6379/0
       REDIS_QUEUE_NAME: ennam-kg:indexing
       REDIS_AI_QUEUE_NAME: ennam-kg:ai-tasks
