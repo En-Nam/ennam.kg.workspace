@@ -11,17 +11,22 @@
 # Env:
 #   VERSION   semver tag (default v2.6.1)
 #   REGISTRY  registry host:port for `push` (default localhost:5000)
+# Precedence: the caller's environment, then .env, then the defaults above.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-v2.6.1}"
-REGISTRY="${REGISTRY:-localhost:5000}"
+CALLER_VERSION="${VERSION:-}"
+CALLER_REGISTRY="${REGISTRY:-}"
 ACTION="${1:-build}"
 SHA="$(git -C ennam.kg.go rev-parse --short HEAD)"
 
 # Load .env (if present) so build args (e.g. the dashboard's NEXT_PUBLIC_SUPABASE_*)
 # come from there instead of being hardcoded. Empty when unset = feature disabled.
 set -a; [ -f .env ] && . ./.env; set +a
+
+# .env must not override a VERSION / REGISTRY given on the command line.
+VERSION="${CALLER_VERSION:-${VERSION:-v2.6.1}}"
+REGISTRY="${CALLER_REGISTRY:-${REGISTRY:-localhost:5000}}"
 
 # build_one NAME CTX DOCKERFILE TARGET [extra docker-build args...]
 build_one() {
