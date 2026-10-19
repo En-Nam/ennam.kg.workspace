@@ -1,10 +1,10 @@
-# Ennam Knowledge Graph Platform — RELEASE bundle (v2.5.0)
+# Ennam Knowledge Graph Platform — RELEASE bundle (v2.6.0)
 #
 # Runs the pinned, pre-built PRODUCTION images (no source build; the only bind-mount
 # is the industry packs dir, PACKS_HOST_DIR, default ./ennam.kg.packs):
-#   daab-server:v2.5.0      (Go API)
-#   daab-python:v2.5.0      (indexer + worker, same image / different command)
-#   daab-dashboard:v2.5.0   (Next.js dashboard)
+#   daab-server:v2.6.0      (Go API)
+#   daab-python:v2.6.0      (indexer + worker, same image / different command)
+#   daab-dashboard:v2.6.0   (Next.js dashboard)
 #
 # Usage:
 #   cp .env.release.example .env      # then fill in the required secrets
@@ -63,7 +63,7 @@ services:
   # Go API Server (production image)
   # ===========================================================================
   kg-server:
-    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.5.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.6.0}
     restart: unless-stopped
     ports:
       - "${KG_SERVER_PORT:-8080}:8080"
@@ -142,7 +142,7 @@ services:
   # Python Indexing Service — HTTP API (production image)
   # ===========================================================================
   indexer:
-    image: ${KG_IMAGE_PREFIX:-}daab-python:${KG_RELEASE_TAG:-v2.5.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-python:${KG_RELEASE_TAG:-v2.6.0}
     restart: unless-stopped
     ports:
       - "${KG_INDEXER_PORT:-8081}:8081"
@@ -180,7 +180,7 @@ services:
   # Python Queue Worker — background consumer (production image)
   # ===========================================================================
   worker:
-    image: ${KG_IMAGE_PREFIX:-}daab-python:${KG_RELEASE_TAG:-v2.5.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-python:${KG_RELEASE_TAG:-v2.6.0}
     restart: unless-stopped
     command: ["python", "-m", "ennam_kg.worker"]
     environment:
@@ -217,7 +217,7 @@ services:
   # Next.js Dashboard (production image)
   # ===========================================================================
   dashboard:
-    image: ${KG_IMAGE_PREFIX:-}daab-dashboard:${KG_RELEASE_TAG:-v2.5.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-dashboard:${KG_RELEASE_TAG:-v2.6.0}
     restart: unless-stopped
     ports:
       - "${KG_DASHBOARD_PORT:-3500}:3500"
@@ -248,7 +248,7 @@ services:
   # forwarded per-request to kg-server, which enforces scope (role + project_members).
   # Expose port 8765 to the tailnet/proxy. See docs/deploy-mcp-bridge.md.
   kg-bridge:
-    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.5.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.6.0}
     restart: unless-stopped
     entrypoint: ["/app/kg-bridge"]
     command: ["serve", "--http", "0.0.0.0:8765"]
@@ -269,7 +269,7 @@ services:
   # serves them to DAAB and LAAM. Tokens come only from the environment; the service
   # refuses to start while KG_PACKS_READ_TOKEN or KG_PACKS_PUBLISH_TOKEN is empty.
   kg-pack-registry:
-    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.5.0}
+    image: ${KG_IMAGE_PREFIX:-}daab-server:${KG_RELEASE_TAG:-v2.6.0}
     restart: unless-stopped
     entrypoint: ["/app/kg-pack-registry"]
     environment:
