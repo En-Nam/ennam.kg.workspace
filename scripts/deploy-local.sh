@@ -12,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."                       # DAAB root
 SERVICE="${1:-all}"
-VERSION="${VERSION:-v2.6.0}"
+VERSION="${VERSION:-v2.6.1}"
 # Project/stack name comes from `name: daab` inside docker-compose.release.yml.
 COMPOSE=(docker compose -f docker-compose.release.yml)
 SHA="$(git -C ennam.kg.go rev-parse --short HEAD 2>/dev/null || echo local)"
