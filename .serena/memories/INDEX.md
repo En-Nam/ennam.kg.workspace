@@ -30,11 +30,13 @@ See CLAUDE.md "Serena Memory Protocol" for read/write rules.
 | `services/nextjs-dashboard.md` | NextJS (:3500) | 15+ pages, 3D graph, chat, BFF proxy |
 | `services/python-worker.md` | Python (:8081) | Stateless AI engine, streaming, NL query |
 
-## Active Decisions (15 files)
+## Active Decisions (17 files)
 
 | File | Topic |
 |------|-------|
-| `decisions/ecosystem-hermes-allocation.md` | ⭐ ENNAM ECOSYSTEM (AAAA/DAAB/LAAM): **DAAB OWNS** shared memory (`kg_remember`/`kg_recall`, RRF) + session search; AAAA/LAAM consume; gates = confirm internals + cross-platform RBAC isolation. CTO decision 2026-06-23 |
+| `decisions/memory-allocation-2026-10-22.md` | ⭐ SUPERSEDES rows 1–2 below for LAAM/DAAB: **LAAM owns personal memory + its own chat-history search**; DAAB memory → project-scoped "business knowledge" (deferred). Auto-save with notice + Undo, guarded by code-side provenance (v1.1; the confirm card was dropped). Owner decision 2026-10-22 |
+| `decisions/laam-provider-fallback-and-scaling.md` | LAAM: no automatic provider fallback (user picks provider for cost); multi-instance hardening deferred. 2026-10-22 |
+| `decisions/ecosystem-hermes-allocation.md` | ⚠️ Rows 1–2 (memory, session search) SUPERSEDED for LAAM/DAAB by `memory-allocation-2026-10-22`; rows 3–8 (skips, security invariant) still stand. Was: DAAB owns shared memory, AAAA/LAAM consume. CTO decision 2026-06-23 |
 | `decisions/daab-hermes-keystone-verification.md` | 🔴 DAAB verdict on the above: retrieval engine EXISTS (384-dim node search/RRF/FTS confirmed), but **cross-platform RBAC isolation DOES-NOT-HOLD** (body-override + cross_project_ids + by-UUID IDOR) → consumers BLOCKED until gate test passes. 2026-06-23 |
 | `decisions/technical-decisions.md` | Master decision log (tech stack, auth, hosting) |
 | `decisions/overview.md` | Project roadmap — all 6 phases |
@@ -54,6 +56,7 @@ See CLAUDE.md "Serena Memory Protocol" for read/write rules.
 
 | File | Domain | Priority |
 |------|--------|----------|
+| `backlog/daab-business-knowledge-memory.md` | Go+Python+NextJS | Deferred — memory → project "business knowledge"; drop scopes user/agent; ⚠️ kg_search_sessions shared-key leak |
 | `backlog/sse-block-ordering-bug.md` | Python+Go | P1 |
 | `backlog/bug-kg-nodes-missing-ai-description.md` | Go | Medium |
 | `backlog/fix-kg-generation-progress-visibility.md` | Go | Medium |
