@@ -334,6 +334,8 @@ export interface MetricsProvider {
   getDataStatus(): Promise<{ asOf: string; items: DataStatusItem[]; disabledMetrics: {metricKey:string;reason:string}[] }>;
 }
 ```
+**Bổ sung `getRecord` (2026-11-01, POS demo — spec `LAAM/docs/superpowers/specs/2026-11-01-intel-pos-demo-heatmap-receipt-video-design.md` §2):** `MetricsProvider` có thêm `getRecord(q: { entity: 'sale'|'refund'; id: string; dimsFilter?: DimsFilter }): Promise<RecordResult>` với `RecordResult = { found: false } | { found: true; entity; sections: { key: 'sale'|'lines'|'refunds'|'refund'|'original_sale'|'original_lines'; columns: string[]; rows: unknown[][] }[] }`, gọi tool DAAB `kg_get_record` (chỉ `location_id` được phép trong `dims_filter`). Bản `scoped` kiểm lại lần 2: bản ghi chính ngoài scope → `{ found: false }`; `original_sale` ngoài scope bị bỏ cùng `original_lines`; dòng `refunds` ngoài scope bị bỏ. Hợp đồng LOCKED được mở rộng đúng một phương thức này; `types.ts` phản chiếu mục này.
+
 Bảng mới: `business_project`, `user_scope`, `analysis_job`, `analysis_run`, `finding`, `finding_event`, `forecast_run`, `scenario_run`, `task`, `feedback`, `rule_override` (cột theo spec §7.4, §7.2, §5.3; Plan D định nghĩa chi tiết Drizzle, Plan E dùng). Thư mục code mới: `LAAM/src/lib/intel/` (core trung tính ngành).
 
 ---
