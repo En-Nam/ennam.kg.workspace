@@ -107,6 +107,7 @@ services:
       # cannot add a provider or key of their own while KG_ALLOW_CUSTOM_AI_PROVIDERS is false.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       BYTEPLUS_API_KEY: ${BYTEPLUS_API_KEY:-}
+      BYTEPLUS_BASE_URL: ${BYTEPLUS_BASE_URL:-}
       KG_ALLOW_CUSTOM_AI_PROVIDERS: ${KG_ALLOW_CUSTOM_AI_PROVIDERS:-false}
       # TypeSafe Jev table judge. An empty key = Jev unavailable. Setting it only makes Jev available: no project
       # uses it until an admin opts that project in (jev_allowed), and ai.judge.table_filter picks off/shadow/on.
