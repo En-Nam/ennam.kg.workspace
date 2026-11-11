@@ -1,10 +1,14 @@
 -- Landed store bootstrap. Mounted into the postgres container's
 -- /docker-entrypoint-initdb.d/, so it runs ONLY on a FRESH data volume.
--- Existing clusters: run the equivalent statements manually as a deploy step.
--- Passwords come from the LANDED_*_PASSWORD env vars (passed to psql as variables
--- by init.sh). Schema, tables and RLS live in ennam.kg.go/db/landed_migrations
+-- Existing clusters: this does not re-run; create database ennam_landed and the roles
+-- manually, and apply the REVOKEs below by hand (fresh-cluster step).
+-- Passwords are read from the LANDED_*_PASSWORD env vars via psql \getenv
+-- (not -v, so they never appear in a process argument list). Schema, tables and RLS live in ennam.kg.go/db/landed_migrations
 -- (`make landed-migrate`), never here.
 \set ON_ERROR_STOP on
+\getenv maint_pw LANDED_MAINT_PASSWORD
+\getenv writer_pw LANDED_WRITER_PASSWORD
+\getenv engine_pw LANDED_ENGINE_PASSWORD
 
 SELECT 'CREATE DATABASE ennam_landed OWNER ' || current_user
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'ennam_landed')\gexec
