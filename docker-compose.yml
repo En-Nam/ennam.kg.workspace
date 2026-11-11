@@ -39,8 +39,14 @@ services:
       POSTGRES_USER: ${KG_DB_USER:-ennam_kg}
       POSTGRES_PASSWORD: ${KG_DB_PASSWORD:-ennam_kg_dev}
       POSTGRES_INITDB_ARGS: "--data-checksums"
+      # NEW: landed store (init runs on a FRESH volume only)
+      LANDED_MAINT_PASSWORD: ${LANDED_MAINT_PASSWORD:-landed_maint_dev}
+      LANDED_WRITER_PASSWORD: ${LANDED_WRITER_PASSWORD:-landed_writer_dev}
+      LANDED_ENGINE_PASSWORD: ${LANDED_ENGINE_PASSWORD:-landed_engine_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/landed/init.sql:/landed/init.sql:ro
+      - ./scripts/landed/init.sh:/docker-entrypoint-initdb.d/50-landed.sh:ro
     healthcheck:
       test:
         [
