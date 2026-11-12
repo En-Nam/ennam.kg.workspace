@@ -135,6 +135,12 @@ services:
       PACKS_DIR: /packs
       PACKS_SOURCE: ${PACKS_SOURCE:-}
       PACKS_TOKEN: ${PACKS_TOKEN:-}
+      # Landed store (ennam_landed; role passwords come from the postgres init above, dev defaults only).
+      # Run `make landed-migrate` (ennam.kg.go) once per fresh volume. Unset = landed API disabled.
+      LANDED_DATABASE_URL: postgres://landed_maintenance:${LANDED_MAINT_PASSWORD:-landed_maint_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
+      LANDED_WRITER_URL: postgres://landed_writer:${LANDED_WRITER_PASSWORD:-landed_writer_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
+      LANDED_ENGINE_URL: postgres://landed_engine:${LANDED_ENGINE_PASSWORD:-landed_engine_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
+      LANDED_QUEUE_NAME: ${LANDED_QUEUE_NAME:-ennam-kg:landed}
       # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
       USE_S3: ${USE_S3:-0}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
@@ -254,6 +260,9 @@ services:
       # Plan B: fuzzy alias LLM adjudication after each resolve_document job.
       KG_DATABASE_URL: postgres://ennam_kg:${KG_DB_PASSWORD:-ennam_kg_dev}@postgres:5432/ennam_kg
       FUZZY_MERGE_DEGREE_THRESHOLD: ${FUZZY_MERGE_DEGREE_THRESHOLD:-0.84}
+      # Landed store consumer (role landed_writer; dev default password). Empty = consumer off.
+      LANDED_WRITER_URL: postgres://landed_writer:${LANDED_WRITER_PASSWORD:-landed_writer_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
+      LANDED_QUEUE_NAME: ${LANDED_QUEUE_NAME:-ennam-kg:landed}
     volumes:
       - ./ennam.kg.go:/repos/ennam-kg-go:ro
       - ./ennam.kg.next:/repos/ennam-kg-next:ro
