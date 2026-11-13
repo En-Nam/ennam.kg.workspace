@@ -72,9 +72,10 @@ runs follow the owner's *current* stores and pause when access is lost.
   test runs, workflow/custom-agent authoring (generate/generateChat), media/evidence routes.
 - **Default deny:** a member/viewer without a `user_scope` row is treated as "no stores" (fix `intel/chat/hook.ts:92` +
   `chat/route.ts:737` pattern) on all paths, not only intel chat.
-- **Scheduled workflows:** scope is recomputed at every run (not frozen at scheduling); if the owner is disabled/removed or has no
+- **Scheduled workflows:** scope is recomputed at every run (not frozen at scheduling); if the owner (active, in an active org) has no
   stores ⇒ the schedule pauses with a new `pausedReason = data_access_lost` (existing lifecycle mechanism); never fall back to the
-  org key. Org (shared) workflows run with the scheduling member's own scope.
+  org key. A disabled/removed/demoted owner is handled by the existing paths (disable/demote turns schedules off, removal deletes
+  them), and a suspended org keeps its hold-and-retry — neither becomes `data_access_lost`. Org (shared) workflows run with the scheduling member's own scope.
 - MCP transport: the ticket is per acting user and per call; the LAAM MCP client must attach the header per request (or per
   short-lived session keyed by acting user). Keep connector-agnostic: DAAB-specific header name lives only in the DAAB provider /
   connector config, not in runtime strings elsewhere (rule `laam-must-stay-connector-agnostic`).
