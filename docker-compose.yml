@@ -141,6 +141,8 @@ services:
       LANDED_WRITER_URL: postgres://landed_writer:${LANDED_WRITER_PASSWORD:-landed_writer_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
       LANDED_ENGINE_URL: postgres://landed_engine:${LANDED_ENGINE_PASSWORD:-landed_engine_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
       LANDED_QUEUE_NAME: ${LANDED_QUEUE_NAME:-ennam-kg:landed}
+      # Offer titled demo/test templates (e.g. the MOCKPOS demo file) in the setup wizard. Dev default on; leave unset in production.
+      LANDED_DEMO_TEMPLATES: ${LANDED_DEMO_TEMPLATES:-1}
       # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
       USE_S3: ${USE_S3:-0}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
