@@ -102,6 +102,9 @@ runs follow the owner's *current* stores and pause when access is lost.
   is added in `serve.go` + `client.go` (small, additive; payment branch is already merged into this branch in `ennam.kg.go`).
 - **Admin service keys** (global admin API keys without a user, e.g. the worker key) are not subject to tickets — they must never be
   given to LAAM; stated explicitly as an operational rule.
+- **Delegation keys (from W4 review):** a ticket is accepted only with an API key that has no user, is not a global admin and is
+  scoped to exactly one project equal to the ticket's `pid`. Operational rule: each LAAM org uses exactly one single-project DAAB
+  key (as Ennam Admin provisions today); multi-project/admin/user keys carrying a ticket are refused.
 - **GenerateKG mismatch ⇒ 404** (do not reveal that the data source exists in another project).
 - **Store-limited ticket = allow-list:** only store-filterable data reads (metrics, evidence, record, data status) plus
   non-data catalogue calls are allowed; everything else is denied by default.
