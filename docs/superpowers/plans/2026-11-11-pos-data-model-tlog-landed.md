@@ -253,7 +253,7 @@ reconcile:                          # pack-owned rules, core evaluates (spec R4)
 
 **Files:** `ennam.kg.python/src/ennam_kg/landed_ingest/readers/{base.py,xml_reader.py}`; `defusedxml` in `pyproject.toml`. Test: `tests/landed_ingest/test_readers.py`, fixtures `tests/landed_ingest/fixtures/*.xml`.
 
-**Interfaces — Produces:** `Node = dict[str, Any]` neutral tree per transaction (`{"@attr": str, "child": Node | list[Node], "#text": str}`); `class Reader(Protocol): def iter_transactions(self, data: bytes) -> Iterator[Node]`; `def get_reader(cfg: dict) -> Reader`; errors `ReadError(code ∈ {too_large, malformed, forbidden_construct, binary_unsupported}, detail)`.
+**Interfaces — Produces (rev: C2 review ruling):** readers yield a DETACHED `xml.etree.ElementTree.Element` per transaction (Clark-notation names; all formats build Elements); `class Reader(Protocol): def iter_transactions(self, data: bytes) -> Iterator[Element]`; `def get_reader(cfg: dict) -> Reader`; errors `ReadError(code ∈ {too_large, malformed, forbidden_construct, binary_unsupported}, detail)`.
 
 - [ ] Steps: tests `test_poslog_yields_each_transaction`, `test_rejects_xxe`, `test_rejects_entity_expansion`, `test_rejects_oversize`, `test_binary_rejected`, `test_malformed_reports_offset` → FAIL → implement (`defusedxml.ElementTree.iterparse`) → `uv run pytest tests/landed_ingest -q` PASS → commit.
 
@@ -345,7 +345,16 @@ Mapping page: source option "POS data (stored)", button "Use POS data for all" (
 
 ## Plan F — Verification & handover
 
-- [ ] **F1 API E2E** (also asserts no `sale_id` collision across the two feeds): compose up; enable landed (consent "internal test data"); two feeds — POSLog fixture and an overlay crosswalk fixture of a second vendor shape — **automated test `TestSameReportsFromTwoCrosswalks`** (Go integration, both feeds' golden data ⇒ identical `sr_*`/`sc_*` per store/day); autofill; recalculate; replay same file ⇒ unchanged.
+### Task F0: Pharmacy demo → POSLog exporter (test data, user decision 2026-11-11)
+
+**Files:** workspace `scripts/demo_data/export_poslog.py` + `scripts/demo_data/tests/test_export_poslog.py` (stdlib `xml.etree` only — do **not** touch the pre-existing dirty `pyproject.toml` / `uv.lock`). Output (git-ignored): `scripts/demo_data/out/poslog/<store>/<business_date>.xml`.
+
+**Interfaces — Produces:** `export(dsn: str, out_dir: Path, stores: list[str] | None, date_from: date, date_to: date) -> ExportStats` — **read-only** on `pharmacy_demo` (`SET TRANSACTION READ ONLY`); maps `transactions`/`transaction_items`/`payments`/`voids`/`refunds`+`refund_items`/`discount_overrides`/`cash_drawers` to POSLog 6.0 elements exactly as `retail/daab/crosswalks/poslog-6.0.yaml` (A5) reads them; transactions linked to `prescriptions` carry the RX marker the pharmacy overlay crosswalk maps to `is_rx`; no patient identifiers exported. CLI: `uv run python export_poslog.py --store <id> --from 2026-10-01 --to 2026-10-07`.
+
+- [ ] Steps: tests `test_one_transaction_round_trips_through_crosswalk_paths` (fixture rows ⇒ XML ⇒ C3 `apply` ⇒ expected canonical records), `test_rx_marker_only_on_prescription_transactions`, `test_no_patient_fields_in_output`, `test_read_only_transaction` → FAIL → implement → PASS → commit (workspace root).
+
+
+- [ ] **F1 API E2E on pharmacy demo data** (also asserts no `sale_id` collision across the two feeds): test project "Pharmacy Chain (landed test)" with retail + pharmacy packs; feed the F0 export (1 store × 7 days first, then all 5 stores × 30 days); **parity check: every metric computable in both modes gives the same `metric_value` for landed (from POSLog) and live (existing `pharmacy_demo` mapping) over the same window** — differences listed and explained; then: compose up; enable landed (consent "internal test data"); two feeds — POSLog fixture and an overlay crosswalk fixture of a second vendor shape — **automated test `TestSameReportsFromTwoCrosswalks`** (Go integration, both feeds' golden data ⇒ identical `sr_*`/`sc_*` per store/day); autofill; recalculate; replay same file ⇒ unchanged.
 - [ ] **F1b Browser E2E with Chrome DevTools MCP** (`mcp__plugin_chrome-devtools-mcp_chrome-devtools__*`): on `http://localhost:3500` enable landed → wizard 4 steps (`upload_file` POSLog fixture) → map one unmatched field → batch done → "Re-run this batch" → Data mapping "Use POS data for all" → Refresh numbers → master upload. Each step: `take_snapshot` + `take_screenshot`; `list_console_messages` no errors; `list_network_requests` no 4xx/5xx on `/api/kg/projects/*/landed/*`. Screenshots to scratchpad, listed in checkpoint.
 - [ ] **F2 Docs:** README/CLAUDE.md per repo (env, make target, queue, roles); Serena `services/*` + checkpoint via `mcp__serena__write_memory`; `kg_store_decision` L1–L14; CI grep guard for D10 words in `internal/landed*`, `internal/intel/landedsource`, `landed_ingest/`.
 - [ ] **F3:** `superpowers:requesting-code-review` per repo; `superpowers:finishing-a-development-branch`.
@@ -375,6 +384,6 @@ Mapping page: source option "POS data (stored)", button "Use POS data for all" (
 
 ## Execution order
 
-Phase 1: `A0 → A1 → A2 → A3 → A3b → A4 → A5 → A6` ‖ `B1 → B2 → B3 → B4` → `C1 → C2 → C3 → C4 → C5 → C7 → C8` → `E1 → E2 → E3 → E4 → E5` → `F1 → F1b`.
+Phase 1: `A0 → A1 → A2 → A3 → A3b → A4 → A5 → A6` ‖ `B1 → B2 → B3 → B4` → `C1 → C2 → C3 → F0 → C4 → C5 → C7 → C8` → `E1 → E2 → E3 → E4 → E5` → `F1 → F1b`.
 Phase 2: `C6` (after AIOS Q1/Q2) · `D1 → D2` (NL→SQL) → re-run F1b incl. Data Sources system row.
 Real customer data only after the WS0 plan is done.
