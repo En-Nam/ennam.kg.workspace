@@ -26,11 +26,11 @@ ALTER ROLE landed_maintenance LOGIN PASSWORD :'maint_pw';
 ALTER ROLE landed_writer      LOGIN PASSWORD :'writer_pw';
 ALTER ROLE landed_engine      LOGIN PASSWORD :'engine_pw';
 
--- Free-question role landed_ai: created NOLOGIN here too, then LOGIN + password + temp_file_limit.
--- Its caps and grants come from migration 000006 (`make landed-migrate`).
-\ir ai-role.sql
-
 -- Deploy step: stop the landed roles (and anyone else) reaching the other databases.
 -- Fresh clusters only; skipped silently when a database does not exist yet.
 SELECT format('REVOKE CONNECT, TEMP ON DATABASE %I FROM PUBLIC', datname)
 FROM pg_database WHERE datname IN ('ennam_kg', 'pharmacy_demo')\gexec
+
+-- Free-question role landed_ai: created NOLOGIN here too, then LOGIN + password + temp_file_limit.
+-- Its caps and grants come from migration 000006 (`make landed-migrate`).
+\ir ai-role.sql
