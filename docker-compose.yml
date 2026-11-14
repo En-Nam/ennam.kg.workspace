@@ -43,9 +43,11 @@ services:
       LANDED_MAINT_PASSWORD: ${LANDED_MAINT_PASSWORD:-landed_maint_dev}
       LANDED_WRITER_PASSWORD: ${LANDED_WRITER_PASSWORD:-landed_writer_dev}
       LANDED_ENGINE_PASSWORD: ${LANDED_ENGINE_PASSWORD:-landed_engine_dev}
+      LANDED_AI_PASSWORD: ${LANDED_AI_PASSWORD:-landed_ai_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/landed/init.sql:/landed/init.sql:ro
+      - ./scripts/landed/ai-role.sql:/landed/ai-role.sql:ro
       - ./scripts/landed/init.sh:/docker-entrypoint-initdb.d/50-landed.sh:ro
     healthcheck:
       test:

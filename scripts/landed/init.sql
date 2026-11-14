@@ -9,6 +9,7 @@
 \getenv maint_pw LANDED_MAINT_PASSWORD
 \getenv writer_pw LANDED_WRITER_PASSWORD
 \getenv engine_pw LANDED_ENGINE_PASSWORD
+-- LANDED_AI_PASSWORD is read by ai-role.sql (included below).
 
 SELECT 'CREATE DATABASE ennam_landed OWNER ' || current_user
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'ennam_landed')\gexec
@@ -24,6 +25,10 @@ END $$;
 ALTER ROLE landed_maintenance LOGIN PASSWORD :'maint_pw';
 ALTER ROLE landed_writer      LOGIN PASSWORD :'writer_pw';
 ALTER ROLE landed_engine      LOGIN PASSWORD :'engine_pw';
+
+-- Free-question role landed_ai: created NOLOGIN here too, then LOGIN + password + temp_file_limit.
+-- Its caps and grants come from migration 000006 (`make landed-migrate`).
+\ir ai-role.sql
 
 -- Deploy step: stop the landed roles (and anyone else) reaching the other databases.
 -- Fresh clusters only; skipped silently when a database does not exist yet.
