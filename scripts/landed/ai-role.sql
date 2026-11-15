@@ -2,7 +2,7 @@
 -- temp_file_limit (a superuser-only setting); on Amazon RDS (no superuser) that step only
 -- raises a WARNING and the rest of the script still applies.
 --   Existing clusters (runbook), after `make landed-migrate`:
---     LANDED_AI_PASSWORD=... psql -v ON_ERROR_STOP=1 -U <superuser> -d postgres -f scripts/landed/ai-role.sql
+--     LANDED_AI_PASSWORD=... psql -v ON_ERROR_STOP=1 -U <superuser or RDS master> -d postgres -f scripts/landed/ai-role.sql
 --   Fresh clusters: scripts/landed/init.sql includes this file.
 -- The role itself (NOLOGIN, caps, grants) is created/maintained by migration 000006; this file only
 -- adds what a migration runner may not be allowed to do: LOGIN, the password, temp_file_limit.

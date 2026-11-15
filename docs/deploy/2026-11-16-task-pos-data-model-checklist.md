@@ -27,14 +27,19 @@ lần tra trạng thái sẽ lỗi (cột `requester_scope`).
 
 ## 2. Kho landed (nếu dùng nạp POS T-log)
 
-- [ ] DB `ennam_landed` + các role: trên RDS, tạo DB và role bằng tay theo `scripts/landed/init.sql` (bằng tài
-      khoản master), rồi chạy các lệnh `REVOKE CONNECT` trong file. Nếu chạy cả file bằng psql: cần psql **≥ 15**
-      (dùng `\getenv`).
+Trên RDS **không chạy nguyên file** `scripts/landed/init.sql`: file đó thu hồi quyền kết nối chung (PUBLIC) vào
+`ennam_kg` và `pharmacy_demo`, có thể làm DAAB/pharmacy mất kết nối trên RDS dùng chung (xem mục 7).
+
+- [ ] Bằng tài khoản master RDS (psql **≥ 15**), làm tay theo `init.sql`: tạo DB `ennam_landed`, tạo 3 role
+      `landed_maintenance`, `landed_writer`, `landed_engine` (LOGIN + mật khẩu). **Bỏ qua** đoạn `REVOKE CONNECT, TEMP`
+      và dòng `\ir ai-role.sql`.
+- [ ] `GRANT landed_maintenance TO <tài khoản master>;` — bắt buộc trên RDS Postgres 15, nếu không migration 000001
+      báo `must be member of role "landed_maintenance"`.
 - [ ] `make landed-migrate` tới **000005**.
-- [ ] **000006 (hỏi tự do) — hoãn.** Trên Postgres 15 các view hỏi tự do hiện chưa chạy được (`pg_input_is_valid`). Không cần khi cờ tắt. Nó ghi lại toàn bộ bảng `landed_record` (thêm cột
-      chi nhánh) và khoá bảng trong lúc chạy. Nếu vẫn chạy: chọn khung giờ vắng, dừng worker nạp dữ liệu, đặt
-      `lock_timeout`, và chạy bằng tài khoản **có quyền sửa quyền trên các hàm hệ thống** (superuser của Postgres tự
-      quản lý; trên RDS sẽ chỉ in cảnh báo — xem mục 6).
+- [ ] **000006 (hỏi tự do) — hoãn tới khi bật hỏi tự do** (mục 7). Không cần khi cờ tắt. Nó ghi lại toàn bộ bảng
+      `landed_record` (thêm cột chi nhánh) và khoá bảng lúc chạy: với kho mới gần như trống thì nhanh; nếu đã có dữ
+      liệu thì chọn giờ vắng, dừng worker nạp, đặt `lock_timeout`. Trên RDS nó in vài WARNING về quyền `pg_catalog`
+      — bình thường (quy tắc chặn SQL thay thế, D-13).
 
 ## 3. Deploy DAAB
 
@@ -67,18 +72,17 @@ lần tra trạng thái sẽ lỗi (cột `requester_scope`).
 
 ## 7. Trước khi BẬT "hỏi tự do" (làm sau, không phải thứ Hai)
 
-- [ ] Production là RDS 15.17 → cần phương án: (1) đặt `ennam_landed` trên Postgres tự quản lý, hoặc (2) đổi cách
-      chặn rò rỉ cho RDS. Kèm theo: sửa view hỏi tự do cho Postgres 15 (thay `pg_input_is_valid`), và
-      `ai-role.sql` đặt `temp_file_limit` — trên RDS chỉ in WARNING (không có superuser), bình thường, không bắt buộc.
-      Trên RDS, `landed.CheckAISQL` thay cho các lệnh thu hồi quyền `pg_catalog`; xem "Running on Amazon RDS" trong
-      `ennam.kg.go/docs/ws0-delegation-runbook.md`.
-- [ ] Trên RDS, **trước** `make landed-migrate`: `GRANT landed_maintenance TO <tài khoản master>;` (sau khi chạy
-      `init.sql`), nếu không migration 000001 báo `must be member of role "landed_maintenance"`.
+- [ ] Production là RDS 15.17: đã hỗ trợ (go `57ff9da`). View hỏi tự do chạy trên Postgres 15; các quyền `pg_catalog`
+      không thu hồi được trên RDS do quy tắc chặn SQL (`landed.CheckAISQL`) đảm nhận; `ai-role.sql` in WARNING về
+      `temp_file_limit` là bình thường. Xem "Running on Amazon RDS" trong `ennam.kg.go/docs/ws0-delegation-runbook.md`.
 - [x] Bản sửa review cuối đã có (go `97b5f59`): DAAB kiểm tra `LANDED_AI_URL` thật sự đăng nhập là `landed_ai` ở
       chế độ chỉ đọc (lúc khởi động và ở mỗi câu hỏi), và tự kiểm tra lại trạng thái "sẵn sàng" định kỳ.
 - [ ] Landed migration 000006 đã chạy (mục 2); `scripts/landed/ai-role.sql` với `LANDED_AI_PASSWORD`.
-- [ ] Thu hồi `CONNECT` của PUBLIC trên các DB khác cùng cụm (`ennam_kg`, `postgres`, `template1`…), hoặc chặn
-      `landed_ai` trong `pg_hba.conf` — `ai-role.sql` in cảnh báo cho từng DB còn vào được.
+- [ ] Chặn `landed_ai` vào các DB khác cùng RDS (`ennam_kg`, `laam_db`, `pharmacy_demo`, `postgres`…). **Kiểm tra
+      trước** từng DB: tài khoản ứng dụng đang dùng DB đó là owner hoặc có `GRANT CONNECT` riêng
+      (`SELECT datname, datacl, pg_get_userbyid(datdba) FROM pg_database;`). Nếu chưa: `GRANT CONNECT ON DATABASE <db>
+      TO <tài khoản ứng dụng>;` rồi mới `REVOKE CONNECT, TEMP ON DATABASE <db> FROM PUBLIC;`. Trên RDS không sửa được
+      `pg_hba.conf`. `ai-role.sql` in cảnh báo cho từng DB `landed_ai` còn vào được.
 - [ ] Env DAAB: `LANDED_AI_URL`, `LANDED_CTX_KEYS`, rồi `LANDED_NL_QUERY=1`. Log phải có
       `landed free questions are ready`; nếu không, log nêu rõ điều kiện chưa đạt.
 - [ ] Env LAAM: `LANDED_FREE_QUESTIONS=1`, `INTEL_DIRECT_QUERY_TOOLS=kg_query_datasource,kg_query_datasource_status`.
