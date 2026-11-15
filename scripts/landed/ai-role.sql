@@ -1,5 +1,6 @@
--- Login for the free-question role landed_ai. Idempotent; needs a superuser (temp_file_limit is
--- a superuser-only setting, and CREATEROLE alone cannot set it).
+-- Login for the free-question role landed_ai. Idempotent. On a real superuser it also sets
+-- temp_file_limit (a superuser-only setting); on Amazon RDS (no superuser) that step only
+-- raises a WARNING and the rest of the script still applies.
 --   Existing clusters (runbook), after `make landed-migrate`:
 --     LANDED_AI_PASSWORD=... psql -v ON_ERROR_STOP=1 -U <superuser> -d postgres -f scripts/landed/ai-role.sql
 --   Fresh clusters: scripts/landed/init.sql includes this file.
@@ -24,7 +25,12 @@ BEGIN
 END $$;
 
 ALTER ROLE landed_ai LOGIN PASSWORD :'ai_pw';
-ALTER ROLE landed_ai SET temp_file_limit = '256MB';
+DO $$
+BEGIN
+  ALTER ROLE landed_ai SET temp_file_limit = '256MB';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE WARNING 'landed_ai temp_file_limit not set (needs a superuser; expected on Amazon RDS): %', SQLERRM;
+END $$;
 
 -- landed_ai can connect to every database whose CONNECT is still granted to PUBLIC, and
 -- pg_stat_activity / pg_terminate_backend / advisory locks are cluster-wide: the revokes of
