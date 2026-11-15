@@ -25,12 +25,17 @@
   - Retail and pharmacy only.
   - Pharmacy "net sales/revenue" includes Rx by default.
   - Pharmacy Rx terms use the **T-log family** (`rx_sc_*` and Rx lines in the T-log), not claim/PMS data. Claim-based terms (`claim_rejection_rate`, `reimbursement_gap`, `pharmacy.rx_revenue` claim view) are omitted until a PMS feed lands; leave a YAML comment saying so.
-  - Pending owner confirmation; A is the default.
+  - Owner confirmed option A on 2026-11-15.
 - **Defaults.** Week starts Monday (ISO). Refunds are reported separately, on their own date.
 - **Language.** Labels and synonyms are en + vi. Definitions, rules and SQL are English.
 - **Size bound.** The merged block per project is at most 10000 tokens (estimate bytes/4), with at most 12 rules. Exceeding it fails validation; never truncate. Measure one term and one example first (Task 6).
 - **SQL safety.** Every SQL fragment in semantics passes `CheckAISQL` and passes `hardenPlan` validation.
 - **Prompt scope.** Non-landed sources keep a planner prompt byte-identical to today.
+- **Isolated failure (deploy safety).** An invalid `semantics.yaml` must never stop a pack, or its metrics, from loading in the server.
+  - The server logs one ERROR naming `file:line` and runs with no semantics for the affected key set.
+  - Strict failure exists only in tests: a `TestRealPacksSemanticsValid` test fails CI on any error.
+  - The old Go ignores the file.
+  - Deploy order stays: Go first, packs after.
 - **No new flag.** The block only exists for the landed system source, which only exists when free questions are ready (`LANDED_NL_QUERY`, default OFF). Flags-off behaviour is unchanged.
 
 ## Review Focus
@@ -73,7 +78,7 @@ func (s *Semantics) TermByKey(k string) (Term, bool)
 
 - [ ] Write tests:
   - **Merge.** A child term with the same key replaces the parent's; rules, examples, notes and joins append parent-first.
-  - **Validation.** Run against the **merged** entities and enums: pharmacy terms may use retail's `sale` fields. Errors carry the `<pack>/daab/semantics.yaml:<line>:` prefix. Cover each of:
+  - **Validation.** Run against the **merged** entities and enums: pharmacy terms may use retail's `sale` fields. Errors carry the `<pack>/daab/semantics.yaml:<line>:` prefix. Errors are collected per key: the pack and its metrics still load, `Semantics()` returns false, and the server logs one ERROR. Add `TestRealPacksSemanticsValid` (strict, real packs). Cover each of:
     - unknown key
     - duplicate term
     - more than 12 rules
