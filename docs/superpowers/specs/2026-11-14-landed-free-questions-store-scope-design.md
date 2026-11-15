@@ -119,8 +119,11 @@ on RDS; no self-managed Postgres.
   (case-insensitive); date ISO `YYYY-MM-DD` with a real day-of-month; timestamp ISO date + `[T ]HH:MM[:SS[.ffffff]]`
   with an optional ignored zone. Anything else is NULL (as an invalid value is today). Same SQL on PG 15 and 16.
 - **D-12 SQL guard (always on).** Before a free question runs on the landed system source, DAAB refuses SQL whose
-  lower-cased text, with double quotes removed, contains `pg_`, `set_config`, `u&` or `xml` (covers the catalog side
-  channels, quoted/unicode-escaped identifiers and the `query_to_xml` family that runs dynamic SQL). A false positive
+  lower-cased text, with double quotes removed, contains `pg_`, `set_config`, `u&`, `xml`, `ts_stat` or `ts_rewrite` (covers the catalog side
+  channels, quoted/unicode-escaped identifiers, and the two built-in families that run a text argument as SQL:
+  `query_to_xml`/`cursor_to_xml` and `ts_stat`/`ts_rewrite` — without them a name built with `||` or `chr()`
+  could reach `pg_stat_activity`, found in review 2026-11-15). Bound parameters never carry SQL: the guard
+  checks the SQL text, and the function names are refused wherever they appear. A false positive
   only costs the model a retry. The DB-enforced ticket + views (D-1..D-8) stay the primary protection.
 - **D-13 Readiness on RDS.** The D-9 catalog items (function EXECUTE + pg_stat_activity SELECT) are reported as
   warnings "covered by the SQL guard" and no longer block readiness; every other hardening item still blocks.
