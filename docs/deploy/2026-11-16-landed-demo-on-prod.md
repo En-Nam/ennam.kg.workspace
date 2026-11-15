@@ -64,18 +64,19 @@ Khởi động lại kg-server và worker. Log kg-server phải có `landed inge
 ## C. Nạp dữ liệu demo (bên mình làm)
 
 1. Tạo (hoặc chọn) **project demo** trên prod, bật pack `retail` + `pharmacy` 0.7.0.
-2. Chạy từ máy có dữ liệu demo (5 cửa hàng PH-001..005, tháng 10/2026, 150 file T-log + 3 file danh mục):
+2. **Bật nguồn T-log trên giao diện** (bắt buộc làm tay, API key không làm được): đăng nhập DAAB bằng tài khoản admin hệ thống → project demo → tab **POS data** → bật, ghi chú đồng ý "synthetic demo data".
+3. Chạy từ máy có dữ liệu demo (5 cửa hàng PH-001..005, tháng 10/2026, 150 file T-log + 3 file danh mục):
 
 ```bash
-DAAB_URL=https://<daab-prod> DAAB_API_KEY=<admin/owner key> PROJECT_ID=<project demo> \
+DAAB_URL=https://<daab-prod> DAAB_API_KEY=<admin API key> PROJECT_ID=<project demo> \
 DEMO_DATA_DIR=<thư mục có master/ và poslog30/> \
   uv run --project ennam.kg.python python scripts/landed/load-demo-data.py
 ```
 
-Script đi qua đường nạp chính thức (upload → worker → kho), chạy lại không nạp trùng, rồi chuyển chỉ số của project
+Nếu quên bước 2, script dừng và nhắc bật trên giao diện. Script đi qua đường nạp chính thức (upload → worker → kho), chạy lại không nạp trùng, rồi chuyển chỉ số của project
 sang nguồn T-log và tính lại tháng 10.
 
-3. Trong LAAM: owner của project demo, và một tài khoản cửa hàng trưởng được giao **một** cửa hàng (ví dụ PH-001).
+4. Trong LAAM: owner của project demo, và một tài khoản cửa hàng trưởng được giao **một** cửa hàng (ví dụ PH-001).
 
 ## D. Bật "hỏi tự do"
 

@@ -42,7 +42,14 @@ def main() -> int:
     if a.dry_run:
         return 0
     d = Driver(os.environ["DAAB_URL"].rstrip("/"), os.environ["DAAB_API_KEY"], os.environ["PROJECT_ID"])
-    print("enable landed:", d.enable("synthetic demo data (no real customers)").get("enabled"))
+    # Turning the landed source on needs a server admin signed in as a person (consent); an API key cannot.
+    st = d._call("GET", "/landed")
+    st.raise_for_status()
+    if not st.json().get("enabled"):
+        print("T-log source is off for this project. A server admin must turn it on first: dashboard -> project ->"
+              " 'POS data' tab -> turn on (consent note: synthetic demo data). Then re-run this script.", file=sys.stderr)
+        return 3
+    print("landed source: enabled")
     for m, p in zip(MASTERS, masters):
         r = d.upload_master(m, p)
         print("master", m, r.get("status"), "duplicate" if r.get("duplicate") else "")
