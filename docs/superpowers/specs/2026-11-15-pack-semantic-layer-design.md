@@ -161,4 +161,4 @@ The dbt 98–100% figure (§1) comes from metric selection plus a compiler, not 
 - **R-7 Join paths.** The semantic file declares view join keys (e.g. `sale_line.sale_id → sale.sale_id`), injected with the terms.
 - **R-8 Sample values.** Low-cardinality columns get their allowed values from the canonical enums, in the comment and in the block. Sample values are not read from data.
 - **R-9** The size bound and the all-examples approach stay as in D-6.
-- **Owner decision pending:** whether pharmacy "net sales/revenue" includes Rx by default.
+- **(owner, 2026-11-15)** Pharmacy "net sales/revenue" includes Rx by default (total = Rx + front-store); `rx_revenue` and `front_store_revenue` are separate terms for the split.
