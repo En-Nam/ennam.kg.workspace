@@ -100,12 +100,12 @@ func (s *Semantics) TermByKey(k string) (Term, bool)
 
 **Problem:** `hardenPlan` → `validatePlanColumns` (`internal/service/plan_harden.go:251`) registers tables via `parseTableEntry` (`plan_normalize.go:148`). Given `"(SELECT ... ) AS t"`, it returns base `"(SELECT"`, and every `t.<col>` is rejected (`unknown column(s) t.location_id`). In production every term plan would become `clarification_needed`.
 
-**Files:** modify `internal/service/plan_normalize.go`, `internal/service/plan_harden.go` and the call site in `query_intent.go:333` (hardenPlan gains access to the current semantics). Tests go in `plan_harden_test.go`.
+**Files:** modify `internal/service/plan_normalize.go`, `internal/service/plan_harden.go` and the call sites in `query_intent.go` (hardenPlan gains access to the current semantics). Tests go in `plan_harden_test.go`.
 
 **Rule (security-relevant):**
 - A derived `tables[0]` is accepted **only** when its text equals, after whitespace normalisation, the `Population` of a term in the current project's semantics.
 - Its columns are then that term's `Columns`.
-- Any other parenthesised `tables[0]` is rejected exactly as today.
+- Any other parenthesised `tables[0]` is handled exactly as today. Derived tables are trusted by design (`query_intent.go:637-643`); grants, the ticket and the guard are the boundary. On a match the plan carries the pack's canonical Population text, never the model's.
 - The model cannot write arbitrary subqueries this way. The guard still runs on the final SQL.
 
 - [ ] Write tests:
@@ -139,6 +139,7 @@ func (s *Semantics) TermByKey(k string) (Term, bool)
 - Time zone: `engine.ResolveTimezone(settings, mappings, def)` (`availability.go:212`). If unresolved, use `UTC` and the prompt line says `UTC — store time zone not configured`.
 - Zero keys means no semantics.
 
+- [ ] Switch all three `hardenPlan` call sites in `query_intent.go` (~280 cache re-validation, ~338, ~358) to `hardenPlanWithSemantics` with the project's semantics; otherwise cached term plans are silently discarded.
 - [ ] Write tests:
   - `TestLandedSystemPromptHasBusinessDefinitions`: the landed system source prompt contains `PromptBlock()`, the header `Business definitions (from the industry pack; follow them exactly):`, `Today (store local): YYYY-MM-DD (<zone>)` and this precedence line, emitted by Go:
     > A term or rule defined above resolves ambiguity about that term; do not ask a clarifying question for it. List the term keys you used in "terms_used".
