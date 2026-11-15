@@ -104,3 +104,26 @@ per statement (EXPLAIN shows InitPlan). Test with `EXPLAIN (ANALYZE)` in an inte
 
 Deploy Monday with flags off. Enable per environment after: security review of this diff, attack tests
 green, a scripted free-question run as owner and as a store manager on the e2e stack.
+
+## 7. Addendum 2026-11-15 — production is AWS RDS PostgreSQL 15.17
+
+Facts: DAAB, LAAM and pharmacy DBs share one RDS instance (PG 15.17); devops will create `ennam_landed` there too.
+RDS has no real superuser, so the pg_catalog revokes of D-9 (set_config, pg_terminate/cancel_backend,
+pg_stat_get_activity, pg_stat_get_backend_*, advisory locks, SELECT on pg_stat_activity) cannot be applied, and
+`pg_input_is_valid` (used by the typed views) does not exist before PG 16. Owner decision: free questions must work
+on RDS; no self-managed Postgres.
+
+- **D-11 Portable typed casts.** `fieldExpr` emits pure-SQL guarded casts (regex + range checks, nested CASE so the
+  cast only runs on a value that will not fail). No new DB functions, no migration change. Accepted inputs:
+  integer `[+-]digits` within int4; numeric decimal/exponent notation; boolean `true/false/t/f/yes/no/y/n/on/off/1/0`
+  (case-insensitive); date ISO `YYYY-MM-DD` with a real day-of-month; timestamp ISO date + `[T ]HH:MM[:SS[.ffffff]]`
+  with an optional ignored zone. Anything else is NULL (as an invalid value is today). Same SQL on PG 15 and 16.
+- **D-12 SQL guard (always on).** Before a free question runs on the landed system source, DAAB refuses SQL whose
+  lower-cased text, with double quotes removed, contains `pg_`, `set_config`, `u&` or `xml` (covers the catalog side
+  channels, quoted/unicode-escaped identifiers and the `query_to_xml` family that runs dynamic SQL). A false positive
+  only costs the model a retry. The DB-enforced ticket + views (D-1..D-8) stay the primary protection.
+- **D-13 Readiness on RDS.** The D-9 catalog items (function EXECUTE + pg_stat_activity SELECT) are reported as
+  warnings "covered by the SQL guard" and no longer block readiness; every other hardening item still blocks.
+  `ai-role.sql` tolerates a refused `temp_file_limit` (warning, not failure); readiness does not require it.
+- Verification: full Go suite on PG 15; a PG 15 cluster where migrations and scripts run as a NON-superuser
+  (CREATEDB, CREATEROLE — the RDS master shape) reaches "ready"; LANDED_PERF re-run; browser E2E.
