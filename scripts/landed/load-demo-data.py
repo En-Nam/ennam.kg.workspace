@@ -14,7 +14,6 @@ The data is synthetic (no real customers or payment data). Use only on a demo pr
 import argparse
 import os
 import sys
-from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,10 +29,13 @@ AUTOFILL = ["location", "product", "employee", "sale", "sale_line", "tender", "r
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="only list what would be uploaded")
+    ap.add_argument("--poslog-dir", default="poslog30", help="T-log folder under DEMO_DATA_DIR (default poslog30)")
+    ap.add_argument("--from", dest="day_from", default="2026-10-01", help="first day to recalculate")
+    ap.add_argument("--to", dest="day_to", default="2026-10-31", help="last day to recalculate")
     a = ap.parse_args()
     data = Path(os.environ["DEMO_DATA_DIR"])
     masters = [data / "master" / f"{m}.csv" for m in MASTERS]
-    files = sorted((data / "poslog30").glob("*/*.xml"))
+    files = sorted((data / a.poslog_dir).glob("*/*.xml"))
     missing = [str(p) for p in masters if not p.is_file()]
     if missing or not files:
         print(f"missing data: masters={missing} poslog_files={len(files)}", file=sys.stderr)
@@ -56,9 +58,9 @@ def main() -> int:
     feed = next((f for f in d.feeds() if f.get("name") == FEED_NAME), None) or d.create_feed(FEED_NAME, CROSSWALK, VENDOR)
     res = d.upload_all(feed["id"], files)
     print("uploaded", len(res), "duplicates", sum(1 for r in res if r.get("duplicate")))
-    print("batch status", dict(Counter(b["status"] for b in d.batches(feed["id"]))))
+    print("upload failures", sum(1 for r in res if r.get("error")))
     print("autofill", d.autofill(AUTOFILL))
-    print("recalculate", d.recalculate("2026-10-01", "2026-10-31").get("state"))
+    print("recalculate", a.day_from, "..", a.day_to, d.recalculate(a.day_from, a.day_to, timeout=3600).get("state"))
     return 0
 
 
