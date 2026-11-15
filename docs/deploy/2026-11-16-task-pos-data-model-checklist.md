@@ -69,7 +69,11 @@ lần tra trạng thái sẽ lỗi (cột `requester_scope`).
 
 - [ ] Production là RDS 15.17 → cần phương án: (1) đặt `ennam_landed` trên Postgres tự quản lý, hoặc (2) đổi cách
       chặn rò rỉ cho RDS. Kèm theo: sửa view hỏi tự do cho Postgres 15 (thay `pg_input_is_valid`), và
-      `ai-role.sql` đặt `temp_file_limit` (chỉ superuser đặt được).
+      `ai-role.sql` đặt `temp_file_limit` — trên RDS chỉ in WARNING (không có superuser), bình thường, không bắt buộc.
+      Trên RDS, `landed.CheckAISQL` thay cho các lệnh thu hồi quyền `pg_catalog`; xem "Running on Amazon RDS" trong
+      `ennam.kg.go/docs/ws0-delegation-runbook.md`.
+- [ ] Trên RDS, **trước** `make landed-migrate`: `GRANT landed_maintenance TO <tài khoản master>;` (sau khi chạy
+      `init.sql`), nếu không migration 000001 báo `must be member of role "landed_maintenance"`.
 - [x] Bản sửa review cuối đã có (go `97b5f59`): DAAB kiểm tra `LANDED_AI_URL` thật sự đăng nhập là `landed_ai` ở
       chế độ chỉ đọc (lúc khởi động và ở mỗi câu hỏi), và tự kiểm tra lại trạng thái "sẵn sàng" định kỳ.
 - [ ] Landed migration 000006 đã chạy (mục 2); `scripts/landed/ai-role.sql` với `LANDED_AI_PASSWORD`.
