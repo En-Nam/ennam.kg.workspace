@@ -50,8 +50,15 @@ Trên RDS **không chạy nguyên file** `scripts/landed/init.sql`: file đó th
 
 ## 4. Pack
 
-- [ ] Chỉ phát hành pack mới (canonical 0.7.0 + khoá `scope: shared` của commit packs `3cef324`) **sau khi** kg-server
-      mới đã chạy. Bản Go cũ từ chối khoá `scope` → toàn bộ pack không nạp được → mọi chỉ số trả 503.
+- [ ] Chỉ phát hành pack 0.7.0 (packs `task/pos-data-model` HEAD, gồm canonical 0.7.0, khoá `scope: shared`, và lớp ngữ
+      nghĩa `daab/semantics.yaml`) **sau khi** kg-server mới đã chạy. Bản Go cũ từ chối khoá `scope` → toàn bộ pack không
+      nạp được → mọi chỉ số trả 503. 0.7.0 chưa từng publish (tag mới nhất v0.6.0) nên không cần đổi version.
+- [ ] **Trước khi gắn tag phát hành pack** (CI chưa chạy các test này — cần `PACKS_DIR` và DB test landed): trong
+      `ennam.kg.go`, chạy với `PACKS_DIR` trỏ tới đúng commit pack sắp phát hành:
+      `go test ./internal/intel/ -run TestRealPacksSemanticsValid` và (có DB test landed)
+      `go test -p 1 ./internal/service/ -run 'TestSemanticsExecute|TestSemanticsMatchMetrics'`. Phải PASS.
+- [ ] Sau khi kg-server nạp pack mới: log **không** có `pack semantics invalid`. (Nếu có: chỉ số vẫn chạy bình thường,
+      chỉ lớp ngữ nghĩa bị tắt — sửa file rồi phát hành lại.) Lớp ngữ nghĩa không có tác dụng gì khi `LANDED_NL_QUERY` tắt.
 - [ ] Nếu phải rollback kg-server: **rollback pack trước**.
 
 ## 5. Deploy LAAM
