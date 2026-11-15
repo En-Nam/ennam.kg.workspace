@@ -7,6 +7,10 @@ Nguồn: `ennam.kg.go/docs/ws0-delegation-runbook.md`, `ennam.kg.go/CLAUDE.md` (
 
 ## 0. Trước khi bắt đầu
 
+> DB production của DAAB là **AWS RDS PostgreSQL 15.17** (cùng máy RDS với DB pharmacy). Toàn bộ migration
+> (chính tới 000100, landed tới 000006) và bộ test Go đã chạy lại trên Postgres 15 ngày 15/11. Bản sửa go `7bacc4b`
+> là bắt buộc: trước đó bộ dọn lô treo của landed dùng hàm chỉ có từ Postgres 16.
+
 - [ ] Backup DB: `ennam_kg`, `ennam_landed` (nếu đã có), `laam`.
 - [ ] Đồng hồ các máy chạy DAAB và LAAM đồng bộ NTP (vé WS0 lệch quá 60 s bị từ chối).
 - [ ] Tạo một khoá ký vé: `kid:base64(≥32 byte)`. Đặt **giống hệt** vào DAAB `KG_DELEGATION_KEYS` và LAAM
@@ -18,15 +22,16 @@ Nguồn: `ennam.kg.go/docs/ws0-delegation-runbook.md`, `ennam.kg.go/CLAUDE.md` (
 Production không tự migrate. **Phải chạy trước khi khởi động kg-server mới**; nếu không, mọi câu hỏi NL và mọi
 lần tra trạng thái sẽ lỗi (cột `requester_scope`).
 
-- [ ] `kg-migrate up` trên `ennam_kg` tới **000100** (gồm 000096/097 landed, 000098 `delegation_required`,
+- [ ] **Bắt buộc** (RDS, không tự migrate): `kg-migrate up` trên `ennam_kg` tới **000100** (gồm 000096/097 landed, 000098 `delegation_required`,
       000099 loại data source `landed_system`, 000100 `ai_queries.requester_scope`). Kiểm tra `dirty = false`.
 
 ## 2. Kho landed (nếu dùng nạp POS T-log)
 
-- [ ] DB `ennam_landed` + các role: chạy `scripts/landed/init.sql` (chỉ chạy được trên volume mới; với cụm đã có,
-      tạo DB và role bằng tay theo file đó, rồi chạy các lệnh `REVOKE CONNECT` trong file).
+- [ ] DB `ennam_landed` + các role: trên RDS, tạo DB và role bằng tay theo `scripts/landed/init.sql` (bằng tài
+      khoản master), rồi chạy các lệnh `REVOKE CONNECT` trong file. Nếu chạy cả file bằng psql: cần psql **≥ 15**
+      (dùng `\getenv`).
 - [ ] `make landed-migrate` tới **000005**.
-- [ ] **000006 (hỏi tự do) — nên hoãn.** Không cần khi cờ tắt. Nó ghi lại toàn bộ bảng `landed_record` (thêm cột
+- [ ] **000006 (hỏi tự do) — hoãn.** Trên Postgres 15 các view hỏi tự do hiện chưa chạy được (`pg_input_is_valid`). Không cần khi cờ tắt. Nó ghi lại toàn bộ bảng `landed_record` (thêm cột
       chi nhánh) và khoá bảng trong lúc chạy. Nếu vẫn chạy: chọn khung giờ vắng, dừng worker nạp dữ liệu, đặt
       `lock_timeout`, và chạy bằng tài khoản **có quyền sửa quyền trên các hàm hệ thống** (superuser của Postgres tự
       quản lý; trên RDS sẽ chỉ in cảnh báo — xem mục 6).
@@ -62,8 +67,9 @@ lần tra trạng thái sẽ lỗi (cột `requester_scope`).
 
 ## 7. Trước khi BẬT "hỏi tự do" (làm sau, không phải thứ Hai)
 
-- [ ] Quyết định Postgres production: tự quản lý (thu hồi quyền hoạt động) hay RDS (không thu hồi được → tính
-      năng tự khoá; cần phương án khác).
+- [ ] Production là RDS 15.17 → cần phương án: (1) đặt `ennam_landed` trên Postgres tự quản lý, hoặc (2) đổi cách
+      chặn rò rỉ cho RDS. Kèm theo: sửa view hỏi tự do cho Postgres 15 (thay `pg_input_is_valid`), và
+      `ai-role.sql` đặt `temp_file_limit` (chỉ superuser đặt được).
 - [x] Bản sửa review cuối đã có (go `97b5f59`): DAAB kiểm tra `LANDED_AI_URL` thật sự đăng nhập là `landed_ai` ở
       chế độ chỉ đọc (lúc khởi động và ở mỗi câu hỏi), và tự kiểm tra lại trạng thái "sẵn sàng" định kỳ.
 - [ ] Landed migration 000006 đã chạy (mục 2); `scripts/landed/ai-role.sql` với `LANDED_AI_PASSWORD`.
