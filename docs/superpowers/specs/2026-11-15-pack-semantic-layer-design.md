@@ -128,3 +128,37 @@ Each term with a standard metric names it, e.g. `net_sales` → `retail.net_sale
 8. **Column comments.**
    - `SyncAIViews` re-creates the views idempotently at startup and on pack reload, so `COMMENT ON COLUMN` (issued in the same sync, as the view owner) reaches deployed views with no migration.
    - The builder confirms that `buildSchemaContext`'s comment lookup covers views (`pg_description` on the view's columns). If it does not, extend that lookup for the landed system source.
+
+## 10. Revision after independent review (2026-11-15) — supersedes D-2, D-3, D-4 dates, D-7b/c and §9.1–2, §9.4
+
+Review: `.superpowers/sdd/semantic-layer-design-review.md` (verdict: right with changes).
+
+The dbt 98–100% figure (§1) comes from metric selection plus a compiler, not prompt injection. It is not our expected gain.
+
+- **R-1 Plan format, not SQL.**
+  - The planner emits a plan: one base table, a flat filter list with a fixed operator set, no EXISTS, no CTEs.
+  - A term is therefore: `population`, a derived subquery over `pos.*` placed as `tables[0]`; `measure`, the aggregation; `time_column`; and allowed `dims`.
+  - Examples are **question → plan JSON**.
+  - D-7b runs every example and every term through plan → `SQLGenerator` → `CheckAISQL` → ticket path, on PG15 and PG16.
+  - If the plan format cannot express a needed population, the builder extends the planner/generator minimally (derived-table support) rather than falling back to raw SQL.
+- **R-2 Single source of truth.**
+  - A term tied to a metric derives its population and measure from that metric's definition. Either generate it from the metric file at load time, or keep both and enforce a check.
+  - D-7c must be able to fail. The fixture includes return, exchange, post-void, cancelled sale and (pharmacy) regulated/Rx line rows, and the test asserts those rows exist.
+  - Where metrics disagree, there is one term per metric, with distinct labels. Example: `retail.transactions` counts exchanges and keeps post-voids, so it is described exactly as the metric behaves.
+  - D-4 rules are rewritten to describe the metrics, not an idealised definition.
+- **R-3 Dates.**
+  - Metrics bucket on `sold_at`, and the views cast `sold_at::timestamp`, which drops any offset.
+  - Terms filter on `business_date` ±1 day (partition pruning), then filter and bucket on `sold_at::date` exactly as the metric does.
+  - The prompt gets a store-local **today** (project/store time zone). `CURRENT_DATE` on RDS is UTC.
+- **R-4 Column comments actually land.**
+  - `syncOneView`'s fingerprint includes the column comments, so a comment-only change re-applies.
+  - For the landed system source, the canonical description (column comment) outranks the auto-generated description in `columnDescription`.
+- **R-5 Terms used.** The plan gets `terms_used: [keys]`, validated against the merged pack. The answer's definition text is rendered from the pack, not paraphrased by the model. A precedence line says a defined term or default rule resolves ambiguity, so the model does not ask a clarifying question for a term the pack defines.
+- **R-6 Eval set.**
+  - A held-out file of real phrasings (en + vi, including LAAM-style rewrites) with the expected term.
+  - It runs through the live planner as an opt-in test (`SEMANTIC_EVAL=1`, needs a model key) and reports accuracy.
+  - It is not in CI, but it is required once before acceptance, with the result recorded.
+- **R-7 Join paths.** The semantic file declares view join keys (e.g. `sale_line.sale_id → sale.sale_id`), injected with the terms.
+- **R-8 Sample values.** Low-cardinality columns get their allowed values from the canonical enums, in the comment and in the block. Sample values are not read from data.
+- **R-9** The size bound and the all-examples approach stay as in D-6.
+- **Owner decision pending:** whether pharmacy "net sales/revenue" includes Rx by default.
