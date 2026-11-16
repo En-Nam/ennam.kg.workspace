@@ -22,7 +22,8 @@ from landed_driver import Driver  # noqa: E402
 
 FEED_NAME, CROSSWALK, VENDOR = "PH POSLog", "poslog-6.0-rx", "pos-vendor-a"
 MASTERS = ("location", "product", "employee")
-AUTOFILL = ["location", "product", "employee", "sale", "sale_line", "tender", "refund", "void",
+OPTIONAL_MASTERS = ("target",)  # monthly store targets (sales / margin rules); loaded when the file is there
+AUTOFILL = ["location", "product", "employee", "target", "sale", "sale_line", "tender", "refund", "void",
             "line_void", "price_override", "sale_adjustment", "register_event"]
 
 
@@ -34,7 +35,8 @@ def main() -> int:
     ap.add_argument("--to", dest="day_to", default="2026-10-31", help="last day to recalculate")
     a = ap.parse_args()
     data = Path(os.environ["DEMO_DATA_DIR"])
-    masters = [data / "master" / f"{m}.csv" for m in MASTERS]
+    names = list(MASTERS) + [m for m in OPTIONAL_MASTERS if (data / "master" / f"{m}.csv").is_file()]
+    masters = [data / "master" / f"{m}.csv" for m in names]
     files = sorted((data / a.poslog_dir).glob("*/*.xml"))
     missing = [str(p) for p in masters if not p.is_file()]
     if missing or not files:
@@ -52,7 +54,7 @@ def main() -> int:
               " 'POS data' tab -> turn on (consent note: synthetic demo data). Then re-run this script.", file=sys.stderr)
         return 3
     print("landed source: enabled")
-    for m, p in zip(MASTERS, masters):
+    for m, p in zip(names, masters):
         r = d.upload_master(m, p)
         print("master", m, r.get("status"), "duplicate" if r.get("duplicate") else "")
     feed = next((f for f in d.feeds() if f.get("name") == FEED_NAME), None) or d.create_feed(FEED_NAME, CROSSWALK, VENDOR)
