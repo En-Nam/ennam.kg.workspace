@@ -148,6 +148,10 @@ services:
       # Store-scope tickets from LAAM (kid:base64, >=32 bytes). Must equal LAAM's DAAB_DELEGATION_KEYS.
       # Unset = projects with delegation_required refuse data calls from agent keys.
       KG_DELEGATION_KEYS: ${KG_DELEGATION_KEYS:-}
+      # Free questions on T-log data: off unless LANDED_NL_QUERY=1 (and LANDED_CTX_KEYS set) in .env.
+      LANDED_AI_URL: postgres://landed_ai:${LANDED_AI_PASSWORD:-landed_ai_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
+      LANDED_CTX_KEYS: ${LANDED_CTX_KEYS:-}
+      LANDED_NL_QUERY: ${LANDED_NL_QUERY:-}
       # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
       USE_S3: ${USE_S3:-0}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}
