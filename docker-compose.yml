@@ -145,6 +145,9 @@ services:
       LANDED_QUEUE_NAME: ${LANDED_QUEUE_NAME:-ennam-kg:landed}
       # Offer titled demo/test templates (e.g. the MOCKPOS demo file) in the setup wizard. Dev default on; leave unset in production.
       LANDED_DEMO_TEMPLATES: ${LANDED_DEMO_TEMPLATES:-1}
+      # Store-scope tickets from LAAM (kid:base64, >=32 bytes). Must equal LAAM's DAAB_DELEGATION_KEYS.
+      # Unset = projects with delegation_required refuse data calls from agent keys.
+      KG_DELEGATION_KEYS: ${KG_DELEGATION_KEYS:-}
       # Upload storage: USE_S3=1 keeps new uploads in S3 instead of the volume below
       USE_S3: ${USE_S3:-0}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-}

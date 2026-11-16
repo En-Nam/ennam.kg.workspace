@@ -78,6 +78,19 @@ sang nguồn T-log và tính lại tháng 10.
 
 4. Trong LAAM: owner của project demo, và một tài khoản cửa hàng trưởng được giao **một** cửa hàng (ví dụ PH-001).
 
+   **Lưu ý về kết nối LAAM → project T-log** (gặp trên local 16/11):
+   - Bật nguồn T-log tự động bật `delegation_required` cho project. Từ đó DAAB chỉ trả dữ liệu cho lời gọi có vé phân
+     quyền (`X-KG-Delegation`), và LAAM chỉ gắn vé lên **kết nối cấp tổ chức** do Ennam Admin cấp.
+   - Connector DAAB cá nhân (trang Connectors) **không** có vé → daily check lỗi `kg_get_data_status: Permission denied`
+     (log DAAB: `delegation enforcement denied reason=no_ticket`), danh sách cửa hàng để gán cũng trống.
+   - **Org nội bộ** của LAAM (`LAAM_INTERNAL_ORG_ID`) không đồng bộ kết nối từ Admin, nên chỉ có connector cá nhân.
+   - Cách làm đúng: tạo business project demo trong một **org khách** có kết nối DAAB do Ennam Admin cấp, trỏ đúng
+     project T-log; đặt `KG_DELEGATION_KEYS` (DAAB) = `DAAB_DELEGATION_KEYS` (LAAM).
+   - Tạm thời cho org nội bộ (chỉ demo, mất lớp chặn cửa hàng ở DAAB):
+     `UPDATE projects SET delegation_required=false WHERE id='<project demo>';`
+   - Danh sách cửa hàng ở "Gán cửa hàng" lấy từ các cửa hàng **đã xuất hiện trong kết quả kiểm tra**; sau lần chạy đầu
+     có thể chỉ thấy vài cửa hàng, các lần chạy sau sẽ bổ sung.
+
 ## D. Bật "hỏi tự do"
 
 1. DAAB: `LANDED_NL_QUERY=1`, khởi động lại. Log phải có `landed free questions are ready` (trên RDS kèm một WARN
