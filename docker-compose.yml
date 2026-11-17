@@ -143,6 +143,11 @@ services:
       # Store-scope tickets from LAAM (kid:base64, >=32 bytes). Must equal LAAM's DAAB_DELEGATION_KEYS.
       # Unset = projects with delegation_required refuse data calls from agent keys.
       KG_DELEGATION_KEYS: ${KG_DELEGATION_KEYS:-}
+      # Unified login plan 2: server-to-server channel with LAAM (keys >=32 chars; see docs/deploy/2026-11-17-unified-login-p1-checklist.md).
+      KG_S2S_INBOUND_KEYS: ${KG_S2S_INBOUND_KEYS:-}
+      KG_LAAM_OUTBOUND_KEY: ${KG_LAAM_OUTBOUND_KEY:-}
+      KG_LAAM_API_URL: ${KG_LAAM_API_URL:-}
+      KG_ORG_LINKING_ENABLED: ${KG_ORG_LINKING_ENABLED:-}
       # Free questions on T-log data: off unless LANDED_NL_QUERY=1 (and LANDED_CTX_KEYS set) in .env.
       LANDED_AI_URL: postgres://landed_ai:${LANDED_AI_PASSWORD:-landed_ai_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
       LANDED_CTX_KEYS: ${LANDED_CTX_KEYS:-}

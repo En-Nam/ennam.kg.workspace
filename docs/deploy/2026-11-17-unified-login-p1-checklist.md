@@ -64,3 +64,54 @@ kg-server auto-migrates it on start. It adds a trigger that rejects any
 `UPDATE organizations SET kind = ...` that changes the kind (the
 `users_org_guard` trigger only runs on user writes, so a flipped kind would
 bypass its invariants). Nothing to prepare; down drops the trigger.
+
+# Plan 2: DAAB provisioning and account linking
+
+Adds a server-to-server (S2S) channel between kg-server (DAAB) and LAAM, plus two
+feature flags that stay OFF until the owner turns them on.
+
+## Keys
+
+- [ ] Generate two 48-char random keys (`openssl rand -hex 24`), never reuse them:
+  - **A** (LAAM to Go)
+  - **B** (Go to LAAM)
+
+| Service | Variable | Value |
+|---|---|---|
+| kg-server | `KG_S2S_INBOUND_KEYS` | A (comma list, each >= 32 chars) |
+| kg-server | `KG_LAAM_OUTBOUND_KEY` | B |
+| kg-server | `KG_LAAM_API_URL` | LAAM base URL (https in prod) |
+| LAAM | `LAAM_S2S_INBOUND_KEYS` | B |
+| LAAM | `DAAB_OUTBOUND_KEY` | A |
+| LAAM | `DAAB_API_URL` | kg-server base URL |
+
+Rotation: list old and new keys together in the inbound variable, switch the
+outbound side, then drop the old key.
+
+## Feature flags (default OFF)
+
+- [ ] `KG_ORG_LINKING_ENABLED` (kg-server): gates the org linking routes, the admin
+  laam-members list and the 15-minute reconcile job.
+- [ ] `DAAB_ORG_PROVISIONING=1` (Ennam Admin): org creation also provisions the LAAM owner.
+
+Leave both unset until the owner says go (last step below).
+
+## Network
+
+- [ ] LAAM can reach kg-server, and kg-server can reach LAAM `/api/s2s/*`.
+- [ ] `/api/s2s/*` is never exposed publicly without the key: keep it on the private
+  network or behind an allow-list. Both sides answer 503 when no key is configured.
+- [ ] `KG_DATASOURCE_ALLOW_CIDRS` is unchanged (set on kg-server AND the Python service).
+
+## Run order
+
+1. [ ] Migrate Go: 000106 (laam link, key org binding, laam disable scope). kg-server auto-migrates on start.
+2. [ ] Deploy Go (kg-server) with the S2S env above and the flag off.
+3. [ ] Deploy LAAM with its S2S env.
+4. [ ] Deploy Ennam Admin (flag off).
+5. [ ] Report users: `go run ./cmd/kg-report-users -dsn <dsn>` (output `users.csv`).
+6. [ ] Owner classifies each user in the CSV.
+7. [ ] Apply classification: `go run ./cmd/kg-apply-classification -dsn <dsn> -csv users.csv` (dry-run), review, then add `-apply`.
+8. [ ] Backfill: `npm run daab:backfill` in Ennam Admin (dry-run). Check the private-host warnings, then `npm run daab:backfill -- --apply`.
+9. [ ] Resolve every `conflict` owner with "Link to LAAM member".
+10. [ ] Turn the flags on: `KG_ORG_LINKING_ENABLED=1` (kg-server) and `DAAB_ORG_PROVISIONING=1` (Admin), then restart.
