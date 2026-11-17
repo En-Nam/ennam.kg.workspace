@@ -1,7 +1,7 @@
 # Unified AIO Analytics login, Home and right navigation (LAAM + DAAB)
 
 Date: 2026-11-17. Status: direction approved by the owner in session; reviewed (adversarial review + builder
-check); awaiting the owner's approval of this document.
+check + spec review); approved by the owner for planning 2026-11-17.
 Card: https://trello.com/c/lanoZRrq (#3 [Portal & Login]). Branch: `task/portal_login` (workspace + all sub-repos).
 The card's mockup lives in Huy's ChatGPT and is not accessible; the card text is the requirement.
 
@@ -229,6 +229,71 @@ built separately per app; active item highlighted; collapses to an icon rail / d
 existing in-app left sidebars stay for in-module navigation. Header shows the company (org) name. In DAAB,
 Home and LAAM items appear only for SSO sessions; DAAB-only users see DAAB-only items. Settings opens the
 current module's settings; profile and Sign out follow D-12.
+
+## 5b. Security invariants and amendments (from the spec review, verified in code)
+
+These amend the decisions above; where they conflict, this section wins.
+
+H-1 **Authorization lives on the user row, not the key** (amends D-2, D-7a). Web sessions are authorized from
+`users.role` and `project_members` (`ennam.kg.go/internal/handler/project.go:57-60`,
+`internal/handler/project_role.go:104-109`), so constraining the key is not enough:
+- DB CHECK: a user in a customer org can never have `users.role = 'admin'`.
+- `isGlobalAdmin` (and every global-admin gate) also requires the caller's org to be the internal org.
+- Customer project access is materialised as `project_members` rows for every project of the org (role per
+  D-2), written on user create/role change/project join; this keeps `ListProjects` and activity filters
+  working unchanged.
+
+H-2 **Org-scoped Users endpoints** (amends D-3): separate handlers that ignore any requested global `Role`,
+force `org_id` to the caller's org, and return 404 for user ids outside it (update, reset, disable, delete).
+QA: an org admin cannot create `role=admin`, cannot reset/disable an internal user or another org's user.
+
+H-3 **User resolution per key, fail closed** (amends D-11). Today the user is found via `users.api_key_id`
+(one key per user, `internal/store/user.go:84`) and resolution failure is ignored
+(`internal/middleware/auth.go:217-224`). In the same step as per-session keys: resolve by
+`api_keys.user_id`; if a key has a `user_id` and resolution fails, reject the request; on every request check
+user status and org status (same DB read), so disabling a user or org takes effect immediately, not only via
+revocation.
+
+H-4 **SSRF guard before customers get Data Sources** (amends D-3). Customers may create data sources (the card:
+"Connect sources. Import data."), but Go dials any host (`internal/service/datasource.go:526-641`) and test
+steps leak dial errors. Before customer Data Sources ships: a dialer guard refusing private, loopback,
+link-local and metadata addresses (resolved IP checked at dial time, not the hostname), with an explicit
+allowlist for internal use; customer-facing errors are generic.
+
+H-5 **SSO service credential** (D-9, D-12): a dedicated shared secret (env, rotatable via key id) accepted only
+by the `/sso/*` server-to-server routes, never an `api_keys` row; every other gate ignores it.
+
+H-6 **Revocation beyond sign-out** (amends D-11, D-12): SSO keys expire at `min(laam_session_exp, now + 4h)`;
+when expired, the dashboard re-runs D-9, which re-checks LAAM. LAAM calls Go `POST /sso/revoke` by
+`laam_user_id` (all that user's SSO keys) on password change, password reset, user disable/removal, and when
+the JWT refresh drops the session. A failed revoke call is logged and bounded by the 4 h cap. With the cap,
+LAAM's session store may be a revoked-sid list rather than a full sessions table (builder's choice).
+
+H-7 **Migration classifies existing users** (amends D-13). Step 1 of the rollout lists every existing DAAB user
+with e-mail, role, projects and Supabase link; the owner marks each as Ennam staff or customer (customer users
+are moved to their customer org with D-2 roles, or disabled). No customer person lands in the internal org.
+
+H-8 **Link check** (amends D-6): before storing `laam_user_id`, Go asks LAAM server-to-server whether that user
+belongs to the org's `laam_org_id`; otherwise refuse.
+
+H-9 **Fail closed on the LAAM side**: `/sso/authorize` reads the session and sid from the DB and refuses on any
+error (today the JWT refresh keeps the session on DB errors, `LAAM/src/lib/auth/session-refresh.ts:132-138`).
+
+H-10 **Redirect hygiene** (D-9, D-12, D-16): `next` must start with a single `/` and reject `//`, `/\`, and
+encoded variants; the DAAB callback URL in LAAM comes from config, never from a parameter; `sso_state` cookie
+is HttpOnly, Secure, SameSite=Lax, ~5 min; `/sso/logout` is POST (or a confirm page).
+
+H-11 **Expired session during API calls** (D-11): when a BFF/TanStack call gets 401 for an SSO session, the
+dashboard performs a top-level navigation to `/sso/start?next=<current path>` instead of showing an error.
+
+H-12 **E-mail uniqueness stays global** (amends D-4, decided by Claude): DAAB login is global, so uniqueness
+cannot be per org. Create-user failure shows one generic message ("this e-mail can't be used") and the
+endpoint is rate-limited; LAAM registration already has the same property.
+
+H-13 **Untouched keys, stated explicitly**: MCP org-connection agent keys and delegation tickets authenticate
+through the key path with no linked user (`internal/handler/project_role.go:110-114`,
+`internal/handler/ai_query_scope.go:33-49`). They have no `expires_at`, no `laam_session_id`, and are not
+affected by sign-out, revocation by user, or H-3.
 
 ## 6. Deviations from the card (to tell the team / Huy)
 
