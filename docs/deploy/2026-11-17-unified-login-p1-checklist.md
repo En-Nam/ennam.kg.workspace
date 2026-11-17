@@ -24,7 +24,7 @@ Fix every returned row (rename/merge/clear the duplicate e-mail) until it return
    = false, `supabase_linked` = true) must get a DAAB password through an admin
    password reset, or they cannot sign in once Supabase login is gone.
 2. Confirm with the AAAA owner that `POST /api/v1/auth/supabase?session=consumer`
-   is unused in prod. After this release it returns 404, and migration 000104
+   is unused in prod. After this release it returns 401 to callers without a DAAB key (404 with a key), and migration 000104
    revokes every active `consumer-session-%` key.
 3. Record both results here (who confirmed, date, count of users reset):
    - [ ] report run, users reset: ____
