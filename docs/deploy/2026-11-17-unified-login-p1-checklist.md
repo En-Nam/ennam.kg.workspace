@@ -1,4 +1,4 @@
-# Unified login P1 (DAAB org foundation) - deploy checklist
+# Unified login P1 + P2 (DAAB org foundation, provisioning and linking) - deploy checklist
 
 ## Migration 000101 (organizations)
 
@@ -65,7 +65,7 @@ kg-server auto-migrates it on start. It adds a trigger that rejects any
 `users_org_guard` trigger only runs on user writes, so a flipped kind would
 bypass its invariants). Nothing to prepare; down drops the trigger.
 
-# Plan 2: DAAB provisioning and account linking
+## Plan 2: DAAB provisioning and account linking
 
 Adds a server-to-server (S2S) channel between kg-server (DAAB) and LAAM, plus two
 feature flags that stay OFF until the owner turns them on.
@@ -96,6 +96,12 @@ outbound side, then drop the old key.
 
 Leave both unset until the owner says go (last step below).
 
+## Env files
+
+- [ ] The real deploy env files under `envfiles/envfiles/` are gitignored (`kg-server.env`,
+  `kg-admin.env`, LAAM's env file). Update them by hand with the new variables above;
+  the `.env.example` files and `docker-compose.yml` do not reach them.
+
 ## Network
 
 - [ ] LAAM can reach kg-server, and kg-server can reach LAAM `/api/s2s/*`.
@@ -109,9 +115,9 @@ Leave both unset until the owner says go (last step below).
 2. [ ] Deploy Go (kg-server) with the S2S env above and the flag off.
 3. [ ] Deploy LAAM with its S2S env.
 4. [ ] Deploy Ennam Admin (flag off).
-5. [ ] Report users: `go run ./cmd/kg-report-users -dsn <dsn>` (output `users.csv`).
+5. [ ] Report users: `go run ./cmd/kg-report-users -dsn <dsn> > users.csv` (the report goes to stdout).
 6. [ ] Owner classifies each user in the CSV.
 7. [ ] Apply classification: `go run ./cmd/kg-apply-classification -dsn <dsn> -csv users.csv` (dry-run), review, then add `-apply`.
-8. [ ] Backfill: `npm run daab:backfill` in Ennam Admin (dry-run). Check the private-host warnings, then `npm run daab:backfill -- --apply`.
+8. [ ] Backfill, run from Ennam Admin with the flag set on the command only: `DAAB_ORG_PROVISIONING=1 npm run daab:backfill` (dry-run). Check the private-host warnings, then `DAAB_ORG_PROVISIONING=1 npm run daab:backfill -- --apply`. The backfill refuses to run without the flag, but the DEPLOYED Admin service keeps `DAAB_ORG_PROVISIONING` unset until step 10.
 9. [ ] Resolve every `conflict` owner with "Link to LAAM member".
 10. [ ] Turn the flags on: `KG_ORG_LINKING_ENABLED=1` (kg-server) and `DAAB_ORG_PROVISIONING=1` (Admin), then restart.
