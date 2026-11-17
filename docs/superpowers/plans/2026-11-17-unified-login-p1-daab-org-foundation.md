@@ -21,9 +21,11 @@
 - Web-session keys: label prefix `web-session-`; password-login keys expire after 15 days (`webSessionTTL = 15 * 24 * time.Hour`). Keys with `expires_at IS NULL` (MCP, manual, org-connection, consumer) are never expired, never revoked by logout, unaffected by user resolution changes (H-13).
 - Customer-facing errors for duplicate e-mail: exactly `this e-mail can't be used` (H-12).
 - Must run on PostgreSQL 15 (prod RDS): no PG16-only syntax.
-- Go tests: store/handler DB tests read `KG_TEST_DATABASE_URL` (dev DB is on port **5433**, e.g. `postgres://...@localhost:5433/ennam_kg_test?sslmode=disable`); a test that SKIPs still reports PASS — check the `-v` output for `SKIP`.
+- Go tests: store tests read `KG_TEST_DATABASE_URL`, some handler DB tests read `KG_TEST_DSN` — set **both** to the test DB on the dev Postgres at port **5433** (e.g. `postgres://...@localhost:5433/ennam_kg_test?sslmode=disable`); a test that SKIPs still reports PASS — check the `-v` output for `SKIP`.
 - Dashboard has no test runner: verify with `npm run lint` and `npm run build` plus a browser check.
 - No `--no-verify` on commits.
+
+**Execution order:** 1, 2, 3, 4, 5, 6, 7, 7b, **9, 8**, 10 (Task 8's merge precondition uses Task 9's report).
 
 ## Review Focus
 
@@ -70,6 +72,9 @@ Expected: FAIL (relation "organizations" does not exist).
   - Before creating `idx_users_email_lower`, the migration aborts with `RAISE EXCEPTION 'duplicate e-mails differing only by case: %', <list>` if `SELECT lower(email) … GROUP BY 1 HAVING count(*)>1` returns rows (an operator fixes data, then reruns).
   - Trigger function `users_org_guard()` (BEFORE INSERT OR UPDATE OF org_id, role, org_role ON users): if the org's kind is `customer` then `role='admin'` → `RAISE EXCEPTION 'customer org user cannot have global role admin'`, `org_role IS NULL` → `RAISE EXCEPTION 'customer org user requires org_role'`; if kind is `internal`, force `org_role := NULL`.
   - `.down.sql` drops trigger, function, columns, table, and restores `idx_users_email` (case-sensitive, partial).
+  - Order inside the up migration: create `organizations` → insert the internal org row → add `org_id` columns with the default and FK → add `org_role` → duplicate-e-mail check → swap the e-mail index → create trigger.
+  - Add one more test: `TestOrgMigration_UpdateToAdminRefused` (customer user, `UPDATE users SET role='admin'` → same error as insert).
+  - Deploy note (write into `docs/deploy/2026-11-17-unified-login-p1-checklist.md`, created here): kg-server auto-migrates on start, so a duplicate-e-mail abort leaves version 101 dirty and the server won't start. Precondition: run `SELECT lower(email), count(*) FROM users WHERE email IS NOT NULL GROUP BY 1 HAVING count(*) > 1` on prod first and fix rows; recovery if it still aborts: fix data, `make db-migrate-force V=100`, restart.
 
 - [ ] **Step 4: Apply and run tests**
 Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 test DB), then the test command above. Expected: PASS (4 tests, none SKIP). Also run `go run ./cmd/kg-migrate/ down 1` then `up` once to prove the down migration works.
@@ -83,7 +88,7 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
 
 **Files:**
 - Create: `ennam.kg.go/internal/models/organization.go`, `ennam.kg.go/internal/store/organization.go`
-- Modify: `internal/models/user.go:78-94` (add `OrgID string`, `OrgRole *OrgRole`), `internal/models/project.go:6` (add `OrgID string`), `internal/store/user.go:23-25,305` (columns + scan), `internal/store/user.go:143` (`GetByEmail` uses `lower(email) = lower($1)`), `internal/store/project.go` (select/scan `org_id`; `Create` leaves it to the DB default unless set)
+- Modify: `internal/models/user.go:78-94` (add `OrgID string`, `OrgRole *OrgRole`), `internal/models/project.go:6` (add `OrgID string`), `internal/store/user.go:23-25,305,374-410` (columns + **both** scan sites `scanOneRow` and `scanMany`), `internal/store/user.go:143` (`GetByEmail` uses `lower(email) = lower($1)`), `internal/store/project.go` (select/scan `org_id`; `Create` leaves it to the DB default unless set)
 - Test: `ennam.kg.go/internal/store/organization_test.go`
 
 **Interfaces:**
@@ -107,11 +112,12 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
 
 **Files:**
 - Create: `ennam.kg.go/db/migrations/000102_api_key_session_expiry.{up,down}.sql`
-- Modify: `internal/models/apikey.go:47-95` (add `ExpiresAt *time.Time`, `LAAMSessionID *string`; `IsActive()` also false when `ExpiresAt != nil && !ExpiresAt.After(time.Now())`), `internal/store/apikey.go:26,98,114,352` (insert/select the two columns; `Authenticate` returns error `"api key has expired"` for expired keys), `internal/service/apikey.go` (`CreateKeyRequest` gains `ExpiresAt *time.Time`, `LAAMSessionID *string`, passed through)
+- Modify: `internal/models/apikey.go:47-95` (add `ExpiresAt *time.Time`, `LAAMSessionID *string`, and `func (k *APIKey) IsExpired(now time.Time) bool`; leave `IsActive()` = not revoked), `internal/store/apikey.go` — every column list (≈ lines 41, 105, 121, 136, 148, 168, 217) and every scan site (≈ 44-85, 243, 286) gets the two columns; `Authenticate` (≈352-364) checks `IsExpired` **before** the revoked check and returns error `"api key has expired"`, `internal/service/apikey.go` (`CreateKeyRequest` gains `ExpiresAt *time.Time`, `LAAMSessionID *string`, passed through)
 - Test: `ennam.kg.go/internal/store/apikey_expiry_test.go`
 
 **Interfaces:**
 - Produces (DB): `api_keys.expires_at timestamptz null`, `api_keys.laam_session_id text null`, index `idx_api_keys_laam_session_id` (partial, not null). Used by Plan 3 for SSO keys.
+- Data backfill in `000102` up: `UPDATE api_keys k SET user_id = u.id FROM users u WHERE u.api_key_id = k.id AND k.user_id IS NULL;` then `UPDATE api_keys SET expires_at = now() + interval '15 days' WHERE label LIKE 'web-session-%' AND revoked_at IS NULL AND expires_at IS NULL;` (legacy web keys would otherwise live forever once login stops revoking them). Test: `TestMigration102_BackfillsUserIDAndWebExpiry`.
 - Produces (Go): `CreateKeyRequest.ExpiresAt`, `CreateKeyRequest.LAAMSessionID`, `models.APIKey.ExpiresAt`, `models.APIKey.LAAMSessionID`.
 
 - [ ] **Step 1: Failing tests**: `TestAuthenticate_RejectsExpiredKey` (expires_at = now−1m → error "api key has expired"), `TestAuthenticate_AcceptsUnexpiredKey` (now+1h → ok), `TestAuthenticate_NullExpiryNeverExpires` (expires_at NULL, created 400 days ago → ok).
@@ -132,9 +138,11 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
 - Consumes: Task 2 `models.Organization`, Task 3 `CreateKeyRequest.ExpiresAt`.
 - Produces:
   - `func (s *UserStore) GetIdentityByAPIKeyID(ctx context.Context, apiKeyID string) (*models.User, *models.Organization, error)` — joins `api_keys.user_id → users → organizations`; returns `(nil, nil, nil)` when the key has no `user_id`.
-  - Resolver contract: returns `ErrIdentityRejected` (new, in `middleware`) when the user is not active or the org is disabled.
-  - Middleware: if `key.UserID != nil` and the resolver returns any error or a nil identity → 401 `{"error":"session no longer valid"}`; if `key.UserID == nil` → key-only identity as today.
-  - `func (s *UserService) Logout(ctx context.Context, keyID string) error` — revokes the key only if its label starts with `web-session-`; otherwise no-op.
+  - Resolver contract: returns `ErrIdentityRejected` (new, in `middleware`) when `!user.IsActive()` (`models/user.go:97` — so `pending_password_change` users still pass and can change their password) or the org is disabled.
+  - Middleware: if `key.UserID != nil` and (no resolver is configured, or the resolver returns any error, or a nil identity) → 401 `{"error":"session no longer valid"}`; if `key.UserID == nil` → key-only identity as today. Defence in depth: if the resolved identity is in a customer org and the key role is `admin` → 401.
+  - `func (s *UserService) Logout(ctx context.Context, keyID string) error` — revokes the key only if its label starts with `web-session-` **and** `expires_at IS NOT NULL`; otherwise no-op.
+  - `ChangePassword` (`internal/handler/auth.go:238`) and `GET /api/v1/users/me` (`internal/handler/user.go:179`) find the user from `UserIdentity.UserID` (via `GetUserByID`), not from `GetUserByAPIKeyID` — otherwise any session but the newest gets 404.
+  - Adding `Logout` to the `authUserService` interface (`internal/handler/auth.go:24-30`) requires adding it to every fake implementing it, including `fakeUserSvc` in `auth_supabase_test.go` (deleted later in Task 8) — the build must stay green at this commit.
   - `webSessionTTL = 15 * 24 * time.Hour` in `internal/service/user.go`.
 
 - [ ] **Step 1: Failing tests**
@@ -142,9 +150,12 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
   - `TestAuth_UserKey_DisabledOrg_Returns401` (resolver returns `ErrIdentityRejected` → 401)
   - `TestAuth_KeyWithoutUser_ResolverNotRequired` (agent key, UserID nil → 200, no UserIdentity in ctx)
   - `TestGetIdentityByAPIKeyID_ResolvesNonLatestKey` (two keys for one user; the older one still resolves to the user — this is the bug fixed by H-3)
-  - `TestLogin_SecondLoginKeepsFirstKeyValid` (login twice; `Authenticate(firstKey)` succeeds)
+  - `TestLogin_SecondLoginKeepsFirstKeyValid` (login twice; with the **first** key, `GET /api/v1/users/me` → 200 and `POST /api/v1/auth/change-password` → 200)
+  - `TestAuth_NoResolverConfigured_UserKey_Returns401`
+  - `TestAuth_DisabledUser_OtherWebKey_Returns401` (user has two web keys; `DisableUser` revokes one; the other → 401 because status is checked per request)
+  - `TestAuth_PendingPasswordChangeUser_Allowed`
   - `TestLogin_WebSessionKeyExpiresIn15Days` (`ExpiresAt` within 1 min of now+15d)
-  - `TestLogout_RevokesOnlyWebSessionKeys` (web-session key revoked; a manual key passed to Logout stays active)
+  - `TestLogout_RevokesOnlyWebSessionKeys` (web-session key revoked; a manual key passed to Logout stays active; a manual key whose label happens to start with `web-session-` but has NULL `expires_at` stays active)
 - [ ] **Step 2: Run** `go test ./internal/middleware/ ./internal/store/ ./internal/service/ ./internal/handler/ -run 'Auth_|GetIdentityByAPIKeyID|Login_|Logout_' -v` → FAIL.
 - [ ] **Step 3: Implement** per Interfaces. Login still calls `UpdateAPIKeyID` (column now means "last session"). Logout handler takes the key id from `DeveloperIdentity.KeyID`.
 - [ ] **Step 4: Run** the tests above, then the whole module: `cd ennam.kg.go && KG_TEST_DATABASE_URL=... go test ./... -race -count=1` → PASS.
@@ -155,7 +166,16 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
 ### Task 5: Global admin requires the internal org; customer project access via project_members
 
 **Files:**
-- Modify: `internal/handler/project.go:57-66` (`isGlobalAdmin`), `internal/handler/user.go:65` (`requireAdmin` takes `r *http.Request` and also requires internal org when a UserIdentity is present), `internal/handler/oauth.go:49-59` (`requireAdminRole` same rule), `internal/handler/landed_guards.go:46` (same), every inline `APIKeyRoleAdmin` gate in `settings.go:129,174,208`, `activity.go:59,186`, `neighbors.go:304`, `session_search.go:163` → route through one helper
+- Modify: `internal/handler/project.go:57-66` (`isGlobalAdmin`), `internal/handler/user.go:65` (`requireAdmin`, 8 call sites, takes `r *http.Request`), `internal/handler/oauth.go:49-59` (`requireAdminRole`), `internal/handler/landed_guards.go:46`, inline gates in `settings.go:129,174,208`, `activity.go:59,186`, `neighbors.go:304`, `internal/handler/project_member.go:41-53`
+- Gate behaviour table (keep exactly):
+  | Gate | Today accepts | After |
+  |---|---|---|
+  | `isGlobalAdmin` | user role admin, or admin key with empty ProjectIDs | same `&& isInternalCaller(r)` |
+  | `requireAdmin` (user.go), `requireAdminRole` (oauth.go), settings ×3 | any admin-role key | same `&& isInternalCaller(r)` |
+  | `activity.go` ×2, `neighbors.go:304`, `landed_guards.go:46` | admin role | same `&& isInternalCaller(r)` |
+  | `session_search.go:163` (accepts project-scoped admin keys via `HasProjectAccess`) | unchanged | **unchanged** |
+  | `landed_guards.go:66` WorkerGuard (key-only) | unchanged | unchanged |
+  | `project_member.go` Add/ChangeRole/Remove | project admin | additionally refused (403) when the project's org is a customer org (customer memberships are materialised by `OrgAccessService` only) |
 - Create: `internal/handler/authz_org.go`, `internal/service/org_access.go`
 - Test: `internal/handler/authz_org_test.go`, `internal/service/org_access_test.go`
 
@@ -165,7 +185,8 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
   - `func isInternalCaller(r *http.Request) bool` — true for key-only callers (no UserIdentity) and for users whose `OrgKind == "internal"`.
   - `isGlobalAdmin(r)` = previous rule `&& isInternalCaller(r)`; all listed gates call `isGlobalAdmin` (or `requireAdmin(w, r)`), so there is one rule.
   - `func orgAdminCaller(r *http.Request) (orgID string, ok bool)` — UserIdentity with `OrgKind=="customer"` and `OrgRole` in owner/admin.
-  - `service.OrgAccessService` with `NewOrgAccessService(orgs OrgRepository, members MemberRepository, users UserRepository)` and `SyncUserProjects(ctx, userID string) error` (upsert one `project_members` row per org project with `OrgRole.ProjectRole()`; remove rows for projects outside the org) and `SyncOrgProjects(ctx, orgID string) error` (calls `SyncUserProjects` for every user of the org). Plan 2 calls `SyncOrgProjects` when a project joins an org.
+  - `service.OrgAccessService` with `NewOrgAccessService(orgs OrgRepository, members MemberRepository, users UserRepository)` and `SyncUserProjects(ctx, userID string) error` (upsert one `project_members` row per org project with `OrgRole.ProjectRole()`; remove rows for projects outside the org) and `SyncOrgProjects(ctx, orgID string) error` (calls `SyncUserProjects` for every user of the org). Plan 2 calls `SyncOrgProjects` when a project joins an org. Both return `ErrInternalOrg` and change nothing when the user/org is internal (staff memberships are hand-managed).
+  - New store methods: `UserStore.ListByOrg(ctx, orgID string) ([]*models.User, error)`; `ProjectMemberStore.Upsert(ctx, projectID, userID string, role models.ProjectMemberRole) error` (`ON CONFLICT (project_id, user_id) DO UPDATE SET role`); `ProjectMemberStore.DeleteForUserExcept(ctx, userID string, keepProjectIDs []string) error`.
 
 - [ ] **Step 1: Failing tests**
   - `TestIsGlobalAdmin_CustomerUserWithAdminKeyRole_False` (UserIdentity Role "admin", OrgKind "customer" → false; defence in depth even though the DB forbids it)
@@ -173,8 +194,11 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
   - `TestSettingsGet_CustomerOrgAdmin_403` (GET `/api/v1/settings` as customer owner → 403)
   - `TestSyncUserProjects_MemberGetsDeveloperOnAllOrgProjects` (2 org projects + 1 other → exactly 2 rows, role developer)
   - `TestSyncUserProjects_RemovesForeignMembership` (pre-existing row on a project outside the org is removed)
+  - `TestSyncUserProjects_InternalUser_NoChange` (internal user with 2 memberships → `ErrInternalOrg`, rows unchanged)
+  - `TestSessionSearch_ProjectScopedAdminKey_StillAllowed`
+  - `TestProjectMemberAdd_CustomerProject_403`
 - [ ] **Step 2: Run** `go test ./internal/handler/ ./internal/service/ -run 'IsGlobalAdmin|SettingsGet_Customer|SyncUserProjects' -v` → FAIL.
-- [ ] **Step 3: Implement**. Grep after implementing: `grep -rn "APIKeyRoleAdmin" internal/handler | grep -v _test` must show only `isGlobalAdmin`, `projectRoleForKeyRole`, `apikey_mgmt.go:92` (create-key refusal) and `landed_guards.go:66` (WorkerGuard, key-only).
+- [ ] **Step 3: Implement** per the gate table; every other `APIKeyRoleAdmin` reference (`apikey_mgmt.go:92` create-key refusal, `project_role.go:65`, `session_search.go:163`, `landed_guards.go:66`, middleware/models/delegation/service) stays as it is.
 - [ ] **Step 4: Run** full `go test ./... -race -count=1` → PASS.
 - [ ] **Step 5: Commit** `feat(authz): global admin requires internal org; org project access via project_members`
 
@@ -195,6 +219,9 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
   - `PATCH /api/v1/org/users/{id}` (display_name, org_role), `POST /api/v1/org/users/{id}/disable|enable|reset-password` — any id not in the caller's org → **404**.
   - `GET /api/v1/org/queue/query` — same response shape as `GET /api/v1/queue/query`, restricted to jobs of the org's projects.
   - Create rate limit: 20 creates per org per hour, in-memory (`golang.org/x/time/rate` if already a dependency, else a small mutex-guarded counter), → 429.
+  - Authority rules (all → 403): an org `admin` may act only on users whose org_role is member/viewer; nobody may modify, disable or reset the `owner` through these routes; nobody may change their own `org_role` or disable themselves.
+  - PATCH that changes `org_role` calls `SyncUserProjects` again.
+  - Org create does **not** mint an API key and returns none (the existing `CreateUser` at `service/user.go:151,210` returns a never-expiring plaintext key and only logs a failed key link at `:194` — the org path must not reuse that behaviour); the user gets a key only when they log in.
 - `service.OrgUserService` with `Create(ctx, orgID string, actorRole models.OrgRole, req OrgCreateUserRequest) (*models.User, error)`, `Update`, `SetStatus`, `ResetPassword(ctx, orgID, userID, newPassword string) error`; returns `ErrNotInOrg` (→404) and `ErrEmailUnavailable` (→409).
 
 - [ ] **Step 1: Failing tests**
@@ -203,6 +230,10 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
   - `TestOrgUsers_PatchOtherOrgUser_404` and `TestOrgUsers_ResetInternalAdmin_404`
   - `TestOrgUsers_DuplicateEmail_GenericMessage` (409, body exactly `this e-mail can't be used`)
   - `TestOrgUsers_MemberCaller_403`
+  - `TestOrgUsers_AdminCannotTouchOwnerOrAdmin` (admin resets owner → 403; admin disables another admin → 403)
+  - `TestOrgUsers_CannotChangeOwnRole_403`
+  - `TestOrgUsers_PatchRole_ResyncsMemberships` (member→viewer: project_members rows become viewer)
+  - `TestOrgUsers_Create_ReturnsNoAPIKey` (response has no key field; `api_keys` has no row for the user)
   - `TestOrgQueue_OnlyOrgProjects`
 - [ ] **Step 2: Run** `go test ./internal/handler/ -run 'OrgUsers|OrgQueue' -v` → FAIL.
 - [ ] **Step 3: Implement** per Interfaces.
@@ -224,14 +255,39 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
   - `func netguard.Control(allow []*net.IPNet) func(network, address string, c syscall.RawConn) error` — for `net.Dialer.Control`, checks the resolved IP at dial time (defeats DNS rebinding).
   - `func netguard.DialerFor(guarded bool, allow []*net.IPNet) *net.Dialer`.
   - Env `KG_DATASOURCE_ALLOW_CIDRS` (comma-separated, default empty).
-  - Rule: the guard applies when the data source's project belongs to a **customer** org; internal-org data sources are unguarded (internal demo sources live on the private RDS). Every dialer above gets its `net.Dialer` (and the driver's dialer hook, e.g. lib/pq `Connector.Dialer`) from `DialerFor`.
+  - Rule: the guard applies when the data source's project belongs to a **customer** org; internal-org data sources are unguarded (internal demo sources live on the private RDS). If the org lookup fails, treat the source as guarded (fail closed).
+  - Driver hooks (plain `sql.Open` takes no dialer, so each guarded open must go through a connector):
+    - postgres: `pq.NewConnector(dsn)` + `.Dialer(...)` + `sql.OpenDB` (also for `source_write.go:178`, `playbook.go:600`);
+    - mssql: the driver's `NewConnector(dsn)` with its `Dialer` field;
+    - mysql/mariadb: `mysql.RegisterDialContext("guarded", ...)`, rewrite the DSN network to `guarded`, and refuse DSNs using `unix(...)`.
+  - Python also dials source DSNs: Go forwards the DSN as `X-DB-DSN` (`internal/service/sse_stream.go:311`) and `ennam.kg.python/src/ennam_kg/db_client/client.py:57,106,169` connects. Go additionally sends `X-DB-Guarded: 1` for guarded sources — Task 7b enforces it in Python.
   - `TestConnection` step errors for guarded sources are replaced by `connection failed` (no raw dial error).
 
-- [ ] **Step 1: Failing tests**: `TestCheckIP` (table: 10.0.0.1, 127.0.0.1, 169.254.169.254, ::1, 100.64.0.1 refused; 8.8.8.8 allowed; 10.1.2.3 allowed when `10.1.0.0/16` in allow), `TestControl_RefusesResolvedPrivateIP` (dial `localhost:1` via guarded dialer → error contains `destination not allowed`), `TestTestConnection_CustomerSource_GenericError`, `TestTestConnection_InternalSource_Unguarded`.
+- [ ] **Step 1: Failing tests**: `TestStreamHeaders_GuardedSourceSendsFlag` (customer source → `X-DB-Guarded: 1`; internal → header absent), `TestCheckIP` (table: 10.0.0.1, 127.0.0.1, 169.254.169.254, ::1, 100.64.0.1, ::ffff:10.0.0.1, 0.0.0.0 refused; 8.8.8.8 allowed; 10.1.2.3 allowed when `10.1.0.0/16` in allow), `TestControl_RefusesResolvedPrivateIP` (dial `localhost:1` via guarded dialer → error contains `destination not allowed`), `TestTestConnection_CustomerSource_GenericError`, `TestTestConnection_InternalSource_Unguarded`.
 - [ ] **Step 2: Run** `go test ./internal/netguard/ ./internal/service/ -run 'CheckIP|Control_|TestConnection_' -v` → FAIL.
 - [ ] **Step 3: Implement** per Interfaces; find any other `sql.Open`/`net.Dial` on data-source hosts with `grep -rn "sql.Open\|net.Dial\|tls.Dial" internal/service` and route them through `DialerFor`.
 - [ ] **Step 4: Run** the tests + full `go test ./... -race -count=1` → PASS.
 - [ ] **Step 5: Commit** `feat(security): SSRF guard for customer-org data source connections`
+
+---
+
+### Task 7b: SSRF guard in the Python executor
+
+**Files:**
+- Create: `ennam.kg.python/src/ennam_kg/db_client/netguard.py`
+- Modify: `ennam.kg.python/src/ennam_kg/db_client/client.py:31-200` (constructor takes `guarded: bool`; check before each connect at :57, :106, :169), callers in `src/ennam_kg/api/streaming.py` and `src/ennam_kg/api/agentic.py` (read header `X-DB-Guarded`)
+- Test: `ennam.kg.python/tests/db_client/test_netguard.py`
+
+**Interfaces:**
+- Consumes: Task 7's `X-DB-Guarded: 1` header.
+- Produces: `def check_host(host: str, port: int, allow: list[ipaddress._BaseNetwork]) -> None` — resolves with `socket.getaddrinfo`, raises `DestinationNotAllowed("destination not allowed")` if any resolved address is loopback, private, link-local, unspecified, multicast, reserved, CGNAT `100.64.0.0/10`, or IPv4-mapped private, unless inside `allow`; env `KG_DATASOURCE_ALLOW_CIDRS` (same format as Go). Guarded clients call it with the host/port parsed from the DSN before connecting; a guarded MySQL DSN using a unix socket is refused.
+- Note: resolve-then-connect leaves a DNS-rebinding window; acceptable here because Go's dial-time guard covers the Go paths and Python only executes queries on a source Go already validated. Record this in the report.
+
+- [ ] **Step 1: Failing tests**: `test_check_host_refuses_private` (parametrised: `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `::1`, `localhost`), `test_check_host_allows_public` (`8.8.8.8`), `test_check_host_allowlist` (`10.1.2.3` with `10.1.0.0/16`), `test_guarded_client_refuses_before_connect` (patch `asyncpg.connect`; guarded client with DSN host `127.0.0.1` raises `DestinationNotAllowed` and `connect` is never called), `test_unguarded_client_unchanged`.
+- [ ] **Step 2: Run** `cd ennam.kg.python && uv run pytest tests/db_client/test_netguard.py -v` → FAIL.
+- [ ] **Step 3: Implement** per Interfaces.
+- [ ] **Step 4: Run** the tests + `uv run pytest -q` and `uv run ruff check src tests` → PASS.
+- [ ] **Step 5: Commit** in `ennam.kg.python`: `feat(security): refuse private destinations for guarded data sources`
 
 ---
 
@@ -278,7 +334,8 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
 **Files:**
 - Modify: `ennam.kg.next/src/lib/auth/session.ts:4-16` (add `orgKind?: 'internal' | 'customer'`, `orgRole?: 'owner' | 'admin' | 'member' | 'viewer'`), `src/app/(auth)/login/actions.ts:44` (store them from the login response), `src/app/(dashboard)/admin/layout.tsx:12`, `src/components/layout/Sidebar.tsx:70-82,142-143`, `src/components/layout/DashboardShell.tsx:37-38`, admin Users page and Sync page (call `/api/kg/org/users` and `/api/kg/org/queue/query` when `orgKind === 'customer'`)
 - Create: `src/app/(dashboard)/not-available/page.tsx`, `src/lib/auth/org-access.ts`
-- Modify (Go): `internal/handler/auth.go` login response includes `user.org_kind` and `user.org_role` (from Task 2 fields) — add a Go test `TestLogin_ResponseIncludesOrg`.
+- Modify (Go): `internal/handler/auth.go` login response includes `user.org_kind` (Login loads the org with `OrganizationStore.GetByID(user.OrgID)`) and `user.org_role` (from `User.OrgRole`) — add a Go test `TestLogin_ResponseIncludesOrg`.
+- Sessions issued before this deploy have no `orgKind`: treat `undefined` as `internal` everywhere (`canSeeAdminItem` included).
 
 **Interfaces:**
 - Produces: `canSeeAdminItem(session: SessionData, href: string): boolean` in `org-access.ts` — internal + role admin → all items; customer + orgRole owner/admin → only `/admin/users`, `/admin/sync`; else none. Admin layout uses it with the current path; denied → `redirect('/not-available')`, which renders "This page is not available for your account." with a link to `/`.
