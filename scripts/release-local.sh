@@ -20,8 +20,7 @@ CALLER_REGISTRY="${REGISTRY:-}"
 ACTION="${1:-build}"
 SHA="$(git -C ennam.kg.go rev-parse --short HEAD)"
 
-# Load .env (if present) so build args (e.g. the dashboard's NEXT_PUBLIC_SUPABASE_*)
-# come from there instead of being hardcoded. Empty when unset = feature disabled.
+# Load .env (if present) so build settings come from there instead of being hardcoded.
 set -a; [ -f .env ] && . ./.env; set +a
 
 # .env must not override a VERSION / REGISTRY given on the command line.
@@ -48,11 +47,7 @@ push_one() {
 build_one server    ennam.kg.go     deploy/docker/Dockerfile production \
   --build-arg "VERSION=$VERSION" --build-arg "COMMIT=$SHA"
 build_one python    ennam.kg.python Dockerfile               ""
-# Dashboard: NEXT_PUBLIC_* are baked at build time (Next.js), so pass them as
-# build args (sourced from .env above; empty => Supabase login disabled).
-build_one dashboard ennam.kg.next   Dockerfile               "" \
-  --build-arg "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-}" \
-  --build-arg "NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}"
+build_one dashboard ennam.kg.next   Dockerfile               ""
 
 if [ "$ACTION" = "push" ]; then
   for s in server python dashboard; do push_one "$s"; done
