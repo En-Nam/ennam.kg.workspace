@@ -260,10 +260,10 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
     - postgres: `pq.NewConnector(dsn)` + `.Dialer(...)` + `sql.OpenDB` (also for `source_write.go:178`, `playbook.go:600`);
     - mssql: the driver's `NewConnector(dsn)` with its `Dialer` field;
     - mysql/mariadb: `mysql.RegisterDialContext("guarded", ...)`, rewrite the DSN network to `guarded`, and refuse DSNs using `unix(...)`.
-  - Python also dials source DSNs: Go forwards the DSN as `X-DB-DSN` (`internal/service/sse_stream.go:311`) and `ennam.kg.python/src/ennam_kg/db_client/client.py:57,106,169` connects. Go additionally sends `X-DB-Guarded: 1` for guarded sources — Task 7b enforces it in Python.
+  - Python also dials source DSNs: Go forwards the DSN as `X-DB-DSN` (`internal/service/sse_stream.go:311`) and `ennam.kg.python/src/ennam_kg/db_client/client.py:57,106,169` connects. Go sends `X-DB-Trusted-Internal: 1` only for internal-org sources (nothing for customer/unknown) — Task 7b guards every DSN in Python unless that header is present (fail closed; ruling from security scan).
   - `TestConnection` step errors for guarded sources are replaced by `connection failed` (no raw dial error).
 
-- [ ] **Step 1: Failing tests**: `TestStreamHeaders_GuardedSourceSendsFlag` (customer source → `X-DB-Guarded: 1`; internal → header absent), `TestCheckIP` (table: 10.0.0.1, 127.0.0.1, 169.254.169.254, ::1, 100.64.0.1, ::ffff:10.0.0.1, 0.0.0.0 refused; 8.8.8.8 allowed; 10.1.2.3 allowed when `10.1.0.0/16` in allow), `TestControl_RefusesResolvedPrivateIP` (dial `localhost:1` via guarded dialer → error contains `destination not allowed`), `TestTestConnection_CustomerSource_GenericError`, `TestTestConnection_InternalSource_Unguarded`.
+- [ ] **Step 1: Failing tests**: `TestStreamHeaders_TrustedInternalFlag` (internal source → `X-DB-Trusted-Internal: 1`; customer or lookup failure → header absent), `TestCheckIP` (table: 10.0.0.1, 127.0.0.1, 169.254.169.254, ::1, 100.64.0.1, ::ffff:10.0.0.1, 0.0.0.0 refused; 8.8.8.8 allowed; 10.1.2.3 allowed when `10.1.0.0/16` in allow), `TestControl_RefusesResolvedPrivateIP` (dial `localhost:1` via guarded dialer → error contains `destination not allowed`), `TestTestConnection_CustomerSource_GenericError`, `TestTestConnection_InternalSource_Unguarded`.
 - [ ] **Step 2: Run** `go test ./internal/netguard/ ./internal/service/ -run 'CheckIP|Control_|TestConnection_' -v` → FAIL.
 - [ ] **Step 3: Implement** per Interfaces; find any other `sql.Open`/`net.Dial` on data-source hosts with `grep -rn "sql.Open\|net.Dial\|tls.Dial" internal/service` and route them through `DialerFor`.
 - [ ] **Step 4: Run** the tests + full `go test ./... -race -count=1` → PASS.
@@ -275,15 +275,15 @@ Run: `make db-migrate` against the test DB (`KG_DATABASE_URL` pointing at :5433 
 
 **Files:**
 - Create: `ennam.kg.python/src/ennam_kg/db_client/netguard.py`
-- Modify: `ennam.kg.python/src/ennam_kg/db_client/client.py:31-200` (constructor takes `guarded: bool`; check before each connect at :57, :106, :169), callers in `src/ennam_kg/api/streaming.py` and `src/ennam_kg/api/agentic.py` (read header `X-DB-Guarded`)
+- Modify: `ennam.kg.python/src/ennam_kg/db_client/client.py:31-200` (constructor takes `guarded: bool`; check before each connect at :57, :106, :169), callers in `src/ennam_kg/api/streaming.py` and `src/ennam_kg/api/agentic.py` (read header `X-DB-Trusted-Internal`; guarded = header absent)
 - Test: `ennam.kg.python/tests/db_client/test_netguard.py`
 
 **Interfaces:**
-- Consumes: Task 7's `X-DB-Guarded: 1` header.
+- Consumes: Task 7's `X-DB-Trusted-Internal: 1` header (present only for internal-org sources). Default is guarded.
 - Produces: `def check_host(host: str, port: int, allow: list[ipaddress._BaseNetwork]) -> None` — resolves with `socket.getaddrinfo`, raises `DestinationNotAllowed("destination not allowed")` if any resolved address is loopback, private, link-local, unspecified, multicast, reserved, CGNAT `100.64.0.0/10`, or IPv4-mapped private, unless inside `allow`; env `KG_DATASOURCE_ALLOW_CIDRS` (same format as Go). Guarded clients call it with the host/port parsed from the DSN before connecting; a guarded MySQL DSN using a unix socket is refused.
 - Note: resolve-then-connect leaves a DNS-rebinding window; acceptable here because Go's dial-time guard covers the Go paths and Python only executes queries on a source Go already validated. Record this in the report.
 
-- [ ] **Step 1: Failing tests**: `test_check_host_refuses_private` (parametrised: `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `::1`, `localhost`), `test_check_host_allows_public` (`8.8.8.8`), `test_check_host_allowlist` (`10.1.2.3` with `10.1.0.0/16`), `test_guarded_client_refuses_before_connect` (patch `asyncpg.connect`; guarded client with DSN host `127.0.0.1` raises `DestinationNotAllowed` and `connect` is never called), `test_unguarded_client_unchanged`.
+- [ ] **Step 1: Failing tests**: `test_check_host_refuses_private` (parametrised: `127.0.0.1`, `10.0.0.1`, `169.254.169.254`, `::1`, `localhost`), `test_check_host_allows_public` (`8.8.8.8`), `test_check_host_allowlist` (`10.1.2.3` with `10.1.0.0/16`), `test_guarded_client_refuses_before_connect` (patch `asyncpg.connect`; guarded client with DSN host `127.0.0.1` raises `DestinationNotAllowed` and `connect` is never called), `test_unguarded_client_unchanged` (only when the trusted-internal header is present), `test_missing_header_means_guarded` (no header → private DSN refused).
 - [ ] **Step 2: Run** `cd ennam.kg.python && uv run pytest tests/db_client/test_netguard.py -v` → FAIL.
 - [ ] **Step 3: Implement** per Interfaces.
 - [ ] **Step 4: Run** the tests + `uv run pytest -q` and `uv run ruff check src tests` → PASS.
