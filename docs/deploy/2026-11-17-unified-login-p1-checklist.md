@@ -40,3 +40,27 @@ removed Supabase login). Down is a no-op (revocation cannot be undone).
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` are no longer read; remove them from the prod
 env files (already removed from the local `envfiles/envfiles/*.env`, compose
 files and `.env.release.example`). The `supabase_user_id` column stays for now.
+
+## Network guard for customer data sources (Task 7)
+
+Customer-org data sources are dialled through a fail-closed guard that refuses
+loopback, private, link-local and other internal addresses. Internal-org sources
+are trusted and unaffected.
+
+- [ ] If any customer source lives on a private network, set
+  `KG_DATASOURCE_ALLOW_CIDRS` (comma-separated, e.g. `10.1.0.0/16, 192.168.5.0/24`)
+  on BOTH kg-server AND the Python indexer/worker, with the same value. They
+  parse it independently; setting only one leaves the other side refusing the
+  source. Leave it unset when every customer source is public.
+- [ ] Confirm the Python service (port 8081) is reachable only from kg-server in
+  prod. It trusts the `X-DB-Trusted-Internal` header to skip the guard, so anyone
+  who can reach 8081 directly can bypass it. Do NOT publish 8081 publicly (no
+  public load-balancer listener, no security-group ingress from outside the
+  kg-server network).
+
+## Migration 000105 (organizations.kind immutable)
+
+kg-server auto-migrates it on start. It adds a trigger that rejects any
+`UPDATE organizations SET kind = ...` that changes the kind (the
+`users_org_guard` trigger only runs on user writes, so a flipped kind would
+bypass its invariants). Nothing to prepare; down drops the trigger.
