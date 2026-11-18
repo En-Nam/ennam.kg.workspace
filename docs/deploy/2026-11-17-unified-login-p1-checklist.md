@@ -185,7 +185,7 @@ expired SSO sessions are sent through `/sso/start` and end on LAAM `/sso/error`.
 ## Plan 4: Portal home, right navigation, password recovery
 
 Adds the Portal home page, the right-hand navigation rail (LAAM and DAAB) and LAAM password recovery by e-mail
-(Resend). Four feature flags stay OFF until the owner turns them on.
+(Resend). Three LAAM flags plus the dashboard's `RIGHT_NAV_ENABLED` stay OFF until the owner turns them on.
 
 ### Migrations
 
@@ -230,14 +230,20 @@ Adds the Portal home page, the right-hand navigation rail (LAAM and DAAB) and LA
 4. [ ] Deploy the dashboard.
 5. [ ] Smoke test with flags off: landing, login and sign-out unchanged; org name visible in the header; a
    customer owner shows "Owner".
-6. [ ] Turn on `RIGHT_NAV_ENABLED` in both apps (restart each).
-7. [ ] Turn on `PORTAL_HOME_ENABLED`.
-8. [ ] Send a test reset to an internal mailbox, then turn on `PASSWORD_RECOVERY_ENABLED`.
+6. [ ] Turn on LAAM `PORTAL_HOME_ENABLED` (restart LAAM). This goes BEFORE the dashboard rail.
+7. [ ] Turn on `RIGHT_NAV_ENABLED` in LAAM (restart LAAM), then in the dashboard (restart it).
+8. [ ] Turn on LAAM `PASSWORD_RECOVERY_ENABLED` (restart LAAM; the APIs and pages return 404 while it is off), then
+   send a test reset to an internal mailbox. If delivery fails, turn the flag back off (restart LAAM).
 9. [ ] QA (Task 10 list).
+
+QA note: the DAAB rail shows its Portal item for SSO sessions regardless of LAAM's `PORTAL_HOME_ENABLED`, so the
+Portal home must be live before the dashboard rail is turned on.
 
 QA note: DAAB password sessions from before this deploy show no org name until the next login.
 
 ### Rollback
 
-Turn `PORTAL_HOME_ENABLED` off first (users stop landing on the Portal), then `RIGHT_NAV_ENABLED` in both apps,
-then `PASSWORD_RECOVERY_ENABLED` (reset tokens expire in 30 min). Migration 0058 can stay.
+Turn the dashboard `RIGHT_NAV_ENABLED` off FIRST (restart the dashboard; its rail links to the Portal even when LAAM's
+flag is off), then LAAM `PORTAL_HOME_ENABLED` (restart LAAM; users stop landing on the Portal), then LAAM
+`RIGHT_NAV_ENABLED` (restart LAAM), then `PASSWORD_RECOVERY_ENABLED` (restart LAAM; reset tokens expire in 30 min).
+Migration 0058 can stay.
