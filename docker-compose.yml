@@ -167,6 +167,10 @@ services:
       # Host dir must exist and be writable by the container user. Use an absolute
       # PACKS_HOST_DIR: a relative one resolves against this file's directory.
       - ${PACKS_HOST_DIR:-./ennam.kg.packs}:/packs
+    # Unified login plan 2: KG_LAAM_API_URL=http://host.docker.internal:3900 reaches the host-published LAAM container.
+    # Docker Desktop does not resolve host.docker.internal inside this network without the mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
