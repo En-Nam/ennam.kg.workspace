@@ -157,6 +157,9 @@ Leave both unset until the owner says go (last step below).
    non-zero: resolve it by hand. Runtime Connect/attach is unchanged: an org that attaches an existing project later gets
    no customer org (D-10). Count the attached ones before the deploy
    (Admin DB: `select target_id, action from audit_log where action in ('org.daab_project_created','org.daab_project_attached')`).
+   Run the backfill in a quiet window (no connects, attaches or suspends meanwhile). Check every
+   `would provision (attached, sole owner)` line by hand: Admin only sees its own connections, so Ennam staff's direct use
+   of that project in DAAB is invisible to it. A failed attached provision has no Retry button: re-run the backfill.
 9. [ ] Resolve every `conflict` owner with "Link to LAAM member".
 10. [ ] Turn the flags on: `KG_ORG_LINKING_ENABLED=1` (kg-server) and `DAAB_ORG_PROVISIONING=1` (Admin), then restart.
 
