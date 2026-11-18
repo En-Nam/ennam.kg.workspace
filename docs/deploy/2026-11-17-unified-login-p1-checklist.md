@@ -122,12 +122,14 @@ Leave both unset until the owner says go (last step below).
 6. [ ] Owner classifies each user in the CSV.
 7. [ ] Apply classification: `go run ./cmd/kg-apply-classification -dsn <dsn> -csv users.csv` (dry-run), review, then add `-apply`.
 8. [ ] Backfill, run from Ennam Admin with the flag set on the command only: `DAAB_ORG_PROVISIONING=1 npm run daab:backfill` (dry-run). Check the private-host warnings, then `DAAB_ORG_PROVISIONING=1 npm run daab:backfill -- --apply`. The backfill refuses to run without the flag, but the DEPLOYED Admin service keeps `DAAB_ORG_PROVISIONING` unset until step 10.
-   The backfill moves only a project the org itself created (`org.daab_project_created` in the Admin audit log).
-   An org that attached an existing project (`org.daab_project_attached`, the old connect flow) shows
-   `skip (shared)` and gets NO customer org, so none of its LAAM users can use SSO. Count these before the deploy
-   (Admin DB: `select target_id, action from audit_log where action in ('org.daab_project_created','org.daab_project_attached')`)
-   and agree with the owner how each one gets its customer org. (Dev rehearsal 2026-11-18: both connected orgs
-   were `skip (shared)`.)
+   The backfill (spec D-13) moves every project that exactly one org points at: a project the org created
+   (`org.daab_project_created`) or one it attached (`org.daab_project_attached`) with no other org's connection or state on
+   it. The dry-run line says `would provision (created)` or `would provision (attached, sole owner)`; an attached one is
+   recorded as `project_origin = attached`. A project several orgs point at stays internal and shows `skip (shared)`.
+   If Go refuses a move (the project is held by another customer) the line is `conflict: ...`, the run goes on and exits
+   non-zero: resolve it by hand. Runtime Connect/attach is unchanged: an org that attaches an existing project later gets
+   no customer org (D-10). Count the attached ones before the deploy
+   (Admin DB: `select target_id, action from audit_log where action in ('org.daab_project_created','org.daab_project_attached')`).
 9. [ ] Resolve every `conflict` owner with "Link to LAAM member".
 10. [ ] Turn the flags on: `KG_ORG_LINKING_ENABLED=1` (kg-server) and `DAAB_ORG_PROVISIONING=1` (Admin), then restart.
 
