@@ -42,15 +42,20 @@ SELECT username, email, role, status FROM users
 ```bash
 cd ennam.kg.go && go build -o /tmp/kg-set-temp-password ./cmd/kg-set-temp-password
 /tmp/kg-set-temp-password -dsn "$KG_DATABASE_URL" -user alice -user bob@example.com          # dry run
-/tmp/kg-set-temp-password -dsn "$KG_DATABASE_URL" -user alice -user bob@example.com -apply   # writes
+/tmp/kg-set-temp-password -dsn "$KG_DATABASE_URL" -user alice -user bob@example.com -apply -out ./temp-passwords.txt   # writes
 ```
 
-The dry run changes nothing. `-apply` prints `username -> temporary password` once
-to stdout (nowhere else); it also sets status `pending_password_change`, clears
-lockout and revokes the user's web sessions. Hand each password over out-of-band
-(not chat or email with the username), never paste the output into a ticket, and
-clear terminal scrollback. Disabled users and LAAM-linked (SSO) users are refused;
-a refused or ambiguous name aborts the whole run before anything is written.
+The dry run changes nothing. `-apply` writes `username → temporary password` once,
+to the `-out` file (created mode 0600; it must not exist) or, without `-out`, to
+stdout; nothing else logs it. Run it interactively or with `-out`, never in a
+container whose stdout is shipped to log storage. It also sets status
+`pending_password_change`, clears lockout and revokes the user's web sessions.
+Hand each password over out-of-band (not chat or email with the username), never
+paste it into a ticket, and delete the `-out` file (and clear scrollback) after.
+Users who already have a password are refused (a mistyped `-user` must not reset a
+working account); add `-force` only when you really mean to reset one. Disabled
+and LAAM-linked (SSO) users are always refused; a refused or ambiguous name aborts
+the whole run before anything is written.
 
 **What the deploy changes:** kg-server auto-migrates 000104, which (a) revokes
 every active `consumer-session-%` key and (b) sets `expires_at = now() + 15 days`
