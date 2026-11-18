@@ -158,9 +158,9 @@ surviving sign-in. Three feature flags stay OFF until the owner turns them on.
 
 ### Run order
 
-1. [ ] Migrate Go (000107) and deploy Go (kg-server), `KG_SSO_ENABLED=false`.
-2. [ ] Migrate LAAM (0057) and deploy LAAM, `SSO_DAAB_ENABLED=false`.
-3. [ ] Deploy the dashboard, `SSO_ENABLED=false`.
+1. [ ] Migrate Go (000107) and deploy Go (kg-server); set the env values from the table (`KG_SSO_ENABLED=false`).
+2. [ ] Migrate LAAM (0057) and deploy LAAM; set the env values from the table (`SSO_DAAB_ENABLED=false`).
+3. [ ] Deploy the dashboard; set the env values from the table (`SSO_ENABLED=false`).
 4. [ ] Smoke test with flags off: password logins unchanged; LAAM `callbackUrl` and DAAB `/login?next=` deep
    links work; sign-out still works in both apps.
 5. [ ] Turn flags on, in this order, restarting each service: `KG_SSO_ENABLED=true`, then `SSO_DAAB_ENABLED=true`,
@@ -177,5 +177,7 @@ surviving sign-in. Three feature flags stay OFF until the owner turns them on.
 
 ### Rollback
 
-Turn the three flags off (`KG_SSO_ENABLED`, `SSO_DAAB_ENABLED`, `SSO_ENABLED`). Existing SSO keys expire within
+Turn the three flags off in this order, restarting each service: dashboard `SSO_ENABLED`, then LAAM
+`SSO_DAAB_ENABLED`, then Go `KG_SSO_ENABLED`. The order matters: with the dashboard flag still on after Go is off,
+expired SSO sessions are sent through `/sso/start` and end on LAAM `/sso/error`. Existing SSO keys expire within
 4 hours; `/s2s/sso/revoke` stays on, so sign-out and password-change revocation keep working. Migrations stay.
