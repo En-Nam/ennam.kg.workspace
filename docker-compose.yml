@@ -310,6 +310,8 @@ services:
       # Unified login plan 3 (default off). LAAM_URL: https://<laam host>, no trailing slash, server-only.
       SSO_ENABLED: ${SSO_ENABLED:-false}
       LAAM_URL: ${LAAM_URL:-}
+      # Unified login plan 4: right navigation rail (default off).
+      RIGHT_NAV_ENABLED: ${RIGHT_NAV_ENABLED:-false}
     depends_on:
       kg-server:
         condition: service_healthy

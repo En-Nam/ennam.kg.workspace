@@ -181,3 +181,63 @@ Turn the three flags off in this order, restarting each service: dashboard `SSO_
 `SSO_DAAB_ENABLED`, then Go `KG_SSO_ENABLED`. The order matters: with the dashboard flag still on after Go is off,
 expired SSO sessions are sent through `/sso/start` and end on LAAM `/sso/error`. Existing SSO keys expire within
 4 hours; `/s2s/sso/revoke` stays on, so sign-out and password-change revocation keep working. Migrations stay.
+
+## Plan 4: Portal home, right navigation, password recovery
+
+Adds the Portal home page, the right-hand navigation rail (LAAM and DAAB) and LAAM password recovery by e-mail
+(Resend). Four feature flags stay OFF until the owner turns them on.
+
+### Migrations
+
+- [ ] No Go migration (`org_name` is a subselect on `organizations`). Go adds `POST /api/v1/s2s/sso/status`.
+- [ ] LAAM `0058` (`drizzle/0058_cloudy_puma.sql`, adds `password_reset_token`). It can stay on rollback.
+
+### Mail (Resend)
+
+- [ ] DevOps: verify the sending domain in Resend (SPF and DKIM TXT records plus the return-path record on DNS).
+- [ ] Create a Resend API key with "sending access" only.
+- [ ] Free tier is 100 mails/day; LAAM caps reset mails at 80 per 24 h globally.
+
+### New env
+
+| Service | Variable | Value |
+|---|---|---|
+| LAAM | `RESEND_API_KEY` | key from Resend (secret) |
+| LAAM | `MAIL_FROM` | `AIO Analytics <no-reply@<verified domain>>` |
+| LAAM | `PASSWORD_RECOVERY_ENABLED` | `false` |
+| LAAM | `PORTAL_HOME_ENABLED` | `false` |
+| LAAM | `RIGHT_NAV_ENABLED` | `false` |
+| LAAM | `AUTH_URL` | already required; its origin is the origin of the reset link |
+| LAAM | `TRUSTED_PROXY_HEADER` | REQUIRED in prod, e.g. `x-forwarded-for` or `x-real-ip` (the header your proxy sets with the client IP) |
+| dashboard | `RIGHT_NAV_ENABLED` | `false` |
+
+- [ ] Flags accept `true` or `1`; anything else is off.
+- [ ] `TRUSTED_PROXY_HEADER` must be set in production. Without it `clientIpFrom` returns `unknown` for every
+  request, so all clients share one rate-limit bucket: one client can trigger the forgot/reset 429 for everyone,
+  and the 80/day global mail cap is easy to exhaust. The proxy must overwrite the header (LAAM uses the last
+  entry of the list).
+- [ ] Plan 3 settings must be on for the Portal/DAAB items: LAAM `SSO_DAAB_ENABLED=true` and `DAAB_DASHBOARD_URL`,
+  Go `KG_SSO_ENABLED=true`, dashboard `SSO_ENABLED=true` (and `LAAM_URL`). The Plan 2/3 S2S keys must be set both
+  ways: LAAM calls Go `POST /api/v1/s2s/sso/status` to check the link.
+- [ ] The real env files under `envfiles/` are gitignored: add the vars by hand. `docker-compose.yml` passes the
+  dashboard `RIGHT_NAV_ENABLED` from the shell for local runs only; LAAM is not in compose.
+
+### Run order
+
+1. [ ] Set the env values from the table (all flags `false`, `TRUSTED_PROXY_HEADER` set).
+2. [ ] Deploy Go (kg-server).
+3. [ ] Migrate LAAM (0058) and deploy LAAM.
+4. [ ] Deploy the dashboard.
+5. [ ] Smoke test with flags off: landing, login and sign-out unchanged; org name visible in the header; a
+   customer owner shows "Owner".
+6. [ ] Turn on `RIGHT_NAV_ENABLED` in both apps (restart each).
+7. [ ] Turn on `PORTAL_HOME_ENABLED`.
+8. [ ] Send a test reset to an internal mailbox, then turn on `PASSWORD_RECOVERY_ENABLED`.
+9. [ ] QA (Task 10 list).
+
+QA note: DAAB password sessions from before this deploy show no org name until the next login.
+
+### Rollback
+
+Turn `PORTAL_HOME_ENABLED` off first (users stop landing on the Portal), then `RIGHT_NAV_ENABLED` in both apps,
+then `PASSWORD_RECOVERY_ENABLED` (reset tokens expire in 30 min). Migration 0058 can stay.
