@@ -148,6 +148,8 @@ services:
       KG_LAAM_OUTBOUND_KEY: ${KG_LAAM_OUTBOUND_KEY:-}
       KG_LAAM_API_URL: ${KG_LAAM_API_URL:-}
       KG_ORG_LINKING_ENABLED: ${KG_ORG_LINKING_ENABLED:-}
+      # Unified login plan 3: SSO hand-off from LAAM (default off).
+      KG_SSO_ENABLED: ${KG_SSO_ENABLED:-false}
       # Free questions on T-log data: off unless LANDED_NL_QUERY=1 (and LANDED_CTX_KEYS set) in .env.
       LANDED_AI_URL: postgres://landed_ai:${LANDED_AI_PASSWORD:-landed_ai_dev}@postgres:5432/${LANDED_DB_NAME:-ennam_landed}?sslmode=disable
       LANDED_CTX_KEYS: ${LANDED_CTX_KEYS:-}
@@ -305,6 +307,9 @@ services:
       GO_API_URL: http://kg-server:8080
       KG_API_KEY: ${KG_API_KEY:-ennam_kg_dev_000000000000000000000000}
       SESSION_SECRET: ${SESSION_SECRET:-ennam-kg-dev-session-secret-32chars!!}
+      # Unified login plan 3 (default off). LAAM_URL: https://<laam host>, no trailing slash, server-only.
+      SSO_ENABLED: ${SSO_ENABLED:-false}
+      LAAM_URL: ${LAAM_URL:-}
     depends_on:
       kg-server:
         condition: service_healthy

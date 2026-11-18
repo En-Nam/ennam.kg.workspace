@@ -121,3 +121,61 @@ Leave both unset until the owner says go (last step below).
 8. [ ] Backfill, run from Ennam Admin with the flag set on the command only: `DAAB_ORG_PROVISIONING=1 npm run daab:backfill` (dry-run). Check the private-host warnings, then `DAAB_ORG_PROVISIONING=1 npm run daab:backfill -- --apply`. The backfill refuses to run without the flag, but the DEPLOYED Admin service keeps `DAAB_ORG_PROVISIONING` unset until step 10.
 9. [ ] Resolve every `conflict` owner with "Link to LAAM member".
 10. [ ] Turn the flags on: `KG_ORG_LINKING_ENABLED=1` (kg-server) and `DAAB_ORG_PROVISIONING=1` (Admin), then restart.
+
+## Plan 3: SSO hand-off, sign-out both ways, deep links
+
+Adds one-time-code SSO from LAAM to DAAB, sign-out in either app ending both, and deep links
+surviving sign-in. Three feature flags stay OFF until the owner turns them on.
+
+### Migrations
+
+- [ ] Go `000107_sso_codes` (kg-server auto-migrates on start).
+- [ ] LAAM `0057` (`drizzle/0057_far_fantastic_four.sql`, adds `revoked_session`). Legacy LAAM sessions without a
+  `sid` get a deterministic one on refresh, so nobody is forced to sign in again.
+
+### Prerequisite
+
+- [ ] The Plan 2 S2S keys are already set both ways (see "Keys" above). Plan 3 adds traffic:
+  Go to LAAM `POST /api/s2s/sessions/revoke` (DAAB sign-out), and LAAM to Go `POST /api/v1/s2s/sso/codes` and
+  `/sso/revoke` (LAAM sign-out and password change revoke DAAB SSO sessions). kg-server must reach LAAM and LAAM
+  must reach kg-server.
+
+### New env
+
+| Service | Variable | Value |
+|---|---|---|
+| kg-server | `KG_SSO_ENABLED` | `false` |
+| LAAM | `SSO_DAAB_ENABLED` | `false` |
+| LAAM | `DAAB_DASHBOARD_URL` | `https://<dashboard host>` |
+| LAAM | `AUTH_URL` | `https://<laam host>` (public origin; used by `safeCallbackPath` and `readLaamToken` behind TLS termination) |
+| dashboard | `SSO_ENABLED` | `false` |
+| dashboard | `LAAM_URL` | `https://<laam host>` (no trailing slash, server-only) |
+
+- [ ] Both public hosts are HTTPS in prod so the Secure cookies work.
+- [ ] The real env files under `envfiles/envfiles/` are gitignored; the dashboard has no `.env.example`.
+  Add the vars by hand (`docker-compose.yml` passes `KG_SSO_ENABLED`, `SSO_ENABLED`, `LAAM_URL` from the shell
+  for local runs only; LAAM is not in compose).
+
+### Run order
+
+1. [ ] Migrate Go (000107) and deploy Go (kg-server), `KG_SSO_ENABLED=false`.
+2. [ ] Migrate LAAM (0057) and deploy LAAM, `SSO_DAAB_ENABLED=false`.
+3. [ ] Deploy the dashboard, `SSO_ENABLED=false`.
+4. [ ] Smoke test with flags off: password logins unchanged; LAAM `callbackUrl` and DAAB `/login?next=` deep
+   links work; sign-out still works in both apps.
+5. [ ] Turn flags on, in this order, restarting each service: `KG_SSO_ENABLED=true`, then `SSO_DAAB_ENABLED=true`,
+   then `SSO_ENABLED=true`.
+6. [ ] QA per spec section 8:
+   - [ ] linked user: LAAM to DAAB with no second sign-in
+   - [ ] unlinked user: clear access message (`/sso/no-access`)
+   - [ ] user of another org (org mismatch): access message
+   - [ ] internal user via direct `/sso/start`: access message
+   - [ ] expired LAAM session: lands on LAAM login, then back to DAAB
+   - [ ] expired DAAB key: silent re-run through `/sso/start`
+   - [ ] signed out of LAAM, then DAAB "Sign in with AIO Analytics": LAAM login, then back to DAAB at `next`
+   - [ ] sign-out in LAAM ends the DAAB session; sign-out in DAAB ends the LAAM session
+
+### Rollback
+
+Turn the three flags off (`KG_SSO_ENABLED`, `SSO_DAAB_ENABLED`, `SSO_ENABLED`). Existing SSO keys expire within
+4 hours; `/s2s/sso/revoke` stays on, so sign-out and password-change revocation keep working. Migrations stay.
