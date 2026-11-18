@@ -176,7 +176,8 @@ D-9 **Flow** (also covers DAAB deep links for linked users):
 
 D-10 **Shared projects (option b).** A project attached to more than one customer org belongs to the internal
 org: those customers keep using it through LAAM (MCP key) but do not see it in DAAB. Admin refuses to attach
-a customer-owned project to another org. An org that only has attached projects gets no DAAB org and no Home.
+a customer-owned project to another org. An org that attaches a project at runtime gets no DAAB org and no Home
+(exception: the one-off migration backfill, D-13, owner decision 2026-11-18).
 
 ### Sessions, expiry, sign-out
 
@@ -201,7 +202,10 @@ D-12 **Sign-out.**
 D-13 **Migration.** Create the internal org; every existing DAAB user and project goes into it. Then, for
 each customer org Admin connected via "Connect DAAB" whose project no other org points at: create the
 customer DAAB org, move that project, provision the owner (D-5). Projects pointed at by several orgs stay
-internal (D-10). Before migrating, count on prod how many projects are shared and how many users have
+internal (D-10). Owner decision 2026-11-18 (dev rollout rehearsal): this covers projects the org CREATED and
+projects it ATTACHED, as long as no other org points at the project now or ever did (audit log, name suffix);
+the same strict test decides "shared" for both. Backfilled attached orgs are then managed like created ones
+(Admin suspend/reactivate/disconnect sync, Retry owner). Before migrating, count on prod how many projects are shared and how many users have
 `supabase_user_id` without a password.
 Ownership: the Go migration creates the internal org and assigns everything to it. The customer part is an
 Admin backfill job (Admin knows created vs attached projects from its own state/audit and already holds the
