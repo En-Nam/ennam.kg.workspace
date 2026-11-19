@@ -18,12 +18,16 @@ The demo T-logs with `<RiskScore>`: `.superpowers/sdd/2026-11-11-pos-data-model-
 2. **Required:** the re-upload alone changes NOTHING (the writer records changed transactions as `conflicts`). For every
    batch created in step 1 call `POST /api/v1/projects/{pid}/landed/feeds/{feedId}/batches/{batchId}/replay` (admin) and
    wait until the queue is empty.
+   If a replayed batch still reports `conflicts > 0`: read the batch's error and counts (the batch detail / feed batch list),
+   then re-run replay for THAT batch and wait again. Repeat until `conflicts` is 0. Never edit landed rows by hand.
+   Live-source orgs (e.g. Pharmacy Demo) need NO backfill: they read the source directly, and their refund mapping
+   must map `reason_code` / `risk_score` for those fields to appear in the drawer.
 3. Verify: refunds with a non-null `risk_score` ≈ number of refunds from the 12-month set (local: 651 of 655; the 4 without
    are the planted/top-up refunds outside `poslog-12m`). Batch counts: `superseded` > 0, `conflicts` 0.
 
 ## Smoke test after deploy (EN + VI)
 - Chat: "Cho tôi xem các lần hoàn tiền tháng 11/2026" → a code-built table under the answer, short ids (`RTX-…`, `TXN-…`) clickable.
-- Click an id and a row → drawer shows reason, risk score, days since purchase, "currency not specified"; Escape keeps chat scroll.
+- Click an id and a row → drawer shows reason, risk score, days since purchase, "currency not specified" (chat drawer only; the Home transactions and finding drawers use the configured currency and hide it); Escape keeps chat scroll.
 - Pharmacy Demo (live source) org: ask the screenshot question; click `REF-000137`; check the answer does not claim
   "no original receipt" and flags the future date as "needs review" without a cause.
 
