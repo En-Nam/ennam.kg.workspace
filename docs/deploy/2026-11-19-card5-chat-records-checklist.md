@@ -7,6 +7,12 @@ Ships together with card #4-speed on branch `task/improve_by_feedback_19112026`.
    Merge → main → tag `v0.7.3` (publishes the packs). Check first: `grep -rn "0\.7\.2" ennam.kg.packs` shows only CHANGELOG history.
 2. **ennam.kg.go (DAAB)**: record SELECT returns `reason_code` / `risk_score` when declared. Deploy, then reload packs
    (`POST /api/v1/admin/packs/reload` or restart) and confirm the project runs packs 0.7.3.
+   **kg-bridge (same repo, separate deploy target `deploy-dev-bridge`)**: `kg_list_datasources` now returns
+   `{"data_sources":[...]}` and, when empty, a note pointing at kg_list_metrics / kg_get_metrics / kg_get_evidence; the
+   connection instructions stop steering to `kg_query_datasource` when no project has a database. Fixes chat on the
+   T-log org stopping with "Đã dừng sau nhiều bước công cụ" (model looped on an empty `{}`). Deploy the bridge too, not
+   only kg-server. Check: chat "Cho tôi xem các lần hoàn tiền ngày 11/11/2026" on the T-log org lists 3 refunds and
+   its tool calls contain no `kg_list_datasources`.
 3. **ennam.kg.python**: tests only for this card (no runtime change needed).
 4. **LAAM**: chat i18n, clickable ids + row click, columnar result tables, `/api/chat/records/...`, drawer fields, BUG-03 prompt rule.
 
