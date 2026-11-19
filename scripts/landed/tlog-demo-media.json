@@ -1,0 +1,5 @@
+[
+  {"entity":"refund","entityId":"add94069:[\"PH-003\",\"REG-02\",\"2026-11-11\",\"RTX-000177\"]","locationId":"PH-003","url":"https://salonbookly-us-east-2-public-storage.s3.us-east-2.amazonaws.com/laam-demo/demo-REF-000001.mp4","kind":"video","startOffsetSec":10,"capturedAt":"2026-11-11T21:30:06","cameraLabel":"Register 2 (demo)"},
+  {"entity":"refund","entityId":"add94069:[\"PH-002\",\"REG-06\",\"2026-11-11\",\"RTX-000108\"]","locationId":"PH-002","url":"https://salonbookly-us-east-2-public-storage.s3.us-east-2.amazonaws.com/laam-demo/demo-REF-000037.mp4","kind":"video","startOffsetSec":10,"capturedAt":"2026-11-11T17:24:11","cameraLabel":"Register 6 (demo)"},
+  {"entity":"refund","entityId":"add94069:[\"PH-005\",\"REG-01\",\"2026-11-12\",\"RTX-000152\"]","locationId":"PH-005","url":"https://salonbookly-us-east-2-public-storage.s3.us-east-2.amazonaws.com/laam-demo/demo-REF-000047.mp4","kind":"video","startOffsetSec":10,"capturedAt":"2026-11-12T22:57:57","cameraLabel":"Register 1 (demo)"}
+]

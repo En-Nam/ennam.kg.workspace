@@ -25,6 +25,20 @@ The demo T-logs with `<RiskScore>`: `.superpowers/sdd/2026-11-11-pos-data-model-
 3. Verify: refunds with a non-null `risk_score` ≈ number of refunds from the 12-month set (local: 651 of 655; the 4 without
    are the planted/top-up refunds outside `poslog-12m`). Batch counts: `superseded` > 0, `conflicts` 0.
 
+## Demo camera clips for the T-log org (prod demo project only)
+The chat drawer already shows a record's camera clips (same `recordResponse` as Intel; files served by
+`/api/intel/media/{id}`, a 302 to the S3 object). The T-log org had none, so 3 demo clips are linked to its
+highest-risk Nov refunds by `scripts/landed/tlog-demo-media.json` (reuses the existing `laam-demo/*.mp4` files in S3).
+1. The `entityId` is the landed composite id `<first 8 chars of the T-log feed id>:[store, register, date, RTX]`. The local
+   file uses `add94069`. On prod, look up the T-log feed id of the Pharmacy Demo (T-log) project
+   (`select id from ingest_feed` in `ennam_landed`, or DAAB dashboard → Landed feeds) and replace the prefix in a COPY of
+   the file. Store/register/date/RTX are the same (same XML).
+2. Find the prod business project id of "Pharmacy Demo (T-log)" (`select id, name from business_project`).
+3. `cd LAAM && SEED_CONFIRM=yes node --env-file=<prod env> node_modules/.bin/tsx scripts/seed-demo-media.ts <bp id> <copy>.json`
+   (prints the target database first; `INTEL_MEDIA_BASE_URL` must be the same S3 origin). Idempotent.
+4. Verify: chat "Cho tôi xem các lần hoàn tiền ngày 11/11/2026" → click `RTX-000177` → the drawer plays
+   "Register 2 (demo)". Also the existing demo org (live source): `REF-000001` from chat shows its clip.
+
 ## Smoke test after deploy (EN + VI)
 - Chat: "Cho tôi xem các lần hoàn tiền tháng 11/2026" → a code-built table under the answer, short ids (`RTX-…`, `TXN-…`) clickable.
 - Click an id and a row → drawer shows reason, risk score, days since purchase, "currency not specified" (chat drawer only; the Home transactions and finding drawers use the configured currency and hide it); Escape keeps chat scroll.
