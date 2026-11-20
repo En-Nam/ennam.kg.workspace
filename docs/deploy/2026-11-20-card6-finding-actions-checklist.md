@@ -75,3 +75,53 @@ LAAM's pack rule schema is strict. A LAAM that has not been upgraded rejects `ac
   - Review Items: impact column, select 3 → 1 task, overlap refused → deselect → task with its item list.
   - Draft notice shown.
   - Sales preset → workflow in the menu → preview lists the write. Send was blocked by the allow-list as designed, and no real email was sent.
+
+## Follow-ups (branch `task/improve_by_feedback_19112026`, LAAM up to `edc0d17a`)
+
+Covers the 18 follow-up tasks (spec `docs/superpowers/specs/2026-11-20-card6-followups-design.md`). **No DB migration.**
+
+### Env
+
+- `RESEND_API_KEY`, `MAIL_FROM`: optional. When unset, task notices are bell-only and the app logs `[mail] not configured; task notices are bell-only` once. When set, assignment / due-soon / overdue / pack-reminder emails are sent.
+- `AUTH_URL`: must be the public origin. Email links are built from it only.
+
+### Owner confirmations before deploy
+
+- **First tick after deploy:** every open task that went overdue in the last 14 days (`OVERDUE_LOOKBACK_DAYS`) gets one overdue notice to its owner and creator (bell, plus email if Resend is set). Confirm this is acceptable.
+- **Due-soon timing (owner decision 2026-11-20):** sent 39h before the due instant, about 09:00 local time the day before.
+  - Tasks saved before this deploy store UTC 23:59:59. Their notice still lands on the day before, at an odd hour: about 16:00 in Vietnam, about 04:00 in New York.
+  - In UTC-9 and further west (Hawaii, Alaska), legacy rows get it two days early.
+
+### Steps
+
+1. Merge, then `docker build -t laam-app:latest .` and `docker compose up -d app`.
+2. **Restart the tick container** after the app container is recreated (`docker restart laam-v2-tick`). Locally it kept failing with `Could not resolve host: app` until it was restarted.
+3. **Org copies of the Sales presets are not updated by the template change.** An org copy installed earlier still has the email subject `Promotion proposal draft - {{trigger.finding.ruleId}}`, so the rule code shows in the email. The local E2E saw this on "Draft a promotion proposal". Edit each org copy to the new subject `Promotion proposal draft {{trigger.finding.title}}` and the new prompts, or reinstall it from the template. Check the "Vendor cost review request" copy too.
+
+### Behaviour to know (support)
+
+- A reader who can't see a finding's wording (for example, a store manager on a chain-wide finding) sees a neutral task title everywhere: bell, email, task card and API. A store-scoped creator also sees the neutral title on tasks they named themselves.
+- Sharing a workflow now runs the same check as Save. A workflow with an empty AI step or a mail step with no recipient can't be shared until it is fixed. The message is generic and doesn't name the step.
+- The task card shows the due day in the project time zone, "Quá hạn" (red) when overdue, and "Sẽ nhắc: 1 ngày trước hạn".
+
+### Verified before handover (2026-11-20, follow-ups)
+
+- **Tests:**
+  - Unit: 9676 pass.
+  - Int: all pass except the pre-existing `org-connection.int.test.ts:131`.
+  - `tsc` is clean and `npm run build` passes.
+- **Browser E2E on :3900, VI and EN**, with Resend unset (bell-only), so no real email was sent:
+  - Grouped menu.
+  - Create notice and its "Xem task" link.
+  - Due day and reminder line on the card.
+  - Bulk task with 3-item preview and the "Xem tất cả" dialog.
+  - Readable save error.
+  - AI finding mode, which adds `{{trigger.items}}` once.
+  - Preview dialog: labels, "Chưa gửi gì…", Confirm disabled for a refused recipient.
+  - Store manager: assignment bell, 404 outside scope, no wording or task title on a partial-view finding.
+  - Overdue tick: neutral title to the store manager, real title to the creator, once each.
+- **Known small issues left (see the SDD ledger):**
+  - The AI builder chat can show the model's raw tool-call text in finding mode.
+  - The AI may write `{{trigger.finding.*}}`, and Save does not flag it.
+  - An English bell notice shows a Vietnamese-formatted date.
+  - After an AI rebuild, a stale "Save failed" banner can remain.
