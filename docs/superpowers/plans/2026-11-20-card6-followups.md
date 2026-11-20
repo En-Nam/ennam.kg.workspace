@@ -13,9 +13,10 @@
   - Email always goes out after any transaction, and only when the bell row was newly created.
 - **AI builder.**
   - Finding mode is an explicit request flag, `findingAction: true`.
-  - It skips the probe and authors an agent-only Plan from an empty facts sheet plus the trigger catalogue.
+  - It skips the probe. The chat route builds with its existing agent-only path (`deriveNodeTasks` → `agentWorkGraph`) plus the trigger catalogue; the one-shot generate route authors an agent-only Plan from an empty facts sheet plus the catalogue.
   - It gets the terminal write from the existing append-write card.
-  - `findingActionGraphProblems` gates the result, with one repair round.
+  - `findingActionGraphProblems` gates the result: with one repair round on the Plan path, and as a returned-problems guard in chat.
+  - Readable ids come from the builder's `idOf`, shared with `provenanceOf`, so chat provenance keeps working (Task 12).
 
 **Tech Stack:** Next 16 App Router, React 19, TypeScript strict, Drizzle + Postgres 15, zod, vitest (jsdom unit / `laam_test` integration), react-markdown 10 + remark-gfm + rehype-sanitize (already dependencies), Resend via `src/lib/mail/resend.ts`.
 
@@ -60,7 +61,7 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 
 **Shared functions**
 - Before changing a shared function, list its callers (grep or `spectex_get_blast_radius`) and keep their behaviour.
-- Shared functions here: `assertRunnable`, `collectIssues`, `planCreateTask`, `executeCreateTask`, `sweepFindingReminders`, `synthesizePlan`, `taskDto`, `summarizeWorkflow`.
+- Shared functions here: `assertRunnable`, `collectIssues`, `planCreateTask`, `executeCreateTask`, `sweepFindingReminders`, `synthesizePlan`, `taskDto`, `summarizeWorkflow`, `agentWorkGraph`, `provenanceOf`, `deriveNodeTasks`.
 
 **Tests**
 - Unit: `npm test -- <path>`. Integration: `npm run test:int -- <path>` (files `*.int.test.ts`; DB `laam_test`; see memory: dev DB is on :5433).
@@ -73,9 +74,9 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
    - The sweep only considers `dueAt > now − 14 days` (`OVERDUE_LOOKBACK_DAYS`).
    - Task 9 test `overdue beyond lookback gets nothing`.
 2. **A chain-wide creator assigns a default-titled task to a store-scoped user.**
-   - The task title equals the finding wording, which the assignee's view hides.
-   - The bell and the email must show the neutral title.
-   - Task 8 test `default-titled task is neutral for a recipient without wording`.
+   - The task title equals the finding wording, which the assignee's view hides. After a pack upgrade edits the rule wording, the stored title no longer equals the current wording, so title equality cannot detect it.
+   - Rule (controller, I0): whenever the recipient has `wordingVisible === false`, the bell and the email show the neutral title, whatever the task title is.
+   - Task 8 test `default-titled task is neutral for a recipient without wording, even after the wording changed`.
 3. **Every per-minute tick must send each notice at most once.**
    - It must not re-mail a notice already sent.
    - Mail goes only when `createOnce` returns a row.
@@ -85,8 +86,9 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
    - This must not break AI authoring or the runtime gate. The required-argument check lives only in `assertSavable`, never in `assertRunnable`.
    - Task 1 test `assertRunnable accepts a gmail_send with empty to`.
 5. **A US project task due 2026-11-20 must not show as due on 11/21 or be overdue on the afternoon of 11/20.**
-   - The card's due day, the email day, and the overdue badge all read the project zone.
-   - Task 7 test `endOfLocalDay New York`, and Task 10 test `dueDay is the project-zone day`.
+   - The task card's due day, the home card's due day, the email day, and the overdue badge all read the project zone through one helper, `dueDayOf` (Task 10).
+   - Rows stored before Task 7 (UTC `23:59:59.000`) keep their UTC date, so a Vietnam project's legacy row does not move to the next day.
+   - Task 7 test `endOfLocalDay New York`, and Task 10 tests `dueDay is the project-zone day`, `legacy UTC row keeps its day in Ho Chi Minh` and `home card due day is the project-zone day`.
 
 ---
 
@@ -157,7 +159,7 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 
 **Files:**
 - Create: `src/components/workflows/editor/graph-edit.ts`, `src/components/workflows/editor/issue-text.ts`, `src/components/workflows/editor/useRequiredArgs.ts`
-- Modify: `src/components/workflows/editor/WorkflowEditor.tsx` (lines 241-256 issue mapping, 591-600 `handleDeleteNode`, 770-807 `persistGraph`/`handleSave`, 1179-1214 save banner + problems list)
+- Modify: `src/components/workflows/editor/WorkflowEditor.tsx` (lines 241-256 issue mapping, 640-649 `handleDeleteNode`, 771-807 `persistGraph`/`handleSave`, 1179-1214 save banner + problems list)
 - Test: `src/components/workflows/editor/graph-edit.test.ts`, `src/components/workflows/editor/WorkflowEditor.test.tsx`
 
 **Interfaces:**
@@ -169,8 +171,10 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 
 **Behaviour:**
 - **Save:** the preflight calls `assertSavable(graph, requiredOf)`. A `GraphValidationError` or a server 400 with `issues` sets the banner to `issueText(issues[0])`, never the raw message, and fills the problems list.
-- **Problems list:** clicking a row selects and centres that node; the existing jump behaviour stays. The badge on the node shows the same text.
-- **Delete:** `handleDeleteNode` applies `detachDeletedNode` to the remaining nodes. Args still containing `{{steps.<deleted>…}}` then show as `step_ref_unknown` through `collectIssues`.
+  - `persistGraph` is shared by Save and Test (dry run) (`WorkflowEditor.tsx:771-789`), so the preflight also blocks Test of an incomplete graph. This is intended: Test shows the same localized message.
+  - `useRequiredArgs` loads asynchronously. A save before the fetch resolves runs the preflight without `requiredOf`, so `connector_arg_missing` is then caught by the server 400 path. The server-issue mapping test below covers it.
+- **Problems list:** clicking a row selects the node, as today (`:1196-1201`), and now also centres it (new behaviour). The badge on the node shows the same text.
+- **Delete:** the editor holds `RFNode<{ node: WfNode }>`, not `WfNode[]`. `handleDeleteNode` maps the remaining nodes' `data.node` through `detachDeletedNode` and rebuilds the RF nodes from the result. Args still containing `{{steps.<deleted>…}}` then show as `step_ref_unknown` through `collectIssues`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `graph-edit.test.ts`:
@@ -180,7 +184,8 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
     - `save with an empty agent prompt shows the localized message and sends no PATCH`: the banner text contains "chưa có nội dung yêu cầu" and the fetch mock was not called with PATCH;
     - `server 400 issues are shown localized, not raw`: the mock PATCH returns `{ error: "validate: …", issues: [{ code: "extract_from_unknown", nodeId: "n2", params: { target: "x" } }] }`, the banner does not contain "validate:", and it contains "n2";
     - `deleting the source node of an extract leaves a savable graph`;
-    - `managed org workflow save with an empty prompt shows the localized message`: the editor is loaded with `managed: true`, and the org-items 400 body `{ error: "invalid_graph", message, issues }` is mapped.
+    - `managed org workflow save with an empty prompt shows the localized message`: the editor is loaded with `managed: true`, and the org-items 400 body `{ error: "invalid_graph", message, issues }` is mapped;
+    - `Test with an empty agent prompt shows the same localized message and starts no run`.
 - [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/workflows/editor/graph-edit.test.ts src/components/workflows/editor/WorkflowEditor.test.tsx` → FAIL.
 - [ ] **Step 3: Implement** as described. Keep `readOnlyRef` guards.
 - [ ] **Step 4: Run them and see them pass**, plus `npx tsc --noEmit`.
@@ -191,19 +196,22 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 **Files:**
 - Modify: `src/app/api/workflows/[id]/route.ts:12-38` (GET)
 - Modify: `src/test/route-inventory.ts:617-621`, `src/test/isolation/cases.ts`
-- Test: `src/app/api/workflows/[id]/route.test.ts`, isolation suite
+- Modify: `src/components/workflows/WorkflowDetailClient.tsx` (Danger zone at `:650-651`, rendered on `!readOnly`)
+- Test: `src/app/api/workflows/[id]/route.test.ts`, `src/components/workflows/WorkflowDetailClient.test.tsx`, isolation suite
 
 **Interfaces:**
 - Consumes: `loadManagedOrgWorkflow(orgId, id)` and `withSource` (`src/lib/workflow/access.ts`).
 - Produces: for owner/admin, GET returns `{ ...withSource(managed), readOnly: false, managed: true }` whenever `loadManagedOrgWorkflow` finds the row. This happens before `loadUsableWorkflow`, so it holds even when the caller is assigned the preset. Members keep the read-only view.
 - Saves keep going to `PATCH /api/org-items/workflow/{id}` (`WorkflowEditor.tsx:778`). That path's version and notify behaviour is unchanged, and no new re-notify is added (§8 A1).
+- **Delete (controller, I1):** the detail page hides the Danger zone when `workflow.scope === "org"`, whatever `readOnly` says. Its Delete calls `DELETE /api/workflows/[id]` (`:292`), which only loads `scope: "user"` rows and would 404. Org copies are deleted from the preset editor, which uses `DELETE /api/org-items/[kind]/[id]`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `route.test.ts`:
     - `owner assigned to the preset gets managed editable view`: `readOnly` is false and `managed` is true;
     - `member assigned to the preset still gets readOnly`.
+  - `WorkflowDetailClient.test.tsx`: `managed org workflow detail shows Edit but no Delete`. GET returns `{ scope: "org", readOnly: false, managed: true }`; the edit control is present, and the `wf.detail.dangerZone` heading and delete button are absent.
   - New isolation case `workflow.get-managed-foreign`: the owner of org B GETs org A's org workflow id → 404 with the not-found body. Add it to the GET `proven(...)` list.
-- [ ] **Step 2: Run them and see them fail.** `npm test -- "src/app/api/workflows/[id]/route.test.ts"` → FAIL.
+- [ ] **Step 2: Run them and see them fail.** `npm test -- "src/app/api/workflows/[id]/route.test.ts" src/components/workflows/WorkflowDetailClient.test.tsx` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass.** Also `npm run test:int -- src/test/isolation` → PASS. `npx tsc --noEmit`.
 - [ ] **Step 5: Commit.** `fix(workflows): owner/admin opens the org copy editable even when assigned`
@@ -220,7 +228,7 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 - Produces:
   - `export type PreviewFailureReason = "agent_prompt_empty" | "connector_not_connected" | "provider_error" | "unknown"`
   - `export function previewFailureOf(rawError: string | null | undefined, graph: WorkflowGraph): { reason: PreviewFailureReason; app?: string }`
-    - `connector_not_connected` when the text starts with `NOT_CONNECTED_ERROR_PREFIX` (`connectors/notConnected.ts`). `app` is the connector name, e.g. "Gmail".
+    - `connector_not_connected` when `notConnectedName(rawError)` (`src/components/workflows/workflowError.ts:6`, reused, Rule 11) returns a name. `app` is that name exactly as the error carries it (`not_connected:Gmail` → "Gmail"); there is no lookup.
     - `agent_prompt_empty` when `savabilityIssues(graph)` has that code.
     - `provider_error` when the text matches a provider HTTP failure (`/\b(4\d\d|5\d\d)\b|anthropic|openai|byteplus/i`).
     - Otherwise `unknown`.
@@ -228,19 +236,22 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
   - **Preview success with `status: "failed"`:** `{ runId, status, reason, app?, pendingWrites }`. The raw `error` field is removed from the response.
   - **Start failure:** `{ error: "Run failed to start", code: "run_failed", reason, app? }` with the same status as today.
   - **Logging:** `console.error("[intel] preview failed", runId ?? "-", rawError)` on the server. The raw text appears only there.
-  - **Pre-check:** before starting the run, a graph whose `savabilityIssues` include `agent_prompt_empty` returns 422 `{ code: "run_failed", reason: "agent_prompt_empty" }` and makes no model call.
+  - **Pre-check:** before starting the run, a graph whose `savabilityIssues` include `agent_prompt_empty` returns 422 `{ code: "run_failed", reason: "agent_prompt_empty" }` and makes no model call. It runs after the `unavailable` and `graph_not_allowed` gates, so it never reveals anything about a workflow the caller cannot use.
 - Dialog: shows `t("intel.wf.fail." + reason, { app })`.
+  - Reuse what exists: the dialog's `intel.wf.err.connect` mapping for `connector_not_connected` (`WorkflowActionDialog.tsx:57`) and `ownerStepError` for step errors. Add only the missing reasons.
   - VI `agent_prompt_empty` = "Bước AI chưa có nội dung yêu cầu".
   - VI `connector_not_connected` = "Không kết nối được {app}".
   - VI `provider_error` = "Dịch vụ AI đang lỗi, thử lại sau ít phút".
   - VI `unknown` = "Chưa chuẩn bị được bản xem trước".
 
 - [ ] **Step 1: Write the failing tests.**
-  - `preview-failure.test.ts`: one case per reason, including `"not_connected:gmail"` → `{ reason: "connector_not_connected", app: "Gmail" }`, and `"messages: at least one message is required (400)"` → `provider_error`.
+  - `preview-failure.test.ts`: one case per reason, including `"not_connected:Gmail"` → `{ reason: "connector_not_connected", app: "Gmail" }`, and `"messages: at least one message is required (400)"` → `provider_error`.
   - Dialog:
     - `failed preview shows the reason text, never the raw error`: the mock returns `{ status: "failed", reason: "connector_not_connected", app: "Gmail" }`, the dialog shows "Không kết nối được Gmail", and the text "not_connected" is absent;
     - `run_failed start error shows the reason`.
-  - Int: `empty-prompt workflow preview returns 422 agent_prompt_empty and creates no run`.
+  - Int:
+    - `empty-prompt workflow preview returns 422 agent_prompt_empty and creates no run`;
+    - `empty-prompt workflow the caller cannot use answers the unavailable/not-allowed error, not agent_prompt_empty`.
 - [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/intel/preview-failure.test.ts src/components/intel/detail/WorkflowActionDialog.test.tsx` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npm run test:int -- src/lib/intel/actions/workflow-actions.int.test.ts` and `npx tsc --noEmit`.
@@ -281,7 +292,7 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 **Files:**
 - Modify: `src/components/workflows/WorkflowDetailClient.tsx` (`<main>` at line 488; the section at 643-648; a hint for personal workflows)
 - Modify: `src/components/workflows/FindingActionCard.tsx:131-151`, `src/lib/workflow/finding-action-options.ts:16-33`, `src/i18n/dictionaries/workflows.ts`
-- Test: `src/components/workflows/FindingActionCard.test.tsx`, `src/lib/workflow/finding-action-options.test.ts`
+- Test: `src/components/workflows/FindingActionCard.test.tsx`, `src/lib/workflow/finding-action-options.test.ts`, `src/components/workflows/WorkflowDetailClient.test.tsx`
 
 **Interfaces:**
 - Produces: `FindingActionOptions.rules: { ruleId: string; name: string; nameVi: string | null }[]`. `nameVi` comes from `rule.text?.vi?.name`. The GET finding-action route passes it through unchanged.
@@ -301,7 +312,8 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
   - Card (vi):
     - `rule row shows Vietnamese name with code small`;
     - `scope select reads Dùng cho with một phiếu / nhiều phiếu / cả hai`.
-- [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/workflows/FindingActionCard.test.tsx src/lib/workflow/finding-action-options.test.ts` → FAIL.
+  - `WorkflowDetailClient.test.tsx`: `main has md:pb-16 so the footer does not cover Lưu` (a class assertion; E2E row 4 checks the real clearance).
+- [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/workflows/FindingActionCard.test.tsx src/lib/workflow/finding-action-options.test.ts src/components/workflows/WorkflowDetailClient.test.tsx` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npx tsc --noEmit`.
 - [ ] **Step 5: Commit.** `fix(workflows): finding-action card wording, personal hint, footer clearance`
@@ -348,21 +360,23 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 - Test: `src/lib/intel/task-mail.test.ts`, `src/lib/intel/task-notices.test.ts`, `src/lib/intel/task-assign-notice.int.test.ts`
 
 **Interfaces:**
+- Consumes: Task 10 `dueDayOf` (`src/lib/intel/time.ts`). Run Task 10 first.
 - Produces:
   - `export async function recipientAccess(db: Db, userId: string, findingId: string): Promise<{ wordingVisible: boolean } | null>`. Returns null when the user is disabled or cannot see the finding; `wordingVisible` uses the same rule as `finding-actions.ts` (`scopeFinding(...).mode === "full" && !comparisonHidden`).
   - `export type TaskNoticeKind = "task_assigned" | "task_due_soon" | "task_overdue"`
   - `export function taskNoticeKey(kind: TaskNoticeKind, taskId: string, userId: string, dueAt: Date | null): string` = `` `${kind}:${taskId}:${userId}:${dueAt?.toISOString() ?? "none"}` `` (§8).
-  - `export type TaskNotice = { kind: TaskNoticeKind; userId: string; taskId: string; findingId: string; taskTitle: string; findingWording: string; dueAt: Date | null; timeZone: string }`
+  - `export type TaskNotice = { kind: TaskNoticeKind; userId: string; taskId: string; findingId: string; taskTitle: string; dueAt: Date | null; timeZone: string }`. There is no `findingWording` field: the title rule below does not compare against it.
   - `export async function sendTaskNotice(db: Db, n: TaskNotice): Promise<{ bell: boolean; mailed: boolean }>`. It never throws (logs instead). Its order:
     1. If a notification with the key already exists, return.
     2. Check `recipientAccess`.
-    3. Choose the title: `taskTitle`, but `NEUTRAL_REMINDER_TITLE` when `taskTitle === findingWording && !wordingVisible`.
+    3. Choose the title (controller, I0): `NEUTRAL_REMINDER_TITLE` whenever `wordingVisible === false`, whatever `taskTitle` is; otherwise `taskTitle`. A default-titled task stores the finding wording verbatim, and every analysis run can rewrite `findings.wording` (`store/repo.ts:181-183`), so title equality would miss a stale wording after a pack upgrade. Hiding a hand-typed title from a restricted reader is accepted (the spec allows the neutral title).
     4. Call `createOnce` with i18n `{ key: "task.<assigned|dueSoon|overdue>", params: { title, day } }` and link `/home/findings/<id>`.
     5. Only when `createOnce` returned a row: read the recipient's email + `userProfiles.replyLanguage` (default vi), then `sendMail(taskMail(...))`.
   - `export async function mailTaskReminder(db: Db, n: { userId: string; findingId: string; title: string; neutral: boolean }): Promise<boolean>`. This is the email-only path for pack reminders (used in Task 9).
   - `export function taskMail(kind: TaskNoticeKind | "task_reminder", lang: "vi" | "en" | "zh", v: { title: string; day: string | null; link: string | null }): Mail`. HTML-escapes the title. Same style as the password-reset mail.
   - `export function findingLink(findingId: string, env?: NodeJS.ProcessEnv): string | null`. Built from the `AUTH_URL` origin, never from a request (`resetLink` pattern); null when unset.
-  - `day` = the due date formatted in `timeZone` and the recipient's locale, or null.
+  - `day` = `formatDay(dueDayOf(dueAt, timeZone), locale)` in the recipient's locale, or null when `dueAt` is null. `dueDayOf` comes from Task 10 (I2), so the email day equals the card day, legacy rows included. Never format the instant with `Intl` in the zone: a legacy `23:59:59.000Z` row would show the next day in Ho Chi Minh.
+  - **Open tasks include `pending_approval`** (`TASK_OPEN_STATUSES`, `lifecycle.ts:8`). Following the spec literally, such tasks get the assignment notice and the deadline notices like `assigned` ones. This is flagged as an owner question in the task report; no exclusion is invented here.
   - Mail not configured (Resend is not set up yet; owner, 2026-11-20). Before calling `sendMail`, task mail checks `RESEND_API_KEY` and `MAIL_FROM`.
     - When either is unset, it skips the call and returns `mailed: false`.
     - It logs `[mail] not configured; task notices are bell-only` once per process (a module-level flag), not once per mail.
@@ -370,12 +384,16 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 - **B1 hook:** after `commitPlan` in `executeCreateTask`, when `ownerUserId !== creator`, call `void sendTaskNotice(db, …).catch(log)`. This is fire-and-forget: the HTTP and chat responses never wait on Resend. It covers the detail, bulk and chat paths (the only create path, §8 "bulk and workflow-created tasks").
 
 - [ ] **Step 1: Write the failing tests.**
+  - Mail tests (here and in `task-assign-notice.int.test.ts`): set `RESEND_API_KEY` and `MAIL_FROM` with `vi.stubEnv`, otherwise task mail stops before `sendMail` and a "one mail" assertion fails for the wrong reason. Call `vi.resetModules()` per test so the "logged once" flag starts clean.
   - `task-notices.test.ts` (mocks: `@/lib/mail/resend`, `@/lib/notifications` `createOnce`, `./actions/reminders` `recipientAccess`, and a db stub for email/lang):
     - `assigned notice creates bell and one mail in recipient language`: `sendMail` is called once; `to` is the user's email; the subject is in en when `replyLanguage = "en"`.
     - `no mail when createOnce returns null`.
     - `mail failure still reports bell and does not throw`: `sendMail` rejects, and the result is `{ bell: true, mailed: false }`.
     - `recipient who cannot see the finding gets nothing`: neither `createOnce` nor `sendMail` is called.
-    - `default-titled task is neutral for a recipient without wording`: with `taskTitle === findingWording` and `wordingVisible: false`, the mail text and the bell title contain `NEUTRAL_REMINDER_TITLE`, not the wording.
+    - `default-titled task is neutral for a recipient without wording, even after the wording changed`: the task title is the old wording "A" and the finding's current wording is "B"; with `wordingVisible: false`, the mail text and the bell title contain `NEUTRAL_REMINDER_TITLE`, and neither "A" nor "B".
+    - `hand-typed title is neutral for a recipient without wording`: a title unrelated to any wording, `wordingVisible: false` → `NEUTRAL_REMINDER_TITLE`.
+    - `task title is shown when wording is visible`.
+    - `email day equals the card day for a legacy Vietnam row`: `dueAt = 2026-11-20T23:59:59.000Z`, `timeZone = "Asia/Ho_Chi_Minh"` → the mail and bell `day` is 20/11, not 21/11.
     - `unconfigured mail is bell-only and logs once`. With `RESEND_API_KEY` unset, two notices both return `{ bell: true, mailed: false }`, `sendMail` is never called, and the "not configured" log line appears exactly once.
     - `dedupe key includes dueAt`: `taskNoticeKey("task_due_soon", "t1", "u1", new Date("2026-11-21T04:59:59.999Z"))` equals `"task_due_soon:t1:u1:2026-11-21T04:59:59.999Z"`, and with `dueAt` null it ends in `":none"`.
   - `task-mail.test.ts`:
@@ -404,23 +422,28 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 - Produces:
   - `export const OVERDUE_LOOKBACK_DAYS = 14`
   - `export async function sweepTaskDeadlines(db: Db, now: Date): Promise<{ dueSoon: number; overdue: number }>`
-- Candidates:
-  - tasks with status in `TASK_OPEN_STATUSES`;
-  - `dueAt` not null;
+- Candidates (one SQL query, `LIMIT 100` per kind, like `sweepFindingReminders`):
+  - tasks with status in `TASK_OPEN_STATUSES` (includes `pending_approval`, see Task 8);
+  - `dueAt` not null and `findingId` not null (`tasks.findingId` is nullable, `schema.ts:1431`, and `recipientAccess` needs it);
   - `now − 14d < dueAt <= now + 24h`;
-  - joined to `business_project.timezone` and `findings.wording`.
+  - an anti-join on `notifications.dedupeKey` drops tasks whose notice key for this (kind, person, dueAt) already exists, so a task already notified is not re-read every minute;
+  - selects `createdAt`, and joins `business_project.timezone`. No `findings.wording` join: the title rule (Task 8, I0) does not need it.
 - Notices:
-  - **Due soon** when `now < dueAt <= now + 24h`: the owner gets `task_due_soon`.
+  - **Due soon** when `now < dueAt <= now + 24h` **and** `createdAt < dueAt − 24h`: the owner gets `task_due_soon`. A task created inside the 24h window gets none, because its assignment notice already named the day (controller, I7).
   - **Overdue** when `dueAt <= now`: the owner and `createdBy` (when different and non-null) each get `task_overdue`, once per (task, person, dueAt). Admins are not notified (§8).
   - A task with no owner sends to `createdBy` only, for overdue.
   - Each send is awaited one by one. A failure is logged and the loop continues.
 - Pack reminders: email only for rows whose `notifyFindingReminder` returned a row, sent after the transaction. The bell behaviour is unchanged.
+  - Accepted loss (documented next to B4 in a code comment): `createOnce` writes the bell row with the global `db` (`notifications/index.ts:83-104`), outside the sweep transaction. If the transaction throws after a notify, the collected mail list is discarded, and the next sweep's `createOnce` returns null, so that one email is never sent. The bell still shows it.
+- **First tick after deploy:** every open task that went overdue in the last 14 days gets its overdue notice once. This is bounded by `OVERDUE_LOOKBACK_DAYS`; confirm with the owner before deploy (Task 18 checklist).
 
-- [ ] **Step 1: Write the failing tests** (`vi.mock("@/lib/mail/resend")`):
+- [ ] **Step 1: Write the failing tests** (`vi.mock("@/lib/mail/resend")`, plus `vi.stubEnv` for `RESEND_API_KEY` / `MAIL_FROM` as in Task 8). Fixtures backdate `createdAt` (e.g. `now − 2d`) unless a test says otherwise, so the I7 rule does not hide the due-soon notice.
   - `task due in 23h gets one due-soon notice to owner; second sweep sends none`. Assert one notification row and `sendMail` called once across two sweeps.
+  - `task created inside the 24h window gets no due-soon notice`: `createdAt = now − 1h`, `dueAt = now + 20h` → no `task_due_soon` row and no mail.
   - `task due in 25h gets nothing`.
   - `overdue task notifies owner and creator once each; not again next tick`.
-  - `changed dueAt re-arms the due-soon notice`.
+  - `changed dueAt re-arms the due-soon notice` (`createdAt` backdated before both due dates).
+  - `task without a finding is skipped`.
   - `closed task gets nothing`.
   - `overdue beyond lookback gets nothing` (Review Focus 1).
   - `mail failure does not stop the sweep`: `sendMail` rejects for the first task, and the second task is still notified.
@@ -433,14 +456,25 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
 
 ### Task 10: Task card shows due day, "Quá hạn" and "Sẽ nhắc" (B5)
 
+**Priority: run next.** Task 7 has landed (`ff8687b0`), so on this branch the home card (`home/derive.ts:163`) and the task card (`TaskPanel.tsx:159`) already show the UTC date of a zone-aware `dueAt`: a New York task due 2026-11-20 shows 11/21. Those are live regressions until this task lands. Task 8 also consumes `dueDayOf` from here.
+
 **Files:**
 - Create: `src/lib/intel/actions/next-reminder.ts`
-- Modify: `src/lib/intel/http.ts:170-189` (`taskDto`), `src/lib/intel/home/load.ts:~435` (load pending pack reminders per task in one query), the task create/decision/complete routes (pass `timeZone`)
-- Modify: `src/components/intel/detail/TaskPanel.tsx:156-160`, `src/i18n/dictionaries/intel.ts`
-- Test: `src/lib/intel/actions/next-reminder.test.ts`, `src/lib/intel/http.test.ts`, `src/components/intel/detail/TaskPanel.test.tsx`
+- Modify: `src/lib/intel/time.ts` (add `dueDayOf`)
+- Modify: `src/lib/intel/http.ts:170-189` (`taskDto`), `src/lib/intel/home/load.ts:~435` (load pending pack reminders per task in one query; pass `bp.timezone` to the `CardTask` builder), the task create/decision/complete routes (pass `timeZone`)
+- Modify: `src/components/intel/detail/TaskPanel.tsx:156-160` (line 159 reads `newest.dueAt.slice(0, 10)`; it reads `newest.dueDay` instead), `src/i18n/dictionaries/intel.ts`
+- Modify (added after the Task 7 review): `src/lib/intel/home/derive.ts:162-163`.
+  - Today the home card's `dueDay` is the UTC date of `dueAt` (`task.dueAt.toISOString().slice(0, 10)`). Make it `dueDayOf(task.dueAt, projectTimeZone)`, passing the zone in from `load.ts`. Replace the stale comment "stored as the end of the chosen day in UTC".
+  - These two are the only `dueAt…slice(0, 10)` sites in `src` (grep, 2026-11-20). Re-grep before closing the task.
+- Test: `src/lib/intel/time.test.ts`, `src/lib/intel/actions/next-reminder.test.ts`, `src/lib/intel/http.test.ts`, `src/components/intel/detail/TaskPanel.test.tsx`, `src/lib/intel/home/derive.test.ts`.
 
 **Interfaces:**
 - Produces:
+  - `export function dueDayOf(dueAt: Date, timeZone: string): string` (time.ts, YYYY-MM-DD; controller, I2):
+    - a legacy row, stored before Task 7 as UTC `23:59:59.000` (the old `endOfDayUtc`), returns its UTC date;
+    - any other value returns `localDate(dueAt, timeZone)`;
+    - new rows end in `.999`, so they never match the legacy rule.
+    - Used by `taskDto`, the home card (`derive.ts`), and Task 8's email/bell `day`.
   - `export type NextReminder = { kind: "pack" | "due_soon" | "overdue"; at: string }`
   - `export function nextReminderOf(task: { status: string; dueAt: Date | null }, pendingPackAt: readonly Date[], now: Date): NextReminder | null`. Rules:
     - a closed task → null;
@@ -449,17 +483,22 @@ Paths are relative to `LAAM/` unless they start with `docs/`. Run commands from 
       - `due_soon` at `dueAt − 24h` when `now < dueAt − 24h`;
       - `overdue` at `dueAt` when `now < dueAt`;
     - the earliest wins.
-  - `taskDto(t, ownerName, itemCount?, opts?: { timeZone?: string; nextReminder?: NextReminder | null; now?: Date })` adds `dueDay: string | null` (= `localDate(dueAt, timeZone ?? "UTC")`), `overdue: boolean` and `nextReminder`.
+    - The I7 rule (Task 9: no due-soon for a task created inside the 24h window) needs no extra input: such a task has `now >= createdAt >= dueAt − 24h`, so the `due_soon` candidate never appears. A test pins it.
+  - `taskDto(t, ownerName, itemCount?, opts?: { timeZone?: string; nextReminder?: NextReminder | null; now?: Date })` adds `dueDay: string | null` (= `dueDayOf(dueAt, timeZone ?? "UTC")`), `overdue: boolean` and `nextReminder`.
 - Card:
   - shows the due day from `dueDay`;
   - shows an "Quá hạn" chip when `overdue`;
   - shows a "Sẽ nhắc: …" line. `due_soon` → "1 ngày trước hạn", `overdue` → "khi quá hạn", `pack` → "ngày {day}".
 
 - [ ] **Step 1: Write the failing tests.**
-  - `next-reminder.test`: closed → null; due in 3 days → `due_soon` at dueAt−24h; due in 10h → `overdue`; a pack date earlier than due-soon wins; past due → null.
+  - `time.test`:
+    - `legacy UTC row keeps its day in Ho Chi Minh`: `dueDayOf(new Date("2026-11-20T23:59:59.000Z"), "Asia/Ho_Chi_Minh") === "2026-11-20"` (plain `localDate` would give `2026-11-21`);
+    - `new row uses the project-zone day`: `dueDayOf(new Date("2026-11-20T16:59:59.999Z"), "Asia/Ho_Chi_Minh") === "2026-11-20"`.
+  - `next-reminder.test`: closed → null; due in 3 days → `due_soon` at dueAt−24h; due in 10h → `overdue`; a pack date earlier than due-soon wins; past due → null; `task created 1h ago and due in 20h promises overdue, not due_soon`.
   - `http.test`: `dueDay is the project-zone day` (a New York `dueAt` of `2026-11-21T04:59:59.999Z` gives `"2026-11-20"`).
-  - `TaskPanel.test`: `overdue task shows Quá hạn`; `shows Sẽ nhắc: 1 ngày trước hạn`.
-- [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/intel/actions/next-reminder.test.ts src/lib/intel/http.test.ts src/components/intel/detail/TaskPanel.test.tsx` → FAIL.
+  - `derive.test`: `home card due day is the project-zone day` (a New York task due 2026-11-20 shows 20/11, not 21/11) and `home card keeps a legacy Vietnam row's day`.
+  - `TaskPanel.test`: `overdue task shows Quá hạn`; `shows Sẽ nhắc: 1 ngày trước hạn`; `due day comes from dueDay, not the UTC date of dueAt`.
+- [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/intel/time.test.ts src/lib/intel/actions/next-reminder.test.ts src/lib/intel/http.test.ts src/components/intel/detail/TaskPanel.test.tsx src/lib/intel/home/derive.test.ts` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npm run test:int -- src/lib/intel/home` and `npx tsc --noEmit`.
 - [ ] **Step 5: Commit.** `feat(intel): task card shows due day, overdue and next reminder`
@@ -473,47 +512,53 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 **Files:**
 - Create: `src/lib/workflow/finding-vars.ts` (client-safe; moves `FINDING_KEYS` out of `variableHints.ts:3`)
 - Modify: `src/components/workflows/editor/variableHints.ts`, `AiChatPanel.tsx` (bodies at lines 232 and 336), `AiGeneratePanel.tsx:42`, `WorkflowEditor.tsx` (state, the props at 1257 and 1332, and the `findingAction` passed to `NodeConfigPanel`), `src/i18n/dictionaries/workflows.ts`
-- Test: `src/components/workflows/editor/AiChatPanel.test.tsx`, `AiGeneratePanel.test.tsx`, `variableHints.test.ts`
+- Test: `src/components/workflows/editor/AiChatPanel.test.tsx`, `AiGeneratePanel.test.tsx`, `variableHints.test.ts`, `WorkflowEditor.test.tsx`
 
 **Interfaces:**
 - Produces:
   - `export const FINDING_KEYS = ["id","ruleId","metricKey","dims","severity","variancePct","title"] as const`
   - `export function findingVarCatalogue(fields: readonly { key: string }[]): string[]`. Returns `{{trigger.finding.<k>}}` for each key, then `{{trigger.items}}`, `{{trigger.params.<key>}}` per field, and `{{me.email}}`.
-  - `AiChatPanel` / `AiGeneratePanel` props: `findingMode: boolean; onFindingModeChange: (v: boolean) => void`. Every authoring request body carries `findingAction: findingMode` (generate, generate/chat, append-write, compile).
+  - `AiChatPanel` / `AiGeneratePanel` props: `findingMode: boolean; onFindingModeChange: (v: boolean) => void`. Every authoring request body the client sends carries `findingAction: findingMode` (generate, generate/chat, append-write). `generate/compile` has no client caller (only `route-inventory.ts:665`), so its flag is server-side only (Task 13).
   - Editor state `aiFindingMode`. It starts `true` when the loaded workflow has finding-action config (`wf.findingAction != null`), else `false`.
   - Hints get `findingAction ?? (aiFindingMode ? { fields: [] } : null)` (C4).
 - Checkbox label `wf.ai.findingMode`: "Workflow này chạy từ một phát hiện".
 
 - [ ] **Step 1: Write the failing tests.**
   - `toggle on sends findingAction true to generate/chat`.
-  - `toggle defaults on when findingMode prop is true`.
+  - `WorkflowEditor.test.tsx`: `AI panel finding toggle starts checked when the workflow has findingAction` (GET returns `findingAction` → the checkbox is checked), and `starts unchecked without findingAction`. This tests the editor's own rule, not a controlled prop.
   - `append-write body carries findingAction`.
   - The `variableHints` test still passes, importing `FINDING_KEYS` from `finding-vars`.
   - New: `findingVarCatalogue lists me.email and trigger.items`.
-- [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/workflows/editor/AiChatPanel.test.tsx src/components/workflows/editor/AiGeneratePanel.test.tsx src/components/workflows/editor/variableHints.test.ts` → FAIL.
+- [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/workflows/editor/AiChatPanel.test.tsx src/components/workflows/editor/AiGeneratePanel.test.tsx src/components/workflows/editor/variableHints.test.ts src/components/workflows/editor/WorkflowEditor.test.tsx` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npx tsc --noEmit`.
 - [ ] **Step 5: Commit.** `feat(workflow-editor): "runs from a finding" toggle and trigger hints`
 
 ### Task 12: Readable node ids (C3)
 
+**Choice (controller, I5).** Readable ids must not break chat provenance. `provenanceOf` (`provenance.ts:46-59`) treats the canvas as the assistant's own work only when its agent-node ids equal the ids of `agentWorkGraph(prevSteps)`. Those ids come from `stepId` → `n1…` (`authorAppend.ts:224`). A rename pass after the build would make provenance `"unknown"` on every later turn, and `canBuild` (`chat/route.ts:761`) would turn false: no rebuild from the conversation, and human edits no longer tracked.
+- **Chosen:** the chat path builds readable ids directly. `agentWorkGraph` takes an `idOf` parameter (it already holds `const idOf = stepId` locally), and `provenanceOf` takes the same `idOf`, so the build and the provenance check always agree. The ids are positional and kind-based (`tom-tat`, `tom-tat-2`, …), so they stay stable across rebuilds with no rename pass and no `keep` set.
+- **Not chosen:** readable ids only where provenance is unused. The "Dựng bằng AI" tab is the chat route, and E2E row 1 expects readable ids there.
+- `renameNodeIds` is used only where provenance does not look: the one-shot `generate` route, and the new non-agent nodes that append-write adds (Task 13).
+- Never rename `report`: `workNodes` excludes it by id (`provenance.ts:31-35`).
+- Switching the toggle mid-conversation changes `idOf`. A canvas built under the other mode then reads as `"unknown"` and is left as it is, unless it is empty or the user asks for a redraw. This is accepted.
+
 **Files:**
 - Create: `src/lib/workflow/node-ids.ts`
-- Modify: the two `stepId(` call sites that look up a node by its `n<k>` id:
-  - `src/app/api/workflows/generate/append-write/route.ts:26` (`validatedBranch`);
-  - `src/lib/workflow/authorAppend.ts:290` (`appendBranch`).
-
-  Both go through one new helper.
-- Test: `src/lib/workflow/node-ids.test.ts`, `src/app/api/workflows/generate/append-write/route.test.ts`
+- Modify: `src/lib/workflow/authorAppend.ts` (`agentWorkGraph` at :217 gains `idOf`; `appendBranch` at :290 and the new `nodeAtStep`)
+- Modify: `src/lib/workflow/provenance.ts` (`provenanceOf` at :46 gains `idOf`)
+- Modify: `src/app/api/workflows/generate/append-write/route.ts:26` (`validatedBranch` uses `nodeAtStep`)
+- Test: `src/lib/workflow/node-ids.test.ts`, `src/lib/workflow/authorAppend.test.ts`, `src/lib/workflow/provenance.test.ts`, `src/app/api/workflows/generate/append-write/route.test.ts`
 
 **Interfaces:**
-- Consumes: Task 5 `topoOrder`; `stepRefsOf`/`STEP_REF` (validate.ts).
+- Consumes: Task 5 `topoOrder` (numbering order in `readableIdMap`); `stepRefsOf`/`STEP_REF` (validate.ts).
 - Produces:
   - `export function slugify(label: string): string`:
     - NFD, then strip `\p{M}`, `đ/Đ → d`, lowercase;
     - runs of non-`[a-z0-9]` become `-`;
     - trim dashes; empty → `"buoc"`.
-  - `export function readableIdOf(node: WfNode): string`. Base ids:
+  - `export function findingStepId(i: number): string` = `i === 0 ? "tom-tat" : "tom-tat-" + (i + 1)`. The finding-mode `idOf` for `agentWorkGraph` (every node it builds is a non-extract agent).
+  - `export function readableIdOf(node: WfNode): string`. Base ids (spec §8 C3 allows "kind or purpose label"; ids are kind-based):
 
     | Node | Base id |
     |------|---------|
@@ -534,81 +579,114 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
     - `{{steps.<id>` in every string sink (agent `prompt`/`system`, connector/mcp `args` deep, condition `when` left/right, foreach `items`);
     - `positions` keys;
     - foreach bodies, recursively.
-  - `export function nodeAtStep(graph: WorkflowGraph, onStep: number): WfNode | undefined` (in `authorAppend.ts`) = `graph.nodes.find(n => n.id === stepId(onStep - 1)) ?? topoOrder(graph)[onStep - 1]`. `validatedBranch` and `appendBranch` both use it.
-- Applied in finding mode only (Task 13), with `keep` = the ids already in `current`, so ids from earlier chat turns never change. Applied before any verify, and before the response.
+  - `agentWorkGraph(steps, lang?, idOf: (i: number) => string = stepId)`. Default behaviour is unchanged.
+  - `provenanceOf(current, prevSteps, idOf: (i: number) => string = stepId)`. Passes `idOf` to `agentWorkGraph`.
+  - `export function nodeAtStep(graph: WorkflowGraph, onStep: number): WfNode | undefined` (in `authorAppend.ts`) = the node whose id is `stepId(onStep - 1)`, else the node whose id is `findingStepId(onStep - 1)`. Both schemes are positional, so the append-write route, which has no steps, can still find the decider. Not `topoOrder`: independent steps (no `needsPrevious`) would be reordered. `validatedBranch` and `appendBranch` both use it.
+- Where each is applied (wiring in Task 13):
+  - chat: `agentWorkGraph(tasks.steps, lang, findingStepId)` and `provenanceOf(current, prevSteps, findingStepId)` when `findingAction` is on. After the rebuild re-attaches the write (`appendWrite` / `appendBranch` in `chat/route.ts:~800-815`), rename its non-agent nodes with `readableIdMap(graph, keep)`, `keep` = the agent ids plus `"report"`, so a confirmed write keeps `gui-email` across turns (provenance only reads agent ids);
+  - one-shot generate: `renameNodeIds(graph, readableIdMap(graph, new Set()))`;
+  - append-write: `readableIdMap(graph, keep)` with `keep` = the ids in `current` plus `"report"`, so only the new write and condition nodes are renamed (`gui-email`, `kiem-tra`).
+  - Always before any verify, and before the response.
 
 - [ ] **Step 1: Write the failing tests.**
-  - `renames refs in prompt, args, extract.from, edges, positions and foreach body`.
-  - `collision gets -2 and -3`.
-  - `kept ids are untouched`.
-  - `slugify("Gửi email") === "gui-email"` and `slugify("Đơn hàng") === "don-hang"`.
-  - `renamed graph passes assertRunnable when the input did`.
-  - `input graph is not mutated`.
-  - append-write: `branch target found after ids were renamed` (both the route's validation and `appendBranch` attach to the renamed node).
-- [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/workflow/node-ids.test.ts src/app/api/workflows/generate/append-write/route.test.ts` → FAIL.
+  - `node-ids.test`:
+    - `renames refs in prompt, args, extract.from, edges, positions and foreach body`;
+    - `collision gets -2 and -3`;
+    - `kept ids are untouched`;
+    - `slugify("Gửi email") === "gui-email"` and `slugify("Đơn hàng") === "don-hang"`;
+    - `renamed graph passes assertRunnable when the input did`;
+    - `input graph is not mutated`.
+  - `authorAppend.test`:
+    - `agentWorkGraph with findingStepId names steps tom-tat, tom-tat-2 and wires {{steps.tom-tat.output}}`;
+    - `agentWorkGraph without idOf still names n1, n2`;
+    - `nodeAtStep finds n2 and tom-tat-2 for onStep 2`.
+  - `provenance.test`: `finding-mode turn 2 still sees the canvas as assistant-authored`: a canvas built by `agentWorkGraph(steps, "vi", findingStepId)` → `provenanceOf(canvas, steps, findingStepId)` is `{ kind: "assistant" }`; with one prompt changed it is `edited`.
+  - append-write: `branch target found with finding-mode ids` (both the route's validation and `appendBranch` attach to `tom-tat-2`).
+- [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/workflow/node-ids.test.ts src/lib/workflow/authorAppend.test.ts src/lib/workflow/provenance.test.ts src/app/api/workflows/generate/append-write/route.test.ts` → FAIL.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them and see them pass**, plus `npx tsc --noEmit`.
+- [ ] **Step 4: Run them and see them pass**, plus `npm test -- src/lib/workflow src/app/api/workflows/generate` (non-finding callers keep `n1…`) and `npx tsc --noEmit`.
 - [ ] **Step 5: Commit.** `feat(workflow): readable node ids for AI-built finding workflows`
 
 ### Task 13: Finding-mode authoring path (C2)
 
+**One builder per route (controller, I5; Rule 7).**
+- **generate/chat** keeps its "observed read" gate (`chat/route.ts:663`). With no tools offered, no read is observed, so the turn falls through to the chat route's existing probe-free, agent-only builder: `deriveNodeTasks` → `agentWorkGraph` (`chat/route.ts:718-800`). Finding mode only injects `findingModeSystem` into the `deriveNodeTasks` messages, builds with Task 12's `findingStepId`, and runs `findingActionGraphProblems` on the result. `synthesizePlan` is not run in chat finding mode.
+- **generate** (one-shot) has no agent-work path, so `synthesizePlan`'s finding mode is used there only.
+
 **Files:**
 - Create: `src/lib/workflow/finding-mode.ts`
-- Modify: `src/lib/workflow/synthesizePlan.ts` (`planSystem` at :144, `synthesizePlan` at :235)
-- Modify: `src/app/api/workflows/generate/route.ts:174-223`, `src/app/api/workflows/generate/chat/route.ts` (tool list ~line 359, read gate ~663, verify ~830), `generate/compile/route.ts`, `generate/append-write/route.ts`
+- Modify: `src/lib/workflow/synthesizePlan.ts` (`SynthResult` at :21, `planSystem` at :144, `synthesizePlan` at :235, the `compileTrace` fallback at :280-352)
+- Modify: `src/lib/workflow/nodeTask.ts` (`deriveNodeTasks` at :318 gains an opt; `taskSystem` at :221 appends it)
+- Modify: `src/app/api/workflows/generate/route.ts:174-223`, `src/app/api/workflows/generate/chat/route.ts` (tool list ~line 359, agent-work path ~718-800, verify ~830), `generate/compile/route.ts`, `generate/append-write/route.ts`
 - Modify: `src/components/workflows/editor/AiChatPanel.tsx` / `AiGeneratePanel.tsx` (show returned `problems` with the `wf.fa.problem.*` texts FindingActionCard already uses)
-- Test: `src/lib/workflow/finding-mode.test.ts`, `src/lib/workflow/synthesizePlan.test.ts`, `src/app/api/workflows/generate/route.test.ts`, `generate/chat/route.test.ts`, `generate/compile/route.test.ts`, `generate/append-write/route.test.ts`
+- Test: `src/lib/workflow/finding-mode.test.ts`, `src/lib/workflow/synthesizePlan.test.ts`, `src/lib/workflow/nodeTask.test.ts`, `src/app/api/workflows/generate/route.test.ts`, `generate/chat/route.test.ts`, `generate/compile/route.test.ts`, `generate/append-write/route.test.ts`
 
 **Interfaces:**
 - Consumes:
   - Task 11 `FINDING_KEYS` / `findingVarCatalogue`;
-  - Task 12 `readableIdMap` / `renameNodeIds`;
+  - Task 12 `findingStepId`, `agentWorkGraph(…, idOf)`, `provenanceOf(…, idOf)`, `readableIdMap` / `renameNodeIds`;
   - `findingActionGraphProblems(graph, readAllow)` and `GraphProblem` (`finding-action.ts:14,58`);
   - `mcpReadAllow(userId): Promise<ReadonlySet<string>>` (`connectors/index.ts:429`).
 - Produces:
-  - `export function findingModeSystem(fields: readonly { key: string }[]): string`. Contains:
+  - `export function findingModeSystem(fields: readonly { key: string }[]): string`. The routes receive only `findingAction: boolean`, so they pass `fields: []` (the catalogue then lists no `trigger.params.*`). Contains:
     - the catalogue;
     - the four rules: read the selected records from `{{trigger.items}}`; never query data again; writes are terminal; no foreach around a write.
+  - `deriveNodeTasks(jobPrompt, generate, opts?: { prev?; edits?; lang?; extraSystem?: string })`. `extraSystem` is appended to `taskSystem`'s output. Absent → the messages are byte-identical to today.
   - `synthesizePlan` input gains:
-    - `findingMode?: { fields: readonly { key: string }[] }`. When set, `planSystem` uses `findingModeSystem` in place of the observed-data instructions; facts may be empty.
-    - `check?: (graph: WorkflowGraph) => string | null`. When it returns text, the attempt counts as failed and that text is pushed back as the repair message. `DEFAULT_MAX_ATTEMPTS = 2` already gives exactly one repair round.
-  - **When problems remain after the repair round:**
+    - `findingMode?: { fields: readonly { key: string }[] }`. When set, `planSystem` uses `findingModeSystem` in place of the observed-data instructions; facts may be empty. A `use` node is already rejected by `assertTraceGrounded` with empty facts; in finding mode the repair message also says "read the selected records from `{{trigger.items}}`; do not query data".
+    - `check?: (graph: WorkflowGraph) => GraphProblem[]`. A non-empty result counts the attempt as failed, and the problems, rendered as text, are pushed back as the repair message. `DEFAULT_MAX_ATTEMPTS = 2` already gives exactly one repair round.
+  - `SynthResult` gains `problems?: GraphProblem[]`.
+  - **No `compileTrace` fallback in finding mode (controller, I4).** Today, after the last failed attempt, `synthesizePlan` builds `compileTrace(closedRecords)` from `facts.calls` (`:280-352`). With empty facts that is an empty graph plus the "linear version" note, and the problems are lost. In finding mode instead:
+    - when the last attempt built a graph that failed only `check`, return `{ graph: lastCheckedGraph, source: "plan", problems }`;
+    - when no attempt produced a graph at all, throw a `FindingModeError` (or return an error result); the route answers 422.
+    - Without `findingMode`, the fallback is unchanged.
+  - **When problems remain:**
     - generate and generate/chat answer 200 `{ graph, problems: GraphProblem[] }`. The draft is still handed over and the editor badges the nodes (§8 "return them as editor problems"; the same reasoning as the generate route's existing "return the graph even when verify failed").
     - compile and append-write reject the step with 422 `{ error: "finding_action_graph", problems }`.
 - **Route behaviour when `body.findingAction === true`:**
-  - **generate:**
+  - **generate (one-shot):**
     - no `probe` and no 422 "No tool was observed";
     - `facts = buildFacts([])`, `readAllow = await mcpReadAllow(userId)`;
-    - `synthesizePlan({ findingMode, check })`, where the check returns problem text from `findingActionGraphProblems`;
-    - rename ids;
+    - `synthesizePlan({ findingMode, check })`, where `check = (g) => findingActionGraphProblems(g, readAllow)`;
+    - rename ids with `renameNodeIds(graph, readableIdMap(graph, new Set()))` (no provenance on this route);
     - no `verifyGraph`, because there are no reads to verify and the real check is the preview from a finding;
-    - returns `{ graph }`.
+    - returns `{ graph, problems? }`; a thrown `FindingModeError` → 422.
+    - `AiGeneratePanel` has no append-write card: in finding mode it yields an agent-only graph, and the admin adds the email node by hand.
   - **generate/chat:**
-    - the model is given no tools (no probe);
-    - the system message gets `findingModeSystem`;
-    - the "observed read" gate is bypassed, and `synthesizePlan` runs in finding mode;
-    - after `mergePlan`, `findingActionGraphProblems` runs and any problems are returned as `problems` in the turn;
-    - ids are renamed (keep = `current` ids);
+    - the model is given no tools (no probe), so no read is observed and the plan-path gate stays closed;
+    - the agent-work path builds: `deriveNodeTasks(…, { …, extraSystem: findingModeSystem(fields) })` → `agentWorkGraph(tasks.steps, lang, findingStepId)`; `provenanceOf(current, prevSteps, findingStepId)` decides `canBuild`, so turn 2 still sees the canvas as assistant-authored;
+    - after the rebuild re-attaches a confirmed write, its non-agent nodes are renamed (`gui-email`, `kiem-tra`) with `keep` = the agent ids plus `"report"`, as in Task 12;
+    - then `findingActionGraphProblems` runs and any problems are returned as `problems` in the turn;
+    - no repair round in chat: this path emits only agent nodes plus at most one terminal append-write, so `findingActionGraphProblems` effectively cannot trip. The check stays as a guard and its problems are still returned (spec C2 is met by the check; the repair round lives on the one path that can fail it);
     - verify is skipped;
     - the write-offer card path is unchanged. It is derived from the conversation (`mailIntent` / `emailPrefill` / `nodeTask`, `authorAppend.ts`), not from a tool call, so it survives offering no tools. Step 1 pins this with a test.
-  - **compile and append-write:** after building, run `findingActionGraphProblems`; problems → the 422 above.
-  - `assertTraceGrounded` with empty facts already rejects any `use` node ("never query data again").
+  - **append-write:** after building, rename only the new nodes with `readableIdMap(graph, keep)`, `keep` = the ids in `current` plus `"report"` (→ `gui-email`, `kiem-tra`); then run `findingActionGraphProblems`; problems → the 422 above.
+  - **compile:** after building, run `findingActionGraphProblems`; problems → the 422 above. No client sends the flag today (Task 11).
+  - `assertTraceGrounded` with empty facts already rejects any `use` node ("never query data again", `planGuard.ts:262`).
 
 - [ ] **Step 1: Write the failing tests.**
   - `finding-mode.test`: `system lists every FINDING_KEYS var, trigger.items, me.email and the four rules`.
+  - `nodeTask.test`: `extraSystem is appended to the task system message`; `no extraSystem leaves the messages unchanged`.
   - `synthesizePlan.test`:
     - `finding mode with empty facts builds an agent-only graph` (mocked `generate` returns a Plan whose agent prompt uses `{{trigger.items}}`);
-    - `a use node is rejected in finding mode`;
-    - `check failure triggers exactly one repair round`: `generate` is called twice, and the second messages contain the problem text.
+    - `a use node in finding mode gets a repair message naming trigger.items` (assert the second `generate` call's messages, not only the rejection, which already happens today);
+    - `check failure triggers exactly one repair round`: `generate` is called twice, and the second messages contain the problem text;
+    - `problems after the repair round return the last graph with problems, not compileTrace`: `source === "plan"`, `problems` has the check's codes, and no fallback note;
+    - `finding mode with no buildable attempt throws, not falls back`.
   - `generate/route.test`:
     - `findingAction skips the probe`: the probe mock is not called and the response is 200 with ids like `tom-tat`;
-    - `problems after repair → 200 with graph and problems`.
+    - `problems after repair → 200 with graph and problems`;
+    - `no buildable plan in finding mode → 422`.
   - `chat/route.test`:
-    - `findingAction: the model is offered no tools and verify is not run`;
+    - `findingAction: the model is offered no tools, synthesizePlan and verify are not run, and node ids are tom-tat…`;
+    - `findingAction turn 2 rebuilds the assistant's own canvas` (provenance stays `assistant`);
+    - `findingAction turn after the email is confirmed keeps gui-email`;
     - `findingAction: "…rồi gửi email cho tôi" still returns the email offer card`.
   - `compile/route.test`: `findingAction with a write inside foreach → 422 write_in_foreach`.
-  - `append-write/route.test`: `findingAction rejects a second write after the first (write_not_terminal)`.
-- [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/workflow/finding-mode.test.ts src/lib/workflow/synthesizePlan.test.ts src/app/api/workflows/generate` → FAIL.
+  - `append-write/route.test`:
+    - `findingAction rejects a second write after the first (write_not_terminal)`;
+    - `findingAction names the new write gui-email and keeps report`.
+- [ ] **Step 2: Run them and see them fail.** `npm test -- src/lib/workflow/finding-mode.test.ts src/lib/workflow/synthesizePlan.test.ts src/lib/workflow/nodeTask.test.ts src/app/api/workflows/generate` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npm test -- src/lib/workflow src/components/workflows/editor` (non-finding authoring is unchanged) and `npx tsc --noEmit`.
 - [ ] **Step 5: Commit.** `feat(workflow): AI builder finding-action mode (no probe, trigger catalogue, graph check)`
@@ -618,7 +696,7 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 ### Task 14: Take Action menu + bulk toolbar sections; create success notice; one default priority (D1, D3)
 
 **Files:**
-- Modify: `src/components/intel/detail/TakeActionMenu.tsx`, `src/components/intel/items/BulkToolbar.tsx`, `src/components/intel/detail/TaskPanel.tsx:222`, `src/components/intel/detail/ActionForm.tsx`, `src/components/intel/items/ReviewItemsView.tsx` (bulk success), `src/i18n/dictionaries/intel.ts`
+- Modify: `src/components/intel/detail/TakeActionMenu.tsx`, `src/components/intel/items/BulkToolbar.tsx`, `src/components/intel/detail/TaskPanel.tsx:222`, `src/components/intel/detail/FindingWorkspace.tsx:190`, `src/components/intel/detail/ActionForm.tsx`, `src/components/intel/items/ReviewItemsView.tsx` (bulk success), `src/i18n/dictionaries/intel.ts`
 - Test: `src/components/intel/detail/TakeAction.test.tsx`, `src/components/intel/items/ReviewItemsView.test.tsx`
 
 **Interfaces:**
@@ -629,13 +707,15 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 - The menu opens upward when the space below the button (`innerHeight − rect.bottom − footer height`) is under 320px and the space above is larger.
 - **D3:**
   - After a create, show a clear `role="status"` notice "Đã tạo việc." with a "Xem task" link: `#task-<id>` on the detail page, and `/home/findings/<findingId>#task-<id>` from Review Items.
-  - The detail `ActionForm` gets `defaultPriority="normal"`, the same as the bulk path. The legacy assign form keeps its severity default (not in scope).
+  - The detail `ActionForm` gets `defaultPriority="normal"`, the same as the bulk path.
+  - The legacy assign form also defaults to `normal`: `FindingWorkspace.tsx:190` passes `defaultPriority="normal"` instead of `defaultPriority(p.severity)`, which `TaskPanel.tsx:87` seeds the form with. §5 D3 says "the same default priority on the detail page" with no exception (review M13).
 
 - [ ] **Step 1: Write the failing tests.**
   - `groupMenu orders task, draft, workflow and drops empty groups`.
   - `menu renders section headings Tạo việc / Việc nháp / Chạy workflow`.
   - `menu opens upward near the bottom` (mock `getBoundingClientRect`).
   - `detail action form defaults to Bình thường`.
+  - `legacy assign form defaults to Bình thường for a critical finding`.
   - `success notice links to the new task`.
   - `bulk toolbar shows the same sections`.
 - [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/intel/detail/TakeAction.test.tsx src/components/intel/items/ReviewItemsView.test.tsx` → FAIL.
@@ -676,7 +756,7 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 **Interfaces:**
 - Produces:
   - `export function itemSummary(row: unknown): { date: string | null; amount: number | null }`. Reads the snapshot `{ columns, lines }` (first line's date column; sum of `amount`).
-  - Items response: `items: { kind; id; label; date: string | null; amount: number | null }[] | null`. A partial reader still gets `items: null`.
+  - Items response: each item adds `date: string | null` and `amount: number | null`; the response keeps `row` and `columns` as today (`items/route.ts:22-27`). A partial reader still gets `items: null`.
   - `TaskItemsDialog({ findingId, items, currency, onClose })`:
     - search over id + label;
     - 20 rows per page;
@@ -708,7 +788,7 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 **Files:**
 - Modify: `src/components/intel/detail/WorkflowActionDialog.tsx`, `src/i18n/dictionaries/intel.ts`
 - Create: `src/components/intel/detail/PreviewMarkdown.tsx`
-- Modify: `src/lib/presets/templates/sales.yaml` (the two finding-action presets)
+- Modify: `src/lib/presets/templates/sales.yaml` (the two finding-action presets: prompts at :138 and :171, email subjects at :147 and :180)
 - Test: `src/components/intel/detail/WorkflowActionDialog.test.tsx`, `src/lib/presets/templates/catalog.test.ts`
 
 **Interfaces:**
@@ -723,8 +803,10 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 - when a recipient is refused, `intel.wf.refusedHow`: "Quản trị viên tổ chức có thể thêm người nhận này ở Cài đặt → Đích gửi của workflow" (settings page `/settings/workflow-destinations`).
 
 **D6:**
-- Preset agent prompts reference `{{trigger.finding.title}}` and `{{trigger.items}}` only, never `ruleId` / `metricKey`.
+- Preset agent prompts reference `{{trigger.finding.title}}` and `{{trigger.items}}` only, never `ruleId` / `metricKey`. Today both prompts include `metric {{trigger.finding.metricKey}}` (`:138`, `:171`).
 - They also tell the model: "Không ghi mã quy tắc, mã chỉ số hay chữ 'unknown'; thiếu thông tin thì bỏ qua."
+- **Email subjects (controller, I6):** `sales.yaml:147` and `:180` end in `- {{trigger.finding.ruleId}}`, which puts the rule code in the generated email (§5 D6 forbids it). Change both to `- {{trigger.finding.title}}`.
+- Org copies already installed from the old template are not updated by this change. Note it in the Task 18 deploy checklist.
 
 - [ ] **Step 1: Write the failing tests.**
   - Dialog:
@@ -734,7 +816,9 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
     - `long body is collapsed with Xem thêm`;
     - `refused recipient shows how to fix with the settings link`;
     - `shows Chưa gửi gì cho tới khi bạn bấm Xác nhận`.
-  - Catalog: `finding-action preset prompts reference no ruleId or metricKey and forbid unknown`.
+  - Catalog:
+    - `finding-action presets reference no trigger.finding.ruleId or metricKey in any prompt or connector arg, and forbid 'unknown'`: walk every string in `graph.nodes[*].prompt` and `args` (subjects included, foreach bodies included);
+    - follow-up from Task 1 (done, review M1): `every template graph passes assertSavable(serverRequiredArgsOf)` after `resolveTemplateRefs`. Templates reach `checkGraph` through `from-template.ts:47` → `createOrgItem`, which now runs `assertSavable`; this pins that they still pass.
 - [ ] **Step 2: Run them and see them fail.** `npm test -- src/components/intel/detail/WorkflowActionDialog.test.tsx src/lib/presets/templates/catalog.test.ts` → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npm run build` (the new client import must not pull server code) and `npx tsc --noEmit`.
@@ -762,7 +846,7 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
   | 4 | Mở bản của tổ chức (đang được gán) → sửa và lưu được; nút Lưu không bị chân trang che | Open the org copy while assigned → editable and saves; Save not under the footer |
   | 5 | Phát hiện hoàn tiền → chạy workflow → Xem trước: nhãn "Người nhận/Tiêu đề/Nội dung", markdown hiển thị, dòng "Chưa gửi gì…"; KHÔNG bấm Xác nhận | Refund finding → run workflow → preview: friendly labels, markdown rendered, "nothing sent yet" line; do NOT confirm |
   | 6 | Giao việc cho người khác → người đó có thông báo chuông "Bạn được giao việc…" | Assign a task to someone else → they get the bell notice |
-  | 7 | Việc hạn ngày mai và việc quá hạn → gọi tick → mỗi việc đúng một thông báo; tick lần hai không thêm | Task due tomorrow and an overdue task → one notice each after a tick; none on a second tick |
+  | 7 | Việc hạn ngày mai (tạo từ trước, `createdAt` lùi ≥ 2 ngày) và việc quá hạn → gọi tick → mỗi việc đúng một thông báo; tick lần hai không thêm | Task due tomorrow (created earlier: backdate `createdAt` ≥ 2 days, or the I7 rule hides due-soon) and an overdue task → one notice each after a tick; none on a second tick |
   | 8 | Thẻ việc: ngày hạn đúng, "Quá hạn", "Sẽ nhắc: …", 3 mục đầu + "Xem tất cả N mục" (tìm, 20/trang, mở phiếu), "Việc trước đó" mở được | Task card: due day, overdue badge, next reminder, first 3 items + all-items dialog, earlier tasks expand |
   | 9 | Menu Take Action và thanh chọn nhiều: nhóm Tạo việc / Việc nháp / Chạy workflow; menu mở lên khi gần đáy; thông báo "Đã tạo việc. Xem task"; mức ưu tiên mặc định Bình thường ở cả hai đường | Grouped menu + toolbar, flips up near the bottom, create notice with link, default priority Normal on both paths |
   | 10 | Xem mục: không có cột rỗng, không lặp thông tin sản phẩm, số lượng cộng đúng | Review Items: no empty columns, no duplicate product info, quantities summed |
@@ -771,23 +855,35 @@ The "Dựng bằng AI" sidebar tab (`wf.sidebar.tabAi`) renders `AiChatPanel` �
 - [ ] **Step 4: Deploy checklist.** Append a "Card #6 follow-ups" section to `docs/deploy/2026-11-20-card6-finding-actions-checklist.md` (workspace root, commit dd856b5):
   - `MAIL_FROM` and `RESEND_API_KEY` must be set in prod, or email silently never sends (§8);
   - `AUTH_URL` must be set for email links;
-  - no migration in this change.
+  - no migration in this change;
+  - the first tick after deploy sends one overdue notice for every open task overdue in the last 14 days (Task 9); confirm with the owner;
+  - `pending_approval` tasks receive task notices like `assigned` ones (Task 8); owner question;
+  - org copies already installed from the old `sales.yaml` finding-action templates keep the rule code in their email subject (Task 17).
 - [ ] **Step 5: Checkpoint.** `mcp__serena__write_memory("checkpoint/claude-2026-11-20-card6-followups", …)`. Record that email was "not verified end to end".
 
 ## Task dependencies
 
-- Task 1 → Tasks 2, 4, 5 (`topoOrder` lives in validate.ts; run after Task 1 to avoid conflicts).
+Done and committed: Tasks 1 (`797df26c`), 7 (`ff8687b0`) and 15 (`2684939d`). Findings about them are follow-up steps in later tasks (Task 2 for M2, Task 10 for I3, Task 17 for M1).
+
+- **Task 10 runs next (priority).** Task 7 made `dueAt` zone-aware, so the home card and the task card show the wrong day for projects west of UTC until Task 10 lands (I3).
+- Task 10 → Task 8 (`dueDayOf`). Task 8 → Task 9.
+- Task 1 → Tasks 2, 4, 5 (`topoOrder` lives in validate.ts).
 - Task 5 → Task 12 (`topoOrder`). Tasks 11 and 12 → Task 13.
-- Task 7 → Tasks 8, 10. Task 8 → Task 9.
 - **Shared-file rule:** these files are each edited by several tasks:
-  - `validate.ts` (1, 5);
-  - `WorkflowEditor.tsx` (2, 11);
+  - `WorkflowEditor.tsx` and its test (2, 11);
+  - `WorkflowDetailClient.tsx` and its test (3, 6);
+  - `WorkflowActionDialog.tsx` and its test (4, 17);
+  - `AiChatPanel.tsx` / `AiGeneratePanel.tsx` (11, 13);
+  - `append-write/route.ts` and its test (12, 13);
+  - `authorAppend.ts`, `provenance.ts` (12, 13);
+  - `time.ts` (10; Task 8 reads it);
   - `intel.ts` dictionary (4, 10, 14, 16, 17);
-  - `workflows.ts` dictionary (1, 6, 11);
-  - `TaskPanel.tsx` (10, 14, 16).
+  - `workflows.ts` dictionary (6, 11);
+  - `TaskPanel.tsx` and its test (10, 14, 16).
 
   Tasks sharing any of these files never run at the same time.
 - Safe parallel groups:
-  - {3, 7} after Task 1;
-  - {6, 15} anytime;
+  - {3, 10} now; Tasks 2 and 5 may join them (no shared file);
+  - Task 4 after Task 10 (both edit `intel.ts`);
+  - Task 6 after Tasks 3 and 11;
   - {11, 12} after Task 5.
