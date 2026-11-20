@@ -42,8 +42,8 @@ Actions must come from configuration, not from code branching on finding type.
 - Phase 3, writing into POS, promotion, purchasing or CRM systems, is **on hold**: no write connector exists.
   - Actions that would need such a write are marked `mode: draft_task`. They create a task titled as a draft for a person to carry out by hand.
   - The UI says plainly that nothing is sent to an external system.
-- Low Inventory, Slow-Moving Products and Customer Decline templates: there are no rules or data for them, so they are not built.
-- A per-action custom form schema builder. Phase 1 uses one fixed form; the pack can only set defaults.
+- Low Inventory, Slow-Moving Products and Customer Decline templates are not built. RET-INV-003 (stockout risk) exists, but there is no reorder/transfer data or connector, and no slow-moving or customer data at all. RET-INV-003 keeps its single fallback action. "Review Inventory" is also left out of the Sales Decline template for the same reason.
+- A drag-and-drop form builder. Phase 1 pack actions use one fixed form (the pack sets defaults). Phase 2 workflow actions get a short list of extra fields (§5.6), not a full builder.
 - Changing the existing workflow graph editor, the run engine semantics, or the run history UI beyond adding the input variables.
 
 **Anti-goals (a failure even if it "works")**
@@ -93,11 +93,12 @@ actions:
     mode: task                      # task | draft_task
     approval_required: false        # default for the form
     due_days: 3                     # optional default due date, days from today
-    min_role: member                # optional: owner | admin | member (default member)
+    personas: [store_manager, area_manager]  # optional: project personas (pack roles.yaml) allowed to use it; absent = everyone who can act
+    reminder_days: [2, 21]          # optional follow-up reminders, days after the task is created
 ```
 
 - **LAAM schema:** add an `actionSchema` (strict) and `actions: z.array(actionSchema).default([])` on `ruleSchema`, with keys unique per rule.
-- **When a rule has no actions:** if the rule has no `actions` (old pinned pack, or a rule we did not configure), LAAM synthesises one action from `recommended_action`, using the existing localized label for that action type, with `scope: single` and `mode: task`.
+- **When a rule has no actions:** if the rule has no `actions` (old pinned pack, or a rule we did not configure), LAAM synthesises one action from `recommended_action`, with `key` = the `recommended_action` value (e.g. `review`), the existing localized label for that action type, `scope: both` and `mode: task`. So the fallback can be disabled, stored as `task.action_key`, and deduplicated like any other action.
 - **Templates written in 0.7.4:**
 
   | Template | Rules | Actions |
@@ -113,13 +114,14 @@ actions:
 - A new `text[]` column on `business_project`: `disabled_finding_actions` (default empty), holding entries like `"RET-SALES-001:review_pricing"`.
 - The project admin page (`settings/business-projects/[id]`) gets a "Finding actions" section: the rules, each with its actions as toggles. Only owners and admins can change it.
 - A disabled action is hidden from the menu and refused by the API.
+- Entries that no longer match any action (a pack renamed a key) are ignored at read time and shown in Settings as "no longer in the pack" with a remove button.
 
 ### 5.3 Which actions a user sees
 
 A pure function `availableActions(rule, project, viewer, selectionCount)` returns the actions to show. An action is shown only if it is all of:
 - defined for the rule, or built from `recommended_action`;
 - not disabled in Settings;
-- allowed for the viewer: `canMutate`, and `min_role` satisfied;
+- allowed for the viewer: `canMutate`, and, when the action lists `personas`, the viewer's project persona (`user_scope.persona`) is one of them. Personas, not org roles, because almost every store user is an org "member";
 - allowed by the selection: with 0 items selected, only `single`/`both` actions; with items selected, only `bulk`/`both` actions.
 
 The function also includes the Phase 2 workflow actions that match the rule. The API applies the same function, so a hidden action cannot be posted.
@@ -138,14 +140,18 @@ The function also includes the Phase 2 workflow actions that match the rule. The
   - The body gains `actionKey?` (string), `itemIds?` (max 200), and `note?` (max 1000).
   - The server resolves the action through `availableActions` and rejects unknown or hidden actions with 403/422.
   - It sets `actionType` from the action, and builds the title from the action label plus the item count. For `draft_task` the title gets a "Draft:" prefix.
-- **Re-checking items.** The server re-checks `itemIds` against the finding's evidence in one scan. This is new logic: `findingEvidenceHas` only knows `refund_id`/`sale_id`/`original_sale_id`, so a new set-based check (`findingEvidenceItems`) matches every key column in §5.5. It rejects ids that are not in the finding's evidence, returns which ones failed, and fails closed if the scan errors.
+- **Re-checking items.** The server re-checks `itemIds` against the finding's evidence in one scan. `findingEvidenceHas` (`records.ts`) is generalised rather than copied: its pagination and sanitise loop stay, it takes a set of ids and the key columns of §5.5, and returns the matched rows. So a row the caller may not see still cannot vouch for an id. It rejects ids that are not in the finding's evidence, returns which ones failed, and fails closed if the scan errors.
 - **Same path as Assign.** Task creation still goes through `prepareCreateTask`, so owner checks, wording hiding, the finding moving to `assigned`, `finding_event` and `audit_log` all stay as they are.
   - The `task_created` event payload adds `actionKey`, `itemCount` and `mode`.
 - **New task columns.** `task.action_key` (nullable text) and `task.note` (nullable text) are added in the same migration. The title is stored in the creator's language; readers in other languages still see the action label through `action_key`.
-- **Duplicates.** "Identical open task" now also compares `action_key` and the sorted set of item ids. Re-submitting the same selection returns 409; a different selection is a new task.
+- **Duplicates.** Two checks, both inside the write transaction after locking the finding row (`SELECT … FOR UPDATE`), so a double-click cannot slip through:
+  - an open task with the same `action_key` and the same item set → 409 `duplicate_task`;
+  - selected items that are already in an **open** task with the same `action_key` → 409 `items_in_open_task`, listing those items, so the UI can offer to deselect them.
+- **Reminders.** If the action has `reminder_days`, one `task_reminder` row (taskId, remindAt, sentAt) is written per day. A due-reminder sweep, run on the existing workflow scheduler tick, sends an in-app notification (existing `src/lib/notifications`) to the owner if the task is still open; closed tasks get none. Reminders are optional; actions without `reminder_days` create none.
 - **Linking items.** A new table `task_item` (`taskId` FK cascade, `projectId`, `itemKind` sale|refund|row, `itemId`, `label`, `row` jsonb snapshot, `createdAt`) is written in the same transaction as the task.
   - The snapshot is kept because evidence is read live and can change later.
 - **Showing items on the task.** The task card in `TaskPanel` shows "N items". Clicking it lists them, and sale/refund items open the receipt drawer.
+- **Scope on read.** `task_item.row` is a snapshot made under the creator's view. When anyone reads it, the row is re-scoped for that reader with the same sanitising used for evidence pages (`sanitizeEvidencePage`); a reader whose scope does not cover a row sees only its id and label.
 - **Chat.** The chat task tool keeps working without `actionKey`/`itemIds`.
 
 ### 5.5 Review Items page
@@ -181,26 +187,33 @@ Today evidence is every record in the finding's window, in time order, cut at 50
 ### 5.6 Phase 2: workflows as finding actions
 
 - **Storage.** A new nullable jsonb column on `workflow`, `finding_action`:
-  `{ enabled, label:{en,vi}, ruleIds:string[], projectIds:string[] | null, scope: single|bulk|both, minRole }` (`projectIds: null` = every project).
+  `{ enabled, label:{en,vi}, ruleIds:string[], projectIds:string[] | null, scope: single|bulk|both, personas:string[] | null, fields:[{key, label:{en,vi}, type: text|number|select|date, options?, required}], reminderDays:number[] | null }` (`projectIds: null` = every project of the org).
+- **Validation on save.** `projectIds` must belong to the workflow's org; `ruleIds` must exist in those projects' installed packs; `fields` max 10.
 - **Which workflows.** Only **org** workflows can be finding actions; personal workflows cannot. The viewer must also pass the existing `canUse` grant (`lib/workflow/access.ts`).
 - **Editing.** It is edited in a new "Finding action" card in the workflow's settings, next to `ScheduleCard`. The rule list comes from the project's installed pack rules. Owners and admins only.
 - **Menu.** `availableActions` adds the matching enabled workflows, with a "workflow" icon, after the pack actions.
 - **Running.** A new route `POST /api/intel/findings/[id]/workflow-actions` takes `{ workflowId, itemIds? }`.
-  1. It checks finding access, the workflow's `finding_action` (enabled, rule matches, role, scope) and the items (same re-check as §5.4).
+  1. It checks finding access, the workflow's `finding_action` (enabled, project and rule match, persona, scope), the `fields` values, and the items (same re-check as §5.4).
   2. It applies the same gates as `POST /api/workflows/[id]/run`: `requireMutator`, `assertOrgActive`, `assertCanConsume`, and member consent.
   3. It runs `executeRun` with the new `RunTrigger` value `"finding_action"`.
-- **Run input.** The run context's trigger carries `{ source:"finding_action", finding:{ id, ruleId, metricKey, dims, severity, variancePct, title? }, items:[{kind,id,label,row}] }`.
+- **Run input.** The run context's trigger carries `{ source:"finding_action", finding:{ id, ruleId, metricKey, dims, severity, variancePct, title? }, items:[{kind,id,label,row}], params:{…field values}, actionConfig:{…snapshot of finding_action at run time} }`.
   - `title` is left out when the viewer's view is partial, as in §5.4.
-  - The context is already persisted on `workflow_run.context`, so every run keeps the exact input and the action config it ran with. That is the versioning the card asks for.
+  - The context is already persisted on `workflow_run.context`, so every run keeps the exact input and the action config snapshot it ran with. That is the versioning the card asks for.
 - **Channel (`via`).** `viaOfTrigger("finding_action")` returns the existing `"workflow_manual"`. Adding a new `Via` value would touch the data-source delegation contract, so we reuse the existing one.
-- **Editor.** The variable hints add `{{trigger.finding.*}}` and `{{trigger.items}}`.
-- **Confirmation.** The dialog shows the workflow name, the finding and the item count, and the user must confirm. Nothing runs without that click.
+- **Editor.** The variable hints add `{{trigger.finding.*}}`, `{{trigger.items}}` and `{{trigger.params.*}}`.
+- **Confirmation.** The first dialog shows the workflow name, the finding, the item count and the fields; the user must click to start the preview run. Nothing is sent until the second click ("Confirm & send", below).
   - Afterwards it shows the run status with a link to the run in run history.
   - A `finding_event` of type `workflow_action_run` (runId, workflowId, itemCount) is written.
-- **Duplicates.** If a run of the same workflow for the same finding is already `running`, the route returns 409.
-- **Ready-made templates.** One example finding-action workflow ships as a preset: "Draft a promotion proposal and post it for review".
-  - It analyses the items, drafts the proposal, and sends it through whatever notify or write node the org already has.
-  - It is optional; whether to add it is left to the builder (§7).
+- **Duplicates.** A new nullable, indexed `workflow_run.finding_id` column. If a run of the same workflow for the same finding is `running`, or succeeded in the last 10 minutes with the same item set, the route returns 409 (the user can still run again after confirming a second time).
+- **Retry.** A failed run shows its error and a "Run again" button, which starts a new run with the same input (a new confirm).
+- **Reminders.** `reminderDays` works as in §5.4 when the workflow's last step creates a task; otherwise it is ignored.
+- **Ready-made templates (required).** Two finding-action presets ship: "Draft a promotion proposal" (Sales Decline) and "Vendor cost review request" (Margin). Each analyses the items and drafts a proposal; sending follows the preview rule below.
+- **Preview before anything is sent.** The engine cannot pause mid-run (node kinds are agent/connector/condition/foreach/mcp), so a finding action runs in two steps (user's choice, option b):
+  1. **Preview run.** The workflow runs with `dryRun: true`. Reads and AI steps run for real; every write step is already mocked by the runtime and returns `{ dryRun:true, wouldHaveCalled, args, recipientCheck? }` (`LAAM/src/lib/workflow/runtime.ts:133-150`), saved in that run's steps. The dialog shows each pending write: destination (connector action), recipient, and the exact content (`args`), plus any recipient-allowlist refusal.
+  2. **Send.** "Confirm & send" calls `POST /api/intel/findings/[id]/workflow-actions/[runId]/send`. The server re-checks access and that the preview run belongs to this finding and user, is a `finding_action` dry run, succeeded, is under 24 h old and not already sent. It then executes **only those recorded write calls, with the stored `args`, for real**, through the same connector path and allow-lists as a normal run, wrapped in the existing write idempotency (`withWriteIdempotency`) keyed on the preview run, so a double click sends once. No AI step runs again, so what is sent is exactly what was previewed.
+  - The send is recorded as its own `workflow_run` (trigger `finding_action`, `previewRunId` in context) with one step per write, so run history shows both the preview and the send, and per-write success/failure. A failed write can be retried from that run without re-sending the ones that succeeded.
+  - If the preview has no write steps, step 2 is skipped: the run is the result.
+  - Builder to verify early: that the dry-run step output keeps the full `args` (not truncated by `capForPersist`, 256 KB cap) and that connector writes can be invoked from a stored call outside the graph walk; if either fails, stop and report before building the send step.
 
 ### 5.7 Deploy order (goes into the deploy checklist)
 
@@ -244,7 +257,6 @@ Today evidence is every record in the finding's window, in time order, cut at 50
 ## 7. Left to the builder
 
 - Icons, exact spacing, and the menu component: use the existing UI kit.
-- Whether the example workflow preset (§5.6) ships in this round or later.
 - The exact Vietnamese labels for actions in the pack. Keep them short and use the glossary terms.
 - Bulk evidence verification: one evidence scan per request. Fail closed if the scan errors.
 - The exact `_impact` expression per metric, within §5.5a's meaning (bigger = worse), checked against the real columns of each evidence SQL.
