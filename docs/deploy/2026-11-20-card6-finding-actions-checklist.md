@@ -95,8 +95,13 @@ Covers the 18 follow-up tasks (spec `docs/superpowers/specs/2026-11-20-card6-fol
 ### Steps
 
 1. Merge, then `docker build -t laam-app:latest .` and `docker compose up -d app`.
-2. **Restart the tick container** after the app container is recreated (`docker restart laam-v2-tick`). Locally it kept failing with `Could not resolve host: app` until it was restarted.
-3. **Org copies of the Sales presets are not updated by the template change.** An org copy installed earlier still has the email subject `Promotion proposal draft - {{trigger.finding.ruleId}}`, so the rule code shows in the email. The local E2E saw this on "Draft a promotion proposal". Edit each org copy to the new subject `Promotion proposal draft {{trigger.finding.title}}` and the new prompts, or reinstall it from the template. Check the "Vendor cost review request" copy too.
+2. Check that the tick is running: `docker logs --tail 5 laam-v2-tick`. `Could not resolve host: app` or `Failed to connect` are expected only while the app container is being recreated, and should stop after it is up. Locally the tick resumed by itself; restart `laam-v2-tick` only if the errors continue.
+3. **Refresh installed Sales finding-action presets.** Changing the template does not update copies already installed in orgs; an old copy keeps the email subject `… - {{trigger.finding.ruleId}}`, so the rule code shows in the email. Run from `LAAM/` with the prod `.env`:
+   - Dry run first: `npx tsx scripts/refresh-sales-finding-presets.ts`. Read each line, especially the `re-consent=` count per workflow.
+   - Then `npx tsx scripts/refresh-sales-finding-presets.ts --apply`.
+   - It only replaces a prompt or subject that still exactly matches a shipped template version. A user edit is reported and left alone, and a row saved during the run is skipped (`skipped: changed during run`). Running it again is a no-op.
+   - Like an admin save, a changed email subject makes members with an activated copy consent again, and pauses their schedules until they do.
+   - Locally it updated "Draft a promotion proposal" and "Vendor cost review request"; the second run reported `unchanged=2`.
 
 ### Behaviour to know (support)
 
@@ -120,8 +125,9 @@ Covers the 18 follow-up tasks (spec `docs/superpowers/specs/2026-11-20-card6-fol
   - Preview dialog: labels, "Chưa gửi gì…", Confirm disabled for a refused recipient.
   - Store manager: assignment bell, 404 outside scope, no wording or task title on a partial-view finding.
   - Overdue tick: neutral title to the store manager, real title to the creator, once each.
-- **Known small issues left (see the SDD ledger):**
-  - The AI builder chat can show the model's raw tool-call text in finding mode.
-  - The AI may write `{{trigger.finding.*}}`, and Save does not flag it.
-  - An English bell notice shows a Vietnamese-formatted date.
-  - After an AI rebuild, a stale "Save failed" banner can remain.
+- **E2E findings fixed and re-verified on :3900 (LAAM `8138ecff`):**
+  - The preview subject no longer shows the rule code after the refresh script runs.
+  - The AI builder chat no longer shows raw tool-call text, and the old "Save failed" banner clears after an AI rebuild.
+  - `{{trigger.finding.*}}` is refused on Save with a readable message.
+  - New bell notices format the due date in the reader's language. Notices created before the deploy keep the date as it was stored.
+  - Tests: unit 9710 pass, `tsc` is clean and `npm run build` passes. The integration tests for the touched areas pass.
