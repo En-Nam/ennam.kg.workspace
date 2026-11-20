@@ -32,7 +32,7 @@ Actions must come from configuration, not from code branching on finding type.
 - Every action is recorded: a `finding_event` and an `audit_log` row.
 
 **Goals (Phase 2)**
-- A workflow can be marked as a **Finding action**, with a label (EN/VI), the rules it applies to, single/bulk, and minimum role.
+- A workflow can be marked as a **Finding action**, with a label (EN/VI), the rules it applies to, single/bulk, and personas.
 - Those workflows appear in the same Take Action menu.
   - Clicking one shows a confirm dialog (workflow name, finding, item count), then runs the workflow with the finding and the selected items as input.
   - The run appears in the existing run history.
@@ -114,7 +114,7 @@ actions:
 - A new `text[]` column on `business_project`: `disabled_finding_actions` (default empty), holding entries like `"RET-SALES-001:review_pricing"`.
 - The project admin page (`settings/business-projects/[id]`) gets a "Finding actions" section: the rules, each with its actions as toggles. Only owners and admins can change it.
 - A disabled action is hidden from the menu and refused by the API.
-- Entries that no longer match any action (a pack renamed a key) are ignored at read time and shown in Settings as "no longer in the pack" with a remove button.
+- Entries that no longer match any action (a pack renamed a key) are simply ignored.
 
 ### 5.3 Which actions a user sees
 
@@ -144,14 +144,16 @@ The function also includes the Phase 2 workflow actions that match the rule. The
 - **Same path as Assign.** Task creation still goes through `prepareCreateTask`, so owner checks, wording hiding, the finding moving to `assigned`, `finding_event` and `audit_log` all stay as they are.
   - The `task_created` event payload adds `actionKey`, `itemCount` and `mode`.
 - **New task columns.** `task.action_key` (nullable text) and `task.note` (nullable text) are added in the same migration. The title is stored in the creator's language; readers in other languages still see the action label through `action_key`.
-- **Duplicates.** Two checks, both inside the write transaction after locking the finding row (`SELECT … FOR UPDATE`), so a double-click cannot slip through:
-  - an open task with the same `action_key` and the same item set → 409 `duplicate_task`;
-  - selected items that are already in an **open** task with the same `action_key` → 409 `items_in_open_task`, listing those items, so the UI can offer to deselect them.
-- **Reminders.** If the action has `reminder_days`, one `task_reminder` row (taskId, remindAt, sentAt) is written per day. A due-reminder sweep, run on the existing workflow scheduler tick, sends an in-app notification (existing `src/lib/notifications`) to the owner if the task is still open; closed tasks get none. Reminders are optional; actions without `reminder_days` create none.
+- **Duplicates.**
+  - When `actionKey` is set, the existing owner+title+actionType check (`finding-actions.ts:62-64`) is **skipped** (titles are "label + count", so two different 12-item selections would wrongly collide). Without `actionKey` (Assign, chat) it stays as today.
+  - With items: if any selected item is already in an **open** task with the same `action_key` (any owner) → 409 `items_in_open_task`, listing those items so the UI can offer to deselect them. This also covers re-submitting the same selection.
+  - With no items: an open task with the same `action_key` (any owner) → 409 `duplicate_task`.
+  - These checks run in `prepare`. The race is already closed by `commitPlan`, which locks the finding with a guarded UPDATE and re-counts open tasks (`actions.ts:382-399`) and returns `ConflictError`; `WritePlan` is extended with `taskItems` so the items are inserted in that same transaction. No extra `SELECT … FOR UPDATE`.
+- **Reminders.** One simple rule for both pack and workflow actions: if the action has reminder days, one `finding_reminder` row (findingId, taskId?, userId, remindAt, sentAt) is written per day, for the task owner (pack action) or the clicking user (workflow action). A due-reminder sweep on the existing workflow scheduler tick sends an in-app notification (existing `src/lib/notifications`) if the task is still open, or for workflow actions, if the finding is still open; otherwise the row is marked skipped. Optional: no reminder days, no rows.
 - **Linking items.** A new table `task_item` (`taskId` FK cascade, `projectId`, `itemKind` sale|refund|row, `itemId`, `label`, `row` jsonb snapshot, `createdAt`) is written in the same transaction as the task.
   - The snapshot is kept because evidence is read live and can change later.
 - **Showing items on the task.** The task card in `TaskPanel` shows "N items". Clicking it lists them, and sale/refund items open the receipt drawer.
-- **Scope on read.** `task_item.row` is a snapshot made under the creator's view. When anyone reads it, the row is re-scoped for that reader with the same sanitising used for evidence pages (`sanitizeEvidencePage`); a reader whose scope does not cover a row sees only its id and label.
+- **Scope on read.** `task_item.row` and `label` are snapshots made under the creator's view, and `sanitizeEvidencePage` cannot re-scope them (it only filters on `location_id`, which these evidence SQLs do not return). So item details (rows, labels, receipt drawer) are shown only to readers who pass the evidence route's own gate: unrestricted, or `scopeFinding(...).mode === "full"` and `evidenceReadable` (`evidence/route.ts:29-44`). Everyone else sees the item count only.
 - **Chat.** The chat task tool keeps working without `actionKey`/`itemIds`.
 
 ### 5.5 Review Items page
@@ -175,65 +177,77 @@ Today evidence is every record in the finding's window, in time order, cut at 50
 
 - **`_impact` column.** An evidence query may return a numeric column named `_impact`: how much this row moved the metric in the bad direction (bigger = worse). The query orders by `_impact DESC NULLS LAST`, then by time, so the 500-row cut keeps the worst rows.
   - `gross_margin_pct`: margin lost on the line, `discount_amount - quantity * (unit_price - unit_cost)` (positive = loss).
-  - `avg_unit_cost`: cost above the line's previous cost, where the data has it; otherwise no `_impact`.
   - `refund_rate`, `no_receipt_refund_pct`, `duplicate_refund_groups`, `reprint_before_refund_count`: refund amount, with no-receipt refunds first where that column exists.
 - **Metrics with no per-row impact** (e.g. `net_sales`: a sales drop is missing sales, not bad rows) return no `_impact` and keep time order.
-- **Factor pre-filter (generic, in LAAM).** For every finding, the Review Items page opens pre-filtered to the top contributing factor from `contributingFactors` (e.g. category = Drinks, 70% of the change), when the evidence has that column. A chip shows the filter and can be removed. This covers `net_sales` and helps every other metric too.
+- **Factor pre-filter (server-side).** The Review Items page opens pre-filtered to the top contributing factor from `contributingFactors` (e.g. category = Drinks, 70% of the change). The filter is passed to the evidence API as one extra dim, applied in the SQL (`:dim_category` etc.), so the 500-row cut is taken **after** filtering; a client-side filter would only see the first hours of a time-ordered window. The route accepts an extra dim only if (a) it is the dim of one of the finding's own `contributingFactors` entries and (b) the metric's evidence SQL declares that `:dim_` parameter; anything else is 400. This is a deliberate, narrow loosening of the route's "the request cannot name dims" rule (`evidence/route.ts:18-20`). A chip shows the filter and can be removed. Rules whose evidence SQL lacks the dim fall back to no pre-filter.
+- **Lines of one sale.** Worst-first ordering is by line, so a sale's lines can be split across the 500-row cut. Grouped records (§5.5) show "partial: more lines outside the list" when the record's line count could be cut, and the record detail fetches its full lines through the receipt drawer.
 - **Display.** `_impact` is a meta column: LAAM shows it as an "Impact" column (formatted like the other money cells) and sorts by it by default; it is not stored as an item id.
 - **Who else sees it.** The detail page evidence panel, the receipt drawer check and the chat tools read the same SQL, so they all switch to worst-first order. That is intended.
+- **Go tests.** Adding `_impact` changes evidence column lists asserted in Go (`pack_070_test.go`, `golden_070_return_test.go`, `engine/query_test.go`); update them in the same change.
 - **Checks.** Each changed SQL is tested on all three source modes (live, file, landed) and timed on the landed demo data; if the sort makes the landed query noticeably slower (more than ~2x), add a supporting index or keep time order for that metric and note it.
 - **Later, not now.** Per-product comparison against the baseline period for Sales Decline (a different query shape). The convention above leaves room for it: a future `net_sales` evidence query can return `_impact` = lost sales per product.
 
 ### 5.6 Phase 2: workflows as finding actions
 
 - **Storage.** A new nullable jsonb column on `workflow`, `finding_action`:
-  `{ enabled, label:{en,vi}, ruleIds:string[], projectIds:string[] | null, scope: single|bulk|both, personas:string[] | null, fields:[{key, label:{en,vi}, type: text|number|select|date, options?, required}], reminderDays:number[] | null }` (`projectIds: null` = every project of the org).
-- **Validation on save.** `projectIds` must belong to the workflow's org; `ruleIds` must exist in those projects' installed packs; `fields` max 10.
+  `{ enabled, label:{en,vi}, ruleIds:string[], scope: single|bulk|both, personas:string[] | null, fields:[{key, label:{en,vi}, type: text|number|select|date, options?, required}], reminderDays:number[] | null }`. It applies to every project of the workflow's org whose findings match `ruleIds`.
+- **Validation on save.** `ruleIds` must exist in at least one of the org's projects' installed packs; `fields` max 10; and **writes must be terminal**: the save is refused if any node's args or any condition references the output of a write step (in a preview that output is a mock, so replaying args built from it would send mock-derived content).
 - **Which workflows.** Only **org** workflows can be finding actions; personal workflows cannot. The viewer must also pass the existing `canUse` grant (`lib/workflow/access.ts`).
 - **Editing.** It is edited in a new "Finding action" card in the workflow's settings, next to `ScheduleCard`. The rule list comes from the project's installed pack rules. Owners and admins only.
 - **Menu.** `availableActions` adds the matching enabled workflows, with a "workflow" icon, after the pack actions.
 - **Running.** A new route `POST /api/intel/findings/[id]/workflow-actions` takes `{ workflowId, itemIds? }`.
   1. It checks finding access, the workflow's `finding_action` (enabled, project and rule match, persona, scope), the `fields` values, and the items (same re-check as §5.4).
   2. It applies the same gates as `POST /api/workflows/[id]/run`: `requireMutator`, `assertOrgActive`, `assertCanConsume`, and member consent.
-  3. It runs `executeRun` with the new `RunTrigger` value `"finding_action"`.
-- **Run input.** The run context's trigger carries `{ source:"finding_action", finding:{ id, ruleId, metricKey, dims, severity, variancePct, title? }, items:[{kind,id,label,row}], params:{…field values}, actionConfig:{…snapshot of finding_action at run time} }`.
+  3. It runs `executeRun` with the new `RunTrigger` value `"finding_action"` (also added to `viaOfTrigger`'s exhaustive switch, the run-history labels and i18n).
+- **Run input.** Stored durably in a new `workflow_run.trigger_input` jsonb column written **at insert** (not only at finalize; the finalize `context` is capped and is `undefined` when the engine throws), threaded through `RunRow` and `rebuildContext` so a resumed run still has it (`resume.ts:128` rebuilds `{source}` only today). The trigger carries `{ source:"finding_action", finding:{ id, ruleId, metricKey, dims, severity, variancePct, title? }, items:[{kind,id,label,row}], params:{…field values}, actionConfig:{…snapshot of finding_action at run time} }`.
   - `title` is left out when the viewer's view is partial, as in §5.4.
-  - The context is already persisted on `workflow_run.context`, so every run keeps the exact input and the action config snapshot it ran with. That is the versioning the card asks for.
+  - Items are bounded: kind, id, label and up to 8 key columns per record, never full line lists (max 200 records).
+  - `trigger_input` keeps the exact input and the action config snapshot each run used. That is the versioning the card asks for.
 - **Channel (`via`).** `viaOfTrigger("finding_action")` returns the existing `"workflow_manual"`. Adding a new `Via` value would touch the data-source delegation contract, so we reuse the existing one.
 - **Editor.** The variable hints add `{{trigger.finding.*}}`, `{{trigger.items}}` and `{{trigger.params.*}}`.
 - **Confirmation.** The first dialog shows the workflow name, the finding, the item count and the fields; the user must click to start the preview run. Nothing is sent until the second click ("Confirm & send", below).
   - Afterwards it shows the run status with a link to the run in run history.
   - A `finding_event` of type `workflow_action_run` (runId, workflowId, itemCount) is written.
-- **Duplicates.** A new nullable, indexed `workflow_run.finding_id` column. If a run of the same workflow for the same finding is `running`, or succeeded in the last 10 minutes with the same item set, the route returns 409 (the user can still run again after confirming a second time).
-- **Retry.** A failed run shows its error and a "Run again" button, which starts a new run with the same input (a new confirm).
-- **Reminders.** `reminderDays` works as in §5.4 when the workflow's last step creates a task; otherwise it is ignored.
+- **Finding link.** A new nullable, indexed `workflow_run.finding_id` column, used for the finding's history and for the send claim below. No duplicate check on preview runs: a preview sends nothing.
+- **Retry.** A failed preview or send shows its error and "Preview again", which starts a new preview with the same input. There is no retry of a single failed write: a write that threw may have committed, and the WAL deliberately refuses to re-claim it.
+- **Reminders.** As in §5.4.
 - **Ready-made templates (required).** Two finding-action presets ship: "Draft a promotion proposal" (Sales Decline) and "Vendor cost review request" (Margin). Each analyses the items and drafts a proposal; sending follows the preview rule below.
 - **Preview before anything is sent.** The engine cannot pause mid-run (node kinds are agent/connector/condition/foreach/mcp), so a finding action runs in two steps (user's choice, option b):
   1. **Preview run.** The workflow runs with `dryRun: true`. Reads and AI steps run for real; every write step is already mocked by the runtime and returns `{ dryRun:true, wouldHaveCalled, args, recipientCheck? }` (`LAAM/src/lib/workflow/runtime.ts:133-150`), saved in that run's steps. The dialog shows each pending write: destination (connector action), recipient, and the exact content (`args`), plus any recipient-allowlist refusal.
-  2. **Send.** "Confirm & send" calls `POST /api/intel/findings/[id]/workflow-actions/[runId]/send`. The server re-checks access and that the preview run belongs to this finding and user, is a `finding_action` dry run, succeeded, is under 24 h old and not already sent. It then executes **only those recorded write calls, with the stored `args`, for real**, through the same connector path and allow-lists as a normal run, wrapped in the existing write idempotency (`withWriteIdempotency`) keyed on the preview run, so a double click sends once. No AI step runs again, so what is sent is exactly what was previewed.
-  - The send is recorded as its own `workflow_run` (trigger `finding_action`, `previewRunId` in context) with one step per write, so run history shows both the preview and the send, and per-write success/failure. A failed write can be retried from that run without re-sending the ones that succeeded.
+  2. **Send.** "Confirm & send" calls `POST /api/intel/findings/[id]/workflow-actions/[runId]/send`. The server checks, in order:
+     - access to the finding, and that the preview run belongs to this finding and this user, is a `finding_action` dry run, succeeded, and is under 24 h old;
+     - `requireConsent` on the **current** workflow row (dry runs skip it, `workflows/[id]/run/route.ts:126-133`), surfacing its 409 reactivation flow in the dialog; plus `requireMutator`, `assertOrgActive`, `assertCanConsume`;
+     - the preview's `authoredHash` equals the workflow's current stored hash; otherwise "the workflow changed, preview again";
+     - **single-use claim**: `UPDATE workflow_run SET sent_run_id = $new WHERE id = $preview AND sent_run_id IS NULL RETURNING`. No row → 409 `already_sent`. This, not the WAL, is what stops a double click or two tabs.
+  
+     It then creates the send run and executes **only the recorded write calls, with the stored `args`, for real**, through a new `sendRecordedCall(action, args)` that **skips `interpolateArgs`** (AI text containing `{{…}}` must be sent verbatim; `executors.ts:87,100` would re-interpolate) and applies the real-run gates explicitly: `assertConnectorAllowed` / `assertMcpAllowed` against a fresh `mcpReadAllow`, the recipient allow-list, and `withWriteIdempotency` **keyed on the send run's id** (the preview's own WAL rows already hold the mocked output as `done`, `run.ts:205`, `idempotency.ts:97-110`, so keying on the preview would "replay" the mock and send nothing). The WAL is extended to cover MCP-node writes too (today `isWrite` is connector-only). No AI step runs again, so what is sent is exactly what was previewed.
+  - Credentials are the clicking member's own (`connectorExecute(userId)`); a user with no Slack/Jira connection gets a clear "connect X first" error before anything is sent.
+  - The send is its own `workflow_run` (trigger `finding_action`, `previewRunId` in `trigger_input`) with one step per write, so run history shows the preview and the send with per-write success/failure.
   - If the preview has no write steps, step 2 is skipped: the run is the result.
-  - Builder to verify early: that the dry-run step output keeps the full `args` (not truncated by `capForPersist`, 256 KB cap) and that connector writes can be invoked from a stored call outside the graph walk; if either fails, stop and report before building the send step.
+  - Builder to verify first: dry-run step output keeps the full `args` (each step capped at 256 KB by `capForPersist`; a preview whose write args were capped cannot be sent and says so).
 
 ### 5.7 Deploy order (goes into the deploy checklist)
 
-1. Deploy LAAM with the migrations (`task_item`, `task.action_key`, `task.note`, `business_project.disabled_finding_actions`, `workflow.finding_action`) and the schema that accepts `actions:`.
+1. Deploy LAAM with the migrations (`task_item`, `task.action_key`, `task.note`, `finding_reminder`, `business_project.disabled_finding_actions`, `workflow.finding_action`, `workflow_run.finding_id`, `workflow_run.trigger_input`, `workflow_run.sent_run_id`) and the schema that accepts `actions:`.
 2. Bump retail **and** pharmacy to 0.7.4, along with every crosswalk `canonical:` and the Go pins. Pharmacy inherits the retail rules' actions; PH-MARGIN-001 gets the Margin template. Run the Go and pack tests after the bump. `grep @0.7.3` must return nothing.
 3. Tag packs v0.7.4 so they publish.
 4. New runs pick up 0.7.4. Findings pinned to 0.7.3 use the fallback action.
+
+**Which pack version is read:** `availableActions` and the task API read the rule from the finding's **pinned** pack version (the same `runPackDirs` path the detail page uses), so an action always matches the rule that produced the finding. The Settings rule list and the workflow `ruleIds` picker read the project's **currently installed** pack.
 
 ## 6. Tests (intent)
 
 - **`availableActions`:**
   - the fallback for rules without `actions`;
   - actions disabled in Settings are hidden;
-  - `min_role` is enforced;
+  - `personas` is enforced;
   - the single/bulk split follows the selection count;
   - workflow actions are included only for matching rules.
 - **Tasks API:**
   - a hidden or disabled action is refused;
   - item ids outside the evidence are refused;
-  - the same selection returns 409, a different selection creates a new task;
+  - an overlapping selection returns 409 `items_in_open_task`; a disjoint selection for the same owner and same count creates a new task;
+  - item details are hidden from a partial-scope reader of the task;
   - a `draft_task` gets the "Draft:" title;
   - partial views get no wording;
   - the task and `task_item` rows are written in one transaction.
@@ -241,18 +255,20 @@ Today evidence is every record in the finding's window, in time order, cut at 50
   - wrong rule, role or scope is refused;
   - the context carries the finding and items;
   - the trigger is `finding_action`;
-  - the consent and consume gates still apply.
+  - the consent and consume gates still apply;
+  - send: second send → 409 `already_sent`; changed workflow → refused; `{{…}}` in drafted text is sent verbatim; a graph with a non-terminal write cannot be saved as a finding action.
 - **Isolation:** another org's or project's finding, task or workflow returns 404.
 - **Pack schema:**
   - an unknown key inside `actions` fails validation;
   - duplicate keys fail;
   - `rules.yaml` 0.7.4 loads;
   - the Go crosswalk tests pass at 0.7.4.
+- **Evidence route:** an extra dim not from the finding's factors, or not declared by the SQL, returns 400.
 - **E2E on :3900, in EN and VI:**
   - a margin finding → Take Action → Review pricing → task created;
   - Review Items → select 3 → bulk action → one task with 3 items;
   - a draft action shows its banner;
-  - a workflow action runs and shows up in run history.
+  - a workflow action previews, then sends, and both runs show up in run history.
 
 ## 7. Left to the builder
 
