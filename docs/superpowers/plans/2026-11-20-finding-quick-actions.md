@@ -116,7 +116,9 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 **Files:**
 - Modify: `ennam.kg.packs/retail/laam/rules.yaml`, `ennam.kg.packs/retail/pack.yaml`, `ennam.kg.packs/pharmacy/pack.yaml`, `ennam.kg.packs/pharmacy/laam/rules.yaml` (PH-MARGIN-001), and every `ennam.kg.packs/*/daab/crosswalks/*.yaml` (`canonical:` pins)
 - Modify evidence SQL: `ennam.kg.packs/retail/daab/evidence/{gross_margin_pct,refund_rate,no_receipt_refund_pct,duplicate_refund_groups,reprint_before_refund_count}.sql`
-- Modify Go pins and goldens: `ennam.kg.go/internal/intel/pack_070_test.go`, `crosswalk_test.go`, `golden_070_return_test.go`, `engine/query_test.go` (only where they assert versions or evidence columns)
+- Modify Go pins and goldens: `ennam.kg.go/internal/intel/pack_070_test.go`, `crosswalk_test.go`, `engine/query_test.go`, and the goldens under `ennam.kg.go/internal/intel/filedata/` (+ `testdata/golden_070`) — only where they assert versions or evidence columns; also `_testdata/two_crosswalks/vendor_b_crosswalk.yaml` (pins `@0.7.3`)
+- Modify: the packs CHANGELOG (add a 0.7.4 entry)
+- Create: a Go pack test `ennam.kg.go/internal/intel/evidence_dims_test.go` — every evidence SQL references `:dim_<d>` for every dim `d` of its metric (Task 7's factor filter relies on it; `Compiled.Args` silently ignores unused values, `compile.go:19`)
 
 **Interfaces:**
 - Consumes: Task 1's `actionSchema` (snake_case YAML shape).
@@ -143,9 +145,9 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - **All other rules:** no actions (they use the fallback).
 - [ ] **Step 2: Add `_impact` to the evidence SQL.** For each listed SQL, add the column `_impact`.
   - `gross_margin_pct`: `(COALESCE(l.discount_amount,0) - l.quantity * (l.unit_price - l.unit_cost)) AS _impact`.
-  - Refund SQLs: the refund amount column. Where `has_receipt` exists, order `has_receipt ASC` first.
-  - Then `ORDER BY _impact DESC NULLS LAST, <old order>`.
-  - Do not change `net_sales.sql`.
+  - Refund SQLs: `_impact` = the refund amount column (`amount`, or that SQL's equivalent).
+  - Ordering, exactly: margin `ORDER BY _impact DESC NULLS LAST, <old order>`; refund SQLs that have `has_receipt`: `ORDER BY has_receipt ASC, _impact DESC NULLS LAST, <old order>`; other refund SQLs: `ORDER BY _impact DESC NULLS LAST, <old order>`.
+  - No `_impact` (unchanged): `net_sales.sql`, `avg_unit_cost.sql` (RET-VENDOR-001), pharmacy `rx_margin_pct` (PH-MARGIN-001). Say so in the commit message.
 - [ ] **Step 3: Bump versions to `0.7.4`.**
   - Set `0.7.4` in both `pack.yaml` files and in every crosswalk `canonical: retail@…` / `pharmacy@…`.
   - Update the Go version pins and any golden column lists that now include `_impact`.
@@ -153,7 +155,7 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - `grep -rn "@0.7.3" ennam.kg.packs ennam.kg.go/internal/intel` → no output.
   - `cd ennam.kg.go && PACKS_DIR=../ennam.kg.packs go test ./internal/intel/...` → PASS.
   - In LAAM: `PACKS_DIR=../ennam.kg.packs npx vitest run src/lib/intel/pack` → PASS (the real 0.7.4 pack parses with `actions`).
-- [ ] **Step 5: Time the change on landed data.** Run the changed `gross_margin_pct` and `refund_rate` evidence queries on the local landed demo DB (DAAB dev DB on :5433), as role `landed_engine`, with `EXPLAIN ANALYZE`, before and after.
+- [ ] **Step 5: Check the three source modes and time on landed data.** Run the Go evidence tests that cover file and landed modes, and one live-mode run against the local DAAB with a live source if one is configured (if none is, say so in the commit message). Then time: Run the changed `gross_margin_pct` and `refund_rate` evidence queries on the local landed demo DB (DAAB dev DB on :5433), as role `landed_engine`, with `EXPLAIN ANALYZE`, before and after.
   - Record both timings in the commit message.
   - If "after" is more than 2× "before", keep the old ORDER BY for that metric (still return `_impact`) and say so in the commit message.
 - [ ] **Step 6: Commit** in each repo:
@@ -174,7 +176,7 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - **`findingReminders`** (`finding_reminder`): `id`, `projectId`, `findingId`, `taskId` (null, FK cascade), `userId`, `remindAt` (timestamptz), `sentAt` (null), `status` (`pending|sent|skipped`). Index `(status, remindAt)`.
   - **`businessProjects.disabledFindingActions`:** `text[]`, not null, default `{}`.
   - **`workflows.findingAction`:** jsonb, null.
-  - **`workflowRuns`:** `findingId` (text, null, indexed), `triggerInput` (jsonb, null), `sentRunId` (uuid/text matching the run id type, null).
+  - **`workflowRuns`:** `findingId` (text, null, indexed), `triggerInput` (jsonb, null), `sentRunId` (text — `workflow_run.id` is text — null).
 
 **Steps:**
 - [ ] **Step 1: Write the failing int test** `schema 0060 round-trip`. Insert a task with `actionKey`/`note` and two `task_item` rows. Delete the task; the items are gone (cascade). A duplicate `(taskId, itemKind, itemId)` throws.
@@ -186,13 +188,13 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 ### Task 4: `availableActions` — what a viewer may use
 
 **Files:**
-- Create: `src/lib/intel/actions/available.ts`
+- Create: `src/lib/intel/actions/available.ts`, `src/lib/intel/actions/types.ts`
 - Test: `src/lib/intel/actions/available.test.ts`
 
 **Interfaces:**
 - Consumes: `RuleAction` and `resolveRuleActions` (Task 1).
 - Produces:
-  - `type WorkflowActionDef = { workflowId: string; label: { en: string; vi: string }; ruleIds: string[]; scope: "single"|"bulk"|"both"; personas: string[]|null; fields: FindingActionField[]; reminderDays: number[]|null }`, where `FindingActionField` is defined in Task 12. Import its type from `src/lib/workflow/finding-action.ts`; until Task 12 lands, declare it here and have Task 12 move it.
+  - In a new file `src/lib/intel/actions/types.ts` (owned by this task; later tasks import from it, never move it): `type FindingActionField = { key: string; label: { en: string; vi: string }; type: "text"|"number"|"select"|"date"; options?: string[]; required: boolean }` and `type WorkflowActionDef = { workflowId: string; label: { en: string; vi: string }; ruleIds: string[]; scope: "single"|"bulk"|"both"; personas: string[]|null; fields: FindingActionField[]; reminderDays: number[]|null }`.
   - `type MenuAction = { kind: "pack"; action: RuleAction } | { kind: "workflow"; action: WorkflowActionDef }`
   - `availableActions(input: { ruleId: string; ruleActions: RuleAction[]; disabled: readonly string[]; viewer: { canMutate: boolean; persona: string }; selectionCount: number; workflows: readonly WorkflowActionDef[] }): MenuAction[]` — a pure function.
   - `findAction(menu: MenuAction[], ref: { actionKey: string } | { workflowId: string }): MenuAction | null`
@@ -224,19 +226,22 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - `type ItemKind = "sale"|"refund"|"row"`
   - `type ItemRef = { kind: ItemKind; id: string }`
   - `ITEM_KEY_COLUMNS: readonly { column: string; kind: ItemKind }[]` = `refund_id→refund`, `sale_id→sale`, `original_sale_id→sale`, `product_id→row`, `employee_id→row`
+  - For `kind: "row"` the id is `"<column>:<value>"` (e.g. `product_id:P-12`), so a product and an employee with the same value cannot collide. Sale/refund ids stay bare (the receipt drawer needs them).
   - `itemKeyOf(columns: string[], row: unknown[]): ItemRef | null`
   - `type ItemRecord = { ref: ItemRef; label: string; lines: unknown[][]; lineCount: number; impact: number|null; partial: boolean }`
-  - `groupRecords(columns: string[], rows: unknown[][], idLabels: Record<string,string>, cutReached: boolean): ItemRecord[]` — rows grouped by key, keeping the order of first appearance. `impact` is the sum of `_impact`. `partial` is true when `cutReached` and the record is among the last group(s) whose lines could continue past the cut. Simplest correct rule: the record of the last row is marked partial when `cutReached`.
+  - `groupRecords(columns: string[], rows: unknown[][], idLabels: Record<string,string>, cutReached: boolean): ItemRecord[]` — rows grouped by key, keeping the order of first appearance. `impact` is the sum of `_impact`. `partial` is true when `cutReached` and the record has fewer lines in the list than its sale may have: with worst-first ordering a sale's lines are scattered, so when `cutReached` mark **every** grouped record that came from a line-level evidence (more than one row per key seen anywhere in the metric's SQL shape, i.e. columns include `sale_id` and a line column such as `product_id`) as `partial`; refund-level evidence is never partial.
   - `itemSetKey(refs: ItemRef[]): string` — sorted `kind:id`, joined by `|`.
-  - In `records.ts`: `findingEvidenceItems(provider: MetricsProvider, refs: EvidenceRefs, wanted: readonly ItemRef[], view: ScopeView): Promise<{ found: Map<string, { label: string; row: unknown[]; columns: string[] }>; missing: ItemRef[] }>`. It reuses the same pagination and sanitise loop as `findingEvidenceHas`, scans up to `EVIDENCE_MAX_ROWS`, and throws when the provider errors (fail closed).
-  - `findingEvidenceHas` becomes a thin wrapper over it, with unchanged behaviour for its existing callers.
+  - In `records.ts`: `findingEvidenceItems(provider: MetricsProvider, refs: EvidenceRefs, wanted: readonly ItemRef[], view: ScopeView, extraDims?: Record<string, string>): Promise<{ found: Map<string, { label: string; lines: unknown[][]; columns: string[] }>; missing: ItemRef[] }>`. It reuses the same pagination and sanitise loop as `findingEvidenceHas`, scans up to `EVIDENCE_MAX_ROWS` with `dims: { ...refs.dims, ...extraDims }` (the same rows the Review Items page loaded under a factor filter), matches a row only when `itemKeyOf(columns,row)` equals the wanted ref (so a refund row's `original_sale_id` cannot vouch for a sale id), collects **all** lines per key, and throws when the provider errors (fail closed).
+  - `findingEvidenceHas(provider, refs, entity, id, view, extraDims?)` becomes a thin wrapper over it, with unchanged behaviour when `extraDims` is absent.
 
 **Steps:**
 - [ ] **Step 1: Write the failing tests:**
   - `itemKeyOf` follows the priority order;
   - `groupRecords` folds three lines of the same `sale_id` into one record with `lineCount 3` and summed impact;
   - the last record is `partial` when `cutReached`;
-  - `findingEvidenceItems` (fake provider) returns found and missing;
+  - `findingEvidenceItems` (fake provider) returns found (with all lines of a sale) and missing;
+  - a refund row whose `original_sale_id` = S does not make sale S found;
+  - with `extraDims {category:"Drinks"}` the provider is called with that dim merged into `dims`;
   - a row removed by sanitising cannot vouch for an id;
   - a provider error rejects;
   - the existing `findingEvidenceHas` tests stay green.
@@ -254,17 +259,21 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 - Create: `src/lib/intel/actions/finding-menu.ts` (server loader for the menu)
 - Create: `src/app/api/intel/findings/[id]/tasks/[taskId]/items/route.ts`
 - Modify: `src/lib/intel/home/load.ts` (`FindingDetailModel` gains `menu`, plus `itemCount` per task)
+- Modify: the receipt-drawer records route `src/app/api/intel/findings/[id]/records/[entity]/[recordId]/route.ts`: accept optional `factor=<dim>:<key>` (validated with `allowedFactorFilter`) and pass it as `extraDims` to `findingEvidenceHas`, so a record opened from the filtered Review Items list is found
 - Modify: `src/test/route-inventory.ts`, `src/test/isolation/cases.ts`
 - Test: `src/lib/intel/finding-actions.int.test.ts` (extend or create), `src/app/api/intel/findings/[id]/tasks/route.test.ts`, `.../items/route.test.ts`
 
 **Interfaces:**
 - Consumes: Tasks 1, 3, 4 and 5.
 - Produces:
-  - `loadFindingMenu(ctx: ScopedCtx, finding: Finding, selectionCount: number): Promise<MenuAction[]>`. It loads the rule from the finding's **pinned** pack (`runPackDirs`, as `load.ts` does), the project's `disabledFindingActions`, the viewer's `persona` and `canMutate`, and — from Task 14 on — the matching workflows. Until then it passes `workflows: []`.
-  - The `CreateTaskInput` additions: `actionKey?: string; itemIds?: ItemRef[]; note?: string`.
+  - `loadFindingMenu(s: ActingScope, selectionCount: number): Promise<MenuAction[]>` (`ActingScope` from `finding-actions.ts:16`). It loads the rule from the finding's **pinned** pack (`packForSummary`, `brief/service.ts:49`), the project's `disabledFindingActions`, the viewer's `persona` and `canMutate`, and — from Task 14 on — the matching workflows. Until then it passes `workflows: []`.
+  - The `CreateTaskInput` additions: `actionKey?: string; itemIds?: ItemRef[]; note?: string; factor?: { dim: string; key: string }`.
+  - When `actionKey` is set, a client-sent `title` or `actionType` is **ignored** (the action defines them). `note` is written to `task.note` via `taskInsert`.
+  - Helpers shared with Task 7, in `src/lib/intel/actions/factor-filter.ts` (Task 7 creates it; if Task 6 runs first, create it here with exactly the Task 7 signatures): `allowedFactorFilter`.
   - `ActionDenial` adds `"action_unavailable" | "items_not_in_evidence" | "items_in_open_task"`.
   - `ActionOutcome` denial payloads: `{ denial: "items_not_in_evidence"; items: ItemRef[] }` and `{ denial: "items_in_open_task"; items: ItemRef[] }`.
-  - The tasks route body adds `actionKey: z.string().regex(/^[a-z][a-z0-9_]*$/).optional()`, `itemIds: z.array(z.strictObject({kind, id: z.string().min(1).max(128)})).max(200).optional()` and `note: z.string().max(1000).optional()`.
+  - The tasks route body adds `actionKey: z.string().regex(/^[a-z][a-z0-9_]*$/).optional()`, `itemIds: z.array(z.strictObject({kind, id: z.string().min(1).max(160)})).max(200).optional()`, `note: z.string().max(1000).optional()` and `factor: z.strictObject({dim: z.string().max(64), key: z.string().max(200)}).optional()`.
+  - **Evidence gate on writes:** when `itemIds` is non-empty, the caller must pass the evidence route's gate (unrestricted, or `scopeFinding(...).mode === "full"` and `evidenceReadable`); otherwise 404, the same body as not found. `factor` must pass `allowedFactorFilter` (else 400) and is passed as `extraDims` to `findingEvidenceItems`.
   - Status mapping:
     - `action_unavailable` → 403 `{code}`;
     - `items_not_in_evidence` → 422 `{code, items}`;
@@ -278,7 +287,7 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 - **When `actionKey` is set:**
   - Resolve it through `loadFindingMenu(selectionCount = itemIds.length)`. If missing → `action_unavailable`.
   - `actionType` = `action.actionType`.
-  - Title = `"<label in the creator's locale> (N items)"`, or just the label when there are 0 items, prefixed with `"Draft: "` when the mode is `draft_task`. The neutral-title fallback for hidden wording still applies when there is no label.
+  - Title = `"<label in the creator's locale> (N items)"` — locale from the request the same way other intel routes resolve it (`pickLocale` / the existing intel locale helper), `vi` → `label.vi`, everything else → `label.en`, or just the label when there are 0 items, prefixed with `"Draft: "` when the mode is `draft_task`. The neutral-title fallback for hidden wording still applies when there is no label.
   - **Skip** the owner+title+actionType duplicate check.
   - Check the items with `findingEvidenceItems` → `items_not_in_evidence`.
   - An open task with the same `actionKey` that contains any of the items (join `task_item`) → `items_in_open_task`.
@@ -302,6 +311,8 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - forcing an insert failure leaves none of them (rollback);
   - `items API hides details from partial reader`: `items: null`, count present;
   - a full reader gets the rows;
+  - a partial viewer posting `itemIds` → 404 (cannot probe which ids exist);
+  - an item picked under a `factor` filter passes the re-check (fake provider returns it only with the factor dim);
   - the old body without `actionKey` behaves exactly as before (existing tests green);
   - isolation: a foreign task id gives 404.
 - [ ] **Step 2: Run them and see them fail.** `npx vitest run src/app/api/intel/findings` and `npm run test:int -- src/lib/intel/finding-actions.int.test.ts`
@@ -315,21 +326,24 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 - Modify: `src/app/api/intel/findings/[id]/evidence/route.ts`
 - Modify: `src/components/intel/detail/receipt-format.ts` (`_impact` is shown, not hidden)
 - Create: `src/lib/intel/actions/factor-filter.ts`
+- Modify: `src/i18n/dictionaries/intel.ts` (key `intel.items.col.impact`)
 - Test: `src/app/api/intel/findings/[id]/evidence/route.test.ts` (extend), `src/lib/intel/actions/factor-filter.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `topFactor(contributingFactors: unknown): { dim: string; key: string; share: number } | null` — the factor with the largest `share` across all breakdowns; null if none.
-  - `allowedFactorFilter(contributingFactors: unknown, dim: string, key: string): boolean` — true only when `(dim, key)` is one of the finding's own factors.
+  - `topFactor(contributingFactors: unknown, findingDims: Record<string,string>): { dim: string; key: string; share: number } | null` — parse with `causeBreakdowns` (`src/lib/intel/visibility.ts:65`); the factor with the largest `share` whose dim is not already in `findingDims`; null if none.
+  - `allowedFactorFilter(contributingFactors: unknown, findingDims: Record<string,string>, dim: string, key: string): boolean` — true only when `(dim, key)` is one of the finding's own factors and `dim` is not in `findingDims`.
+  - `parseFactorParam(raw: string | null): { dim: string; key: string } | null` — `"<dim>:<key>"`, split on the first `:`.
   - Evidence route: the optional query param `factor=<dim>:<key>`.
-    - When it is allowed, pass `dimsFilter: { [dim]: [key] }` to `provider.getEvidence`. DAAB already supports `dims_filter` and rejects dims the metric does not have, so map that rejection to 400.
-    - When it is not allowed, return 400 `"invalid factor"`.
+    - When it is allowed, call `provider.getEvidence({ ..., dims: { ...refs.dims, [dim]: key } })`. **Not** `dimsFilter`: DAAB requires every `dims_filter` dim to also be in `dims` (`ennam.kg.go/internal/intel/engine/query.go:453-460`) and binds `:dim_<d>` from `dims`. Keep `dimsFilter` for location scope only, as today. A DAAB "not a dim" error maps to 400.
+    - When it is not allowed, or the dim is already in `refs.dims`, return 400 `"invalid factor"`.
   - `receipt-format.ts`: `isHiddenColumn` keeps hiding `_*` columns **except** `_impact`. `columnLabel("_impact")` is the i18n key `intel.items.col.impact`, formatted as money.
 
 **Steps:**
 - [ ] **Step 1: Write the failing tests:**
   - a factor not in the finding → 400;
-  - an allowed factor passes `dimsFilter`;
+  - an allowed factor is merged into `dims` (assert the provider call: `dims` contains it, `dimsFilter` does not);
+  - a factor whose dim is already in the finding's dims → 400;
   - a provider "not a dim" error → 400;
   - no factor → the call is unchanged;
   - `topFactor` picks the highest share;
@@ -346,6 +360,7 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 - Modify: `src/components/intel/admin/ProjectDetail.tsx` (add the section after `ScheduleSection`)
 - Create: `src/app/api/intel/admin/projects/[id]/finding-actions/route.ts` (GET and PUT). Match the existing admin API path pattern in `adminApi.ts`; if it differs, use the existing pattern and keep this name.
 - Modify: `src/components/intel/admin/adminApi.ts`
+- Modify: `src/i18n/dictionaries/intel.ts` (section strings)
 - Modify: `src/test/route-inventory.ts`, `src/test/isolation/cases.ts`
 - Test: the route test and `FindingActionsSection.test.tsx`
 
@@ -416,7 +431,8 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 
 **Behaviour (spec §5.5, §5.5a):**
 - **Access.** Same as the detail page. Full width.
-- **Loading.** Pages through the evidence API (`limit=200`) up to 500 rows, with the `factor=` from `topFactor` by default. The chip shows `"<dim>: <key> (NN%)"`; removing it reloads without the factor.
+- **Data for the page.** The server component loads the bulk menu with `loadFindingMenu(s, 1)`, the owner candidates (same as `TaskPanel`) and `topFactor`.
+- **Loading.** Pages through the evidence API (`limit=200`) up to 500 rows, with the `factor=` from `topFactor` by default. If the factor request returns 400, reload once without it and hide the chip. The current factor is passed on to `ActionForm` (→ tasks POST `factor`), to the workflow dialog, and to `ReceiptDrawer` (→ records route `factor=`). The chip shows `"<dim>: <key> (NN%)"`; removing it reloads without the factor.
 - **Rows.** Rows are grouped into records. The columns are the key label, the impact (when present), the line count, then the evidence columns.
   - Search is a case-insensitive substring match over the visible cells.
   - Pagination is 25 per page.
@@ -445,7 +461,7 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 
 **Files:**
 - Create: `src/lib/intel/actions/reminders.ts`
-- Modify: the workflow scheduler tick in `src/lib/workflow/schedule.ts` (call the sweep once per tick, inside a try/catch that logs and continues)
+- Modify: the tick orchestration in `src/app/api/workflows/tick/route.ts` (call the sweep once per tick, in its own try/catch next to `tickAnalysis`, logging and continuing)
 - Modify: `src/lib/notifications/index.ts` (add `notifyFindingReminder`)
 - Test: `src/lib/intel/actions/reminders.int.test.ts`
 
@@ -481,15 +497,18 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 
 **Interfaces:**
 - Produces:
-  - `type FindingActionField = { key: string; label: { en: string; vi: string }; type: "text"|"number"|"select"|"date"; options?: string[]; required: boolean }`. Move the type here from Task 4.
+  - Import `FindingActionField` and `WorkflowActionDef` from `src/lib/intel/actions/types.ts` (Task 4). Do not move or redefine them.
   - `findingActionSchema`: a strict zod schema for `{ enabled, label, ruleIds (min 1), scope, personas (nullable), fields (max 10, unique keys), reminderDays (nullable, ints 1–90, max 3) }`.
-  - `nonTerminalWrites(graph: WorkflowGraph): string[]` — returns the ids of write nodes (connector writes per `isWrite`, plus MCP nodes whose action is not in the read allow-list) whose output is referenced by another node's args (`{{steps.<id>…}}`) or by a condition.
+  - `findingActionGraphProblems(graph: WorkflowGraph, mcpReadAllow: ReadonlySet<string>): { code: "write_not_terminal" | "write_in_foreach" | "mcp_write"; nodeId: string }[]` — empty means the graph may be a finding action:
+    - `write_not_terminal`: a connector write (`isWrite`) whose output is referenced (`{{steps.<id>…}}`) anywhere downstream — another node's args, an agent's prompt/system text, a condition, or a foreach `items` expression;
+    - `write_in_foreach`: a connector write inside a `foreach` body (its N calls would share one node id at send time);
+    - `mcp_write`: an MCP node whose action is not in `mcpReadAllow` (real runs refuse MCP writes, `blast.ts:22-27`, so it could never be sent).
   - `validateFindingParams(fields: FindingActionField[], params: unknown): { ok: true; value: Record<string,string|number> } | { ok: false; field: string }`
 - **PUT rules:**
   - The workflow must be an **org** workflow managed by the caller: use `loadManagedOrgWorkflow`, which means owner or admin. Otherwise 404/403 as that helper does.
   - Validate the body with `findingActionSchema`.
   - Every `ruleId` must exist in at least one of the org's projects' installed packs → otherwise 400.
-  - `nonTerminalWrites(graph)` must be empty → otherwise 422 `{code:"write_not_terminal", nodes}`.
+  - `findingActionGraphProblems(graph, readAllow)` must be empty → otherwise 422 `{code: "graph_not_allowed", problems}`.
   - Writes an `audit_log` row.
 - **Card.** Enable toggle, label EN/VI, a rule multi-select (rules from the org's installed packs), scope, a persona multi-select (pack `roles.yaml` personas), a fields editor (add/remove, max 10) and reminder days.
 
@@ -498,7 +517,8 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - a personal workflow is refused;
   - a member is refused;
   - an unknown rule → 400;
-  - a graph where a Slack post's args use `{{steps.jira1.output.key}}`, with `jira1` a write → 422 listing `jira1`;
+  - a graph where a Slack post's args use `{{steps.jira1.output.key}}`, with `jira1` a write → 422 `write_not_terminal` for `jira1`; same when only an agent prompt references it;
+  - a write inside a foreach → `write_in_foreach`; an MCP non-read node → `mcp_write`;
   - a valid config round-trips;
   - `validateFindingParams` rejects a missing required field and a wrong type.
 - [ ] **Step 2: Run them and see them fail.**
@@ -509,9 +529,10 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 ### Task 13: Run plumbing — trigger `finding_action`, durable `trigger_input`
 
 **Files:**
-- Modify: `src/lib/workflow/run.ts` (`RunTrigger`, `viaOfTrigger`, the run insert at `:306` and `executeRunRow` at `:219`, both of which use `triggerInput`)
+- Modify: `src/lib/workflow/run.ts` (`RunTrigger`, `viaOfTrigger`, the `RunRow` type, the run insert at `:306`, and `executeRunRow` at `:98` whose context is built at `:214`)
 - Modify: `src/lib/workflow/resume.ts:128` and `src/lib/workflow/resume-context.ts` (`rebuildContext` uses `triggerInput`)
-- Modify: `src/components/workflows/editor/variableHints.ts`, `src/components/workflows/runDisplay.ts` (label), workflow i18n
+- Modify: `src/lib/workflow/schedule.ts` (`tickExecute` / `tickResume` build a `RunRow` at `:310` / `:369` — include `triggerInput`)
+- Modify: `src/components/workflows/editor/variableHints.ts`, `src/components/workflows/RunHistory.tsx` (trigger label), workflow i18n
 - Test: `src/lib/workflow/run.test.ts` / `resume.test.ts` (extend), `variableHints` test
 
 **Interfaces:**
@@ -547,15 +568,15 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - `items: [{ kind, id, label, cols }]`, where `cols` holds at most 8 key columns;
   - `params`;
   - `actionConfig` (a snapshot of `finding_action`).
-- `POST` body: `{ workflowId: string; itemIds?: ItemRef[] (max 200); params?: Record<string, unknown> }`. In order:
-  1. finding guard (mutator);
+- `POST` body: `{ workflowId: string; itemIds?: ItemRef[] (max 200); params?: Record<string, unknown>; factor?: { dim; key } }`. In order:
+  1. finding guard (mutator); when `itemIds` is non-empty, the evidence gate as in Task 6 (else 404); `factor` validated with `allowedFactorFilter` and passed as `extraDims`;
   2. menu check through `findAction`, otherwise 403 `action_unavailable`;
   3. `validateFindingParams`, otherwise 422 `{code:"invalid_field", field}`;
   4. `findingEvidenceItems`, otherwise 422 with the items;
   5. `assertOrgActive` and `assertCanConsume(orgId, "workflow_run")`, mapped as the workflow run route maps them;
-  6. `executeRun` with `{ dryRun: true, trigger: "finding_action", findingId, triggerInput }`;
-  7. return `{ runId }`;
-  8. write a `finding_event` of type `workflow_action_run` `{runId, workflowId, itemCount, phase:"preview"}`.
+  6. `executeRun` with `{ dryRun: true, trigger: "finding_action", findingId, triggerInput }` and deps that include `authoredHashOf: computeAuthoredHash` (without it the run stores a null hash, `run.ts:304`, and Task 15's hash check breaks). `executeRun` is **synchronous** — it awaits the whole run (`run.ts:270-332`), exactly like `POST /api/workflows/[id]/run`;
+  7. write a `finding_event` of type `workflow_action_run` `{runId, workflowId, itemCount, phase:"preview", status}` and an `audit_log` row `intel.workflow_action.preview`;
+  8. return `{ runId, status, error?, pendingWrites }` (pendingWrites from the function below).
 - `pendingWrites(runId: string): Promise<{ nodeId: string; action: string; args: unknown; recipientCheck?: unknown; capped: boolean }[]>` reads the preview run's steps whose output has `dryRun: true`. `capped` is true when the step output hit the `capForPersist` cap. The UI uses it through the GET in Task 15.
 
 **Steps:**
@@ -579,7 +600,6 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 - Create: `src/app/api/intel/findings/[id]/workflow-actions/[runId]/route.ts` (GET = preview status plus `pendingWrites`)
 - Create: `src/app/api/intel/findings/[id]/workflow-actions/[runId]/send/route.ts` (POST)
 - Create: `src/lib/workflow/send-recorded.ts`
-- Modify: `src/lib/workflow/idempotency.ts` (extend the write WAL to MCP-node writes)
 - Modify: `src/test/route-inventory.ts`, `src/test/isolation/cases.ts`
 - Test: `send-recorded.test.ts` and `send/route.int.test.ts`
 
@@ -588,20 +608,22 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - It never calls `interpolateArgs`.
   - It calls `assertConnectorAllowed` for connector actions, or `assertMcpAllowed` for `mcp__*`.
   - If the recipient is not allowed, it throws with the reason.
-  - It wraps the call in `claimNode` / `recordNodeOutput` keyed on `{ runId: sendRunId, nodeId, iterIndex: 0 }`.
+  - It wraps the call in `claimNode` / `recordNodeOutput` keyed on `{ runId: sendRunId, nodeId, iterIndex: seq }`, where `seq` is the pending write's 0-based position in the preview (unique per call even if a future graph repeats a node).
+  - `execute` is `execute` from `@/lib/connectors` called directly, with `{ via: "workflow_manual" }` (as `runtime.ts:159` does) — `buildRunNode` does not expose it. MCP actions never reach here (Task 12 refuses them); if one does, throw a typed `mcp_write_not_supported`.
 - **`POST …/send`, in order:**
   1. Finding guard (mutator).
   2. The preview run: `trigger = "finding_action"`, `dryRun`, `findingId` = this finding, `userId` = the caller, `status = "succeeded"`, `createdAt` > now − 24 h. Otherwise 404/409 `preview_invalid`.
-  3. `requireConsent` on the current workflow row. Return its 409 body as-is, so the dialog can run reactivation.
+  3. `requireConsent(userId, workflow, body.reactivate)` on the current workflow row (`activation.ts:53`; the body accepts `reactivate?: string`, the echoed hash). Return its 409 body as-is, so the dialog can run reactivation and resend with `reactivate`.
   4. `requireMutator`, `assertOrgActive`, `assertCanConsume`.
   5. The preview's `authoredHash` equals the current hash (`computeAuthoredHash`). Otherwise 409 `workflow_changed`.
   6. If any pending write is `capped` → 422 `preview_capped`.
-  7. **Claim:** create the send run row first (trigger `finding_action`, `dryRun: false`, `findingId`, `triggerInput: { previewRunId }`). Then run `UPDATE workflow_run SET sent_run_id = <send> WHERE id = <preview> AND sent_run_id IS NULL RETURNING id`. If no row comes back, mark the send run `cancelled` and return 409 `already_sent`.
-  8. Run each pending write in node order with `sendRecordedCall`, using the clicking user's connectors (`connectorExecute(userId)` via `buildRunNode`'s deps). Record one `workflow_run_step` per write. Stop at the first failure.
-  9. Finalize the send run as `succeeded` or `failed`.
-  10. Write a `finding_event` of type `workflow_action_run` `{runId: send, previewRunId, phase:"send", status}`.
-  11. Return `{ sendRunId, status, results: [{nodeId, ok, error?}] }`.
-- A missing connector connection becomes a typed error, `connector_not_connected` `{action}`, raised before the first write: check every pending action's connector first.
+  7. **Connected check:** for each pending action, `connectorIdForTool(action)` + `isConnected(userId, connectorId)`; any missing → 409 `connector_not_connected` `{action}`, nothing claimed or sent.
+  8. **Claim:** pre-generate the send run id, then `UPDATE workflow_run SET sent_run_id = <sendId> WHERE id = <preview> AND sent_run_id IS NULL RETURNING id`. No row → 409 `already_sent` (no run row is created). Then insert the send run row with that id (trigger `finding_action`, `dryRun: false`, `findingId`, `graphSnapshot` = the preview's, `triggerInput: { previewRunId }`).
+  9. Run each pending write in preview order with `sendRecordedCall`. Record one `workflow_run_step` per write. Stop at the first failure.
+  10. Finalize the send run as `succeeded` or `failed`.
+  11. Write a `finding_event` of type `workflow_action_run` `{runId: send, previewRunId, phase:"send", status}` and an `audit_log` row `intel.workflow_action.send`.
+  12. If the send succeeded and the action config snapshot has `reminderDays`, insert `finding_reminder` rows for the clicking user (no task id).
+  13. Return `{ sendRunId, status, results: [{nodeId, ok, error?}] }`.
 
 **Steps:**
 - [ ] **Step 1: Write the failing tests:**
@@ -612,7 +634,9 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
   - a recipient not allow-listed → nothing sent and an error;
   - a missing connector → `connector_not_connected` and nothing sent;
   - the WAL key is the send run's id, not the preview's: the preview's own `done` WAL rows must not short-circuit the send;
-  - an MCP write is WAL-covered.
+  - two pending writes of the same node id are both executed (distinct `seq`);
+  - a successful send with `reminderDays [2]` writes one `finding_reminder` for the caller;
+  - consent 409 is returned as-is, and a resend with `reactivate` proceeds.
 - [ ] **Step 2: Run them and see them fail.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them and see them pass**, plus `npx tsc --noEmit`.
@@ -628,7 +652,7 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 
 **Flow:**
 1. **Step 1, form.** Shows the workflow label, the finding, the item count and the configured `fields`. The button is "Preview".
-2. **Polling.** Once the preview starts, poll GET `…/[runId]` until it is terminal, with a spinner.
+2. **Waiting.** The preview POST returns when the run has finished (it is synchronous); show a spinner meanwhile. GET `…/[runId]` is only used to reload a preview (e.g. after a page refresh).
 3. **Step 2, preview.** Lists each pending write: destination (action), recipient, and content (`args`, rendered as text, never HTML), plus any allow-list refusal or "too large to send". The buttons are "Confirm & send" and "Cancel". With no pending writes, it shows "Done — nothing to send" and a link to the run.
 4. **Result.** Per-write ok or error, and links to both runs in run history.
 5. **Errors.**
@@ -652,7 +676,9 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 ### Task 17: Two finding-action presets
 
 **Files:**
-- Modify or create: under `src/lib/presets/templates/`, following `schema.ts` / `load.ts` there. Put them in `sales.yaml` (promotion) and in `sales.yaml` or a new `retail-actions.yaml` (vendor cost) if the loader picks up new files. Check `catalog.test.ts`.
+- Modify: `src/lib/presets/templates/sales.yaml` (both presets — `load.ts:15-20` loads only `${role}.yaml`, so no new file)
+- Modify: `src/lib/presets/templates/schema.ts` (the workflow item gains `finding_action: findingActionSchema.optional()`; the schema is `z.object`, which would silently strip it otherwise)
+- Modify: `src/lib/presets/from-template.ts` (copy `finding_action` onto the created workflow, after checking its `ruleIds` exist in the org's installed packs; if none exist — e.g. the org has no retail pack — create the workflow with `finding_action: null`, and say so in the result)
 - Test: `src/lib/presets/templates/catalog.test.ts` (extend)
 
 **Content:**
@@ -662,10 +688,10 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 - **"Vendor cost review request"**
   - `finding_action`: rules RET-MARGIN-001, RET-MARGIN-002, RET-VENDOR-001; scope both.
   - Graph: agent drafts the request from the items → one terminal write.
-- Both must pass `nonTerminalWrites(graph).length === 0` and `findingActionSchema`. If the preset schema cannot carry `finding_action`, extend it minimally and say so in the commit.
+- Both must pass `findingActionSchema` and `findingActionGraphProblems(graph, readAllow)` must be empty.
 
 **Steps:**
-- [ ] **Step 1: Write the failing test:** the catalog contains both presets, and each passes `findingActionSchema` and `nonTerminalWrites` is empty.
+- [ ] **Step 1: Write the failing tests:** the catalog contains both presets, each passes `findingActionSchema` and has no graph problems; creating a workflow from the promotion preset in an org with a retail project copies `finding_action`; in an org without it, `finding_action` is null.
 - [ ] **Step 2: Run it and see it fail.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run it and see it pass**, plus `npx tsc --noEmit`.
@@ -693,13 +719,16 @@ Paths are relative to `LAAM/` unless they start with `ennam.kg.packs/`, `ennam.k
 
 - Task 1 → Tasks 2, 4.
 - Task 3 → Tasks 6, 8, 11, 12, 13.
+- Task 4 → Tasks 6, 12.
 - Task 5 → Tasks 6, 10, 14.
+- Task 7 → Tasks 6 (factor helpers), 10.
 - Task 6 → Tasks 9, 10, 14.
-- Task 7 → Task 10.
-- Task 9 → Tasks 10, 16.
-- Tasks 12 + 13 → Task 14 → Task 15 → Task 16.
-- Task 12 → Task 17.
-- These groups can run in parallel:
-  - after Tasks 1 and 3: {2, 4, 5, 7, 8, 12, 13};
-  - after Task 6: {9, 11};
-  - Task 17 at any point after Task 12.
+- Task 9 → Tasks 10, 16. Task 10 → Task 16 (both edit `BulkToolbar.tsx`).
+- Task 12 → Tasks 8, 13, 14, 17 (shared `route-inventory.ts`, `isolation/cases.ts`, workflow i18n).
+- Task 13 → Task 14 → Task 15 → Task 16.
+- **Shared-file rule:** tasks that edit `src/test/route-inventory.ts`, `src/test/isolation/cases.ts` or `src/i18n/dictionaries/intel.ts` (6, 7, 8, 9, 10, 12, 14, 15, 16) never run at the same time as each other.
+- Safe parallel groups:
+  - after Tasks 1 and 3: {2, 4, 5, 7};
+  - after Task 4: {12} alongside Task 2/5 if still running;
+  - after Task 6: {11} alongside Task 9;
+  - Task 17 alongside Task 15/16 (it touches only presets).
