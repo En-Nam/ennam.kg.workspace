@@ -191,7 +191,7 @@ Today evidence is every record in the finding's window, in time order, cut at 50
 
 - **Storage.** A new nullable jsonb column on `workflow`, `finding_action`:
   `{ enabled, label:{en,vi}, ruleIds:string[], scope: single|bulk|both, personas:string[] | null, fields:[{key, label:{en,vi}, type: text|number|select|date, options?, required}], reminderDays:number[] | null }`. It applies to every project of the workflow's org whose findings match `ruleIds`.
-- **Validation on save.** `ruleIds` must exist in at least one of the org's projects' installed packs; `fields` max 10; and **writes must be terminal**: the save is refused if any node's args or any condition references the output of a write step (in a preview that output is a mock, so replaying args built from it would send mock-derived content).
+- **Validation on save.** `ruleIds` must exist in at least one of the org's projects' installed packs; `fields` max 10; and **writes must be terminal, outside any foreach, and connector writes only** (MCP writes are refused by real runs today, so they could never be sent): the save is refused if any node's args or any condition references the output of a write step (in a preview that output is a mock, so replaying args built from it would send mock-derived content).
 - **Which workflows.** Only **org** workflows can be finding actions; personal workflows cannot. The viewer must also pass the existing `canUse` grant (`lib/workflow/access.ts`).
 - **Editing.** It is edited in a new "Finding action" card in the workflow's settings, next to `ScheduleCard`. The rule list comes from the project's installed pack rules. Owners and admins only.
 - **Menu.** `availableActions` adds the matching enabled workflows, with a "workflow" icon, after the pack actions.
