@@ -139,3 +139,13 @@ Covers the 18 follow-up tasks (spec `docs/superpowers/specs/2026-11-20-card6-fol
   - These are UI-only: no migration and no API change.
   - Tests: unit 9715 pass, `tsc` is clean and `npm run build` passes. Re-verified in the browser on :3900, in EN and VI.
   - Known and not blocking: the workflow email subject `{{trigger.finding.title}}` is still the English pack wording. A localized variable and VI presets are a follow-up.
+- **Mail and UI, 2026-11-25 (LAAM up to `43d1dda7`):**
+  - `d73c907e`: task notices and the password-reset mail now use one product layout, in one language per mail. Spec: `docs/superpowers/specs/2026-11-25-mail-layout-design.md`.
+    - **Behaviour change:** a recipient with no profile "Reply language" used to get Vietnamese mail. Now they get the finding project's `localeDefault`, else English. The reset mail is no longer bilingual: it uses the profile language, else English.
+    - Subjects of task mails and the bell rows are unchanged.
+  - `43d1dda7`: spacing fixes on the workflow pages (the Schedule and Finding-action sections; "Use this template" on its own line).
+  - **Mail sending is set up:**
+    - Resend domain `mail.exnodes.vn` is Verified. Its DNS (DKIM, `send.mail`/`rsend.mail` CNAMEs, `_dmarc` p=none) is on Mắt Bão, and Google Workspace mail is untouched.
+    - Prod env `laam-app.env` now has `RESEND_API_KEY` and `MAIL_FROM="AIO Analytics <no-reply@mail.exnodes.vn>"`. The closing `>` was missing at first and has been fixed.
+    - Samples of all 5 mail kinds reached Gmail, but under All Mail rather than the Primary tab (new domain).
+  - Tests: unit 9729 pass; mail int tests (password forgot/reset, task-assign notice, deadline sweep, reminders) 52 pass; `tsc` and build pass.
