@@ -95,6 +95,19 @@ sang nguồn T-log và tính lại tháng 10.
    - Danh sách cửa hàng ở "Gán cửa hàng" lấy từ các cửa hàng **đã xuất hiện trong kết quả kiểm tra**; sau lần chạy đầu
      có thể chỉ thấy vài cửa hàng, các lần chạy sau sẽ bổ sung.
 
+### Nạp thêm ngày mới (khi dữ liệu bị báo trễ)
+
+Bộ T-log demo dừng ở một ngày cố định và project demo chưa có lịch chạy, nên sau vài ngày DAAB báo dữ liệu trễ.
+Một lệnh nạp bù đến hôm qua (mỗi ngày mới sao từ cùng thứ tuần trước; ngày đã nạp được nhận là trùng, chạy lại an toàn):
+
+```bash
+DAAB_URL=https://<daab-prod> DAAB_API_KEY=<admin API key> PROJECT_ID=<project demo> \
+uv run --project ennam.kg.python python scripts/landed/topup-demo-days.py [--from 2026-11-16] [--to 2026-11-24] [--dry-run]
+```
+
+Mặc định `--to` = hôm qua, `--from` = 6 ngày trước `--to`; nếu đã trễ hơn một tuần thì đặt `--from` sớm hơn. Dữ liệu
+gốc mặc định là `poslog-12m-risk` trong `.superpowers/.../e2e-data/` (chỉ có trên máy đã tạo bộ demo; đổi bằng `--src-dir`).
+
 ## D. Bật "hỏi tự do"
 
 1. DAAB: `LANDED_NL_QUERY=1`, khởi động lại. Log phải có `landed free questions are ready` (trên RDS kèm một WARN
