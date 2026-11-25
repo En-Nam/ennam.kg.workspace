@@ -131,3 +131,11 @@ Covers the 18 follow-up tasks (spec `docs/superpowers/specs/2026-11-20-card6-fol
   - `{{trigger.finding.*}}` is refused on Save with a readable message.
   - New bell notices format the due date in the reader's language. Notices created before the deploy keep the date as it was stored.
   - Tests: unit 9710 pass, `tsc` is clean and `npm run build` passes. The integration tests for the touched areas pass.
+- **E2E re-run 2026-11-25 and small fixes (LAAM up to `d2dc344e`):**
+  - The full browser E2E re-ran on `8138ecff` and passed. The tick sent the due-soon and overdue notices once each, over real days.
+  - `a31ccd03`: "Deselect these" in an overlap now also unticks those rows in the items table and the toolbar count. The form closes when nothing is left.
+  - `ad5988b4`: overdue tasks under "Earlier tasks" show the "Overdue" chip.
+  - `d2dc344e`: the workflow dialog on the finding page is titled with the rule name in the reader's language, the same as on the items page.
+  - These are UI-only: no migration and no API change.
+  - Tests: unit 9715 pass, `tsc` is clean and `npm run build` passes. Re-verified in the browser on :3900, in EN and VI.
+  - Known and not blocking: the workflow email subject `{{trigger.finding.title}}` is still the English pack wording. A localized variable and VI presets are a follow-up.
